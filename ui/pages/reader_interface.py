@@ -72,23 +72,23 @@ class BookReader:
         return False
 
     def build_ui(self):
-        with ui.header().classes('bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 h-14 items-center px-4 z-50'):
+        with ui.header().classes('bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-100 h-14 items-center px-2.5 sm:px-4 z-50'):
             ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/books')) \
-                .props('flat round color=indigo').tooltip('Back to Library')
-            ui.label(self.file_name or 'Reading Mode').classes('font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 ml-2 truncate max-w-md')
+                .props('flat round color=indigo size=md').tooltip('Back to Library')
+            ui.label(self.file_name or 'Reading Mode').classes('font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 ml-1 sm:ml-2 truncate max-w-[130px] xs:max-w-[220px] sm:max-w-md')
             ui.space()
             if self.file_url:
-                ui.button(icon='download', on_click=lambda: ui.download(self.file_url)).props('flat round color=indigo').tooltip('Download File')
-            ui.button(icon='fullscreen', on_click=lambda: ui.run_javascript('if(document.fullscreenElement){document.exitFullscreen()}else{document.documentElement.requestFullscreen()}')).props('flat round color=grey').tooltip('Toggle Fullscreen')
+                ui.button(icon='download', on_click=lambda: ui.download(self.file_url)).props('flat round color=indigo size=md').tooltip('Download File')
+            ui.button(icon='fullscreen', on_click=lambda: ui.run_javascript('if(document.fullscreenElement){document.exitFullscreen()}else{document.documentElement.requestFullscreen()}')).props('flat round color=grey size=md').tooltip('Toggle Fullscreen')
 
         with ui.column().classes('w-full h-[calc(100vh-56px)] p-0 m-0 bg-slate-100 dark:bg-slate-950 items-center justify-center overflow-hidden'):
             found = self.find_content_file()
             
             if not found:
-                with ui.card().classes('items-center text-center p-8 bg-white dark:bg-slate-900 shadow-xl rounded-3xl border-l-4 border-red-500 max-w-md mx-4'):
-                    ui.icon('error_outline', size='4em').classes('text-red-400 mb-2')
-                    ui.label("Document Unavailable").classes('text-lg font-bold text-slate-800 dark:text-slate-100')
-                    ui.label(self.error_msg).classes('text-xs text-red-500 font-mono mt-1')
+                with ui.card().classes('items-center text-center p-6 sm:p-8 bg-white dark:bg-slate-900 shadow-xl rounded-2xl sm:rounded-3xl border-l-4 border-red-500 w-[calc(100vw-2rem)] max-w-md mx-4'):
+                    ui.icon('error_outline', size='3.5em').classes('text-red-400 mb-2')
+                    ui.label("Document Unavailable").classes('text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100')
+                    ui.label(self.error_msg).classes('text-xs text-red-500 font-mono mt-1 break-words')
                     ui.button('Back to Collection', on_click=lambda: ui.navigate.to('/books')).props('unelevated rounded color=indigo size=sm').classes('mt-4')
             
             elif self.file_type == 'pdf':
@@ -103,11 +103,11 @@ class BookReader:
                     import docx
                     file_path = self.book_path / self.file_name
                     doc = docx.Document(file_path)
-                    with ui.scroll_area().classes('w-full h-full p-8 md:p-16 bg-white dark:bg-slate-900 max-w-4xl shadow-xl rounded-2xl my-4'):
-                        ui.label(f"Document: {self.file_name}").classes('text-2xl font-bold mb-6 text-slate-800 dark:text-slate-100')
+                    with ui.scroll_area().classes('w-full h-full p-4 sm:p-8 md:p-16 bg-white dark:bg-slate-900 max-w-4xl shadow-xl sm:rounded-2xl sm:my-4'):
+                        ui.label(f"Document: {self.file_name}").classes('text-xl sm:text-2xl font-bold mb-4 sm:mb-6 text-slate-800 dark:text-slate-100 break-words')
                         for para in doc.paragraphs:
                             if para.text.strip():
-                                ui.label(para.text).classes('text-slate-700 dark:text-slate-300 font-serif text-base mb-3 leading-relaxed')
+                                ui.label(para.text).classes('text-slate-700 dark:text-slate-300 font-serif text-sm sm:text-base mb-3 leading-relaxed break-words')
                 except Exception as e:
                     ui.notify(f"Error reading DOCX: {e}", type='negative')
 
@@ -116,14 +116,14 @@ class BookReader:
                     from pptx import Presentation
                     file_path = self.book_path / self.file_name
                     prs = Presentation(file_path)
-                    with ui.scroll_area().classes('w-full h-full p-8 md:p-16 bg-white dark:bg-slate-900 max-w-5xl shadow-xl rounded-2xl my-4'):
+                    with ui.scroll_area().classes('w-full h-full p-3 sm:p-8 md:p-16 bg-white dark:bg-slate-900 max-w-5xl shadow-xl sm:rounded-2xl sm:my-4'):
                         for i, slide in enumerate(prs.slides):
-                            with ui.card().classes('w-full mb-6 p-6 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-sm'):
+                            with ui.card().classes('w-full mb-4 sm:mb-6 p-4 sm:p-6 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl sm:rounded-2xl shadow-sm'):
                                 ui.label(f"Slide {i+1}").classes('text-xs font-bold text-indigo-500 uppercase mb-2')
                                 txts = [s.text for s in slide.shapes if hasattr(s, "text") and s.text.strip()]
                                 if txts:
-                                    ui.label(txts[0]).classes('text-lg font-bold text-slate-900 dark:text-slate-100 mb-3')
-                                    for t in txts[1:]: ui.markdown(f"• {t}").classes('ml-4 text-slate-700 dark:text-slate-300 text-sm')
+                                    ui.label(txts[0]).classes('text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100 mb-2 sm:mb-3 break-words')
+                                    for t in txts[1:]: ui.markdown(f"• {t}").classes('ml-2 sm:ml-4 text-slate-700 dark:text-slate-300 text-xs sm:text-sm break-words')
                 except Exception as e:
                     ui.notify(f"Error reading PPTX: {e}", type='negative')
 
@@ -131,7 +131,7 @@ class BookReader:
                 try:
                     file_path = self.book_path / self.file_name
                     with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        ui.markdown(f.read()).classes('prose dark:prose-invert lg:prose-xl mx-auto font-serif p-8')
+                        ui.markdown(f.read()).classes('prose dark:prose-invert lg:prose-xl mx-auto font-serif p-4 sm:p-8 break-words')
                 except Exception as e:
                     ui.notify(f"Error reading text: {e}", type='negative')
 

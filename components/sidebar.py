@@ -14,25 +14,27 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
     ) as drawer:
         
         # 2. LOGO AREA
-        with ui.row().classes('w-full h-20 items-center px-6 border-b border-slate-200 dark:border-slate-800 flex-none'):
-            with ui.element('div').classes('p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center'):
-                ui.icon('local_library', size='sm')
-            ui.label('Libre Library').classes('text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight ml-2.5')
+        with ui.row().classes('w-full h-20 items-center justify-between px-5 border-b border-slate-200 dark:border-slate-800 flex-none'):
+            with ui.row().classes('items-center'):
+                with ui.element('div').classes('p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center'):
+                    ui.icon('local_library', size='sm')
+                ui.label('Libre Library').classes('text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight ml-2.5')
+            ui.button(icon='close', on_click=drawer.close).props('flat round dense color=grey-7 size=md').classes('md:hidden')
 
         # 3. NAVIGATION LINKS (Scrollable Area)
-        with ui.column().classes('w-full p-4 gap-1 flex-grow overflow-y-auto no-scrollbar'):
+        with ui.column().classes('w-full p-4 gap-1.5 flex-grow overflow-y-auto no-scrollbar'):
             
             def nav_link(text: str, icon: str, target: str):
                 is_active = app.storage.client.get('page_path') == target
                 
-                base_classes = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl transition-all duration-200 no-underline group'
+                base_classes = 'w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition-all duration-200 no-underline group'
                 if is_active:
                     color_classes = 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 font-bold shadow-sm'
                 else:
                     color_classes = 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 font-medium'
                 
                 with ui.link(target=target).classes(f'{base_classes} {color_classes}'):
-                    ui.icon(icon).classes('text-lg group-hover:scale-110 transition-transform') 
+                    ui.icon(icon).classes('text-xl group-hover:scale-110 transition-transform') 
                     ui.label(text).classes('text-sm')
 
             # --- MAIN SECTION ---
@@ -75,7 +77,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
                     label='Session ID', 
                     value=chat_interface.session_id,
                     placeholder="Paste ID..."
-                ).props('outlined dense clearable bg-white').classes('w-full text-xs')
+                ).props('outlined dense clearable bg-white').classes('w-full text-sm sm:text-xs')
                 
                 with ui.row().classes('w-full gap-2'):
                     ui.button('Load', icon='sync', on_click=chat_interface.load_specific_session) \

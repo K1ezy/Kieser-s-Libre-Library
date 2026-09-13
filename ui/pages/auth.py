@@ -11,7 +11,7 @@ import re
 
 # Premium Button & Input Styles
 BTN_STYLE = 'w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-base shadow-lg shadow-indigo-500/20 active:scale-[0.99] transition-all'
-INPUT_CLASSES = 'w-full mb-4'
+INPUT_CLASSES = 'w-full mb-3 sm:mb-4 text-base'
 
 def create_password_toggle(input_field):
     """Adds a modern eye icon toggle to show/hide password."""
@@ -38,7 +38,7 @@ async def login_page():
     dark = ui.dark_mode()
     ui.button(icon='dark_mode', on_click=dark.toggle) \
         .classes('absolute top-4 right-4 z-50 text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:white transition-colors') \
-        .props('flat round')
+        .props('flat round size=md')
 
     with ui.row().classes('w-full h-screen m-0 p-0 overflow-hidden'):
         # Brand Side
@@ -63,11 +63,11 @@ async def login_page():
                     ui.label('Reader')
 
         # Form Side
-        with ui.column().classes('w-full md:w-1/2 h-full items-center justify-center bg-slate-50 dark:bg-slate-900 p-8 transition-colors duration-300 overflow-y-auto'):
-            with ui.card().classes('w-full max-w-md p-8 shadow-xl md:shadow-none border border-slate-200/80 dark:border-slate-800/80 md:border-none bg-white md:bg-transparent dark:bg-slate-900 rounded-3xl'):
-                with ui.column().classes('w-full mb-6'):
-                    ui.label('Welcome Back').classes('text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-1')
-                    ui.label('Sign in with your email or username').classes('text-sm text-slate-500 dark:text-slate-400')
+        with ui.column().classes('w-full md:w-1/2 h-full items-center justify-center bg-slate-50 dark:bg-slate-900 p-4 sm:p-8 transition-colors duration-300 overflow-y-auto'):
+            with ui.card().classes('w-full max-w-md p-5 sm:p-8 shadow-xl md:shadow-none border border-slate-200/80 dark:border-slate-800/80 md:border-none bg-white md:bg-transparent dark:bg-slate-900 rounded-2xl sm:rounded-3xl'):
+                with ui.column().classes('w-full mb-4 sm:mb-6'):
+                    ui.label('Welcome Back').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-1')
+                    ui.label('Sign in with your email or username').classes('text-xs sm:text-sm text-slate-500 dark:text-slate-400')
 
                 # Identifier Field (Email or Username)
                 identifier = ui.input(placeholder='Email or Username') \
@@ -139,7 +139,7 @@ async def signup_page():
     dark = ui.dark_mode()
     ui.button(icon='dark_mode', on_click=dark.toggle) \
         .classes('absolute top-4 right-4 z-50 text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:white transition-colors') \
-        .props('flat round')
+        .props('flat round size=md')
 
     with ui.row().classes('w-full h-screen m-0 p-0 overflow-hidden'):
         # Brand Side
@@ -152,11 +152,11 @@ async def signup_page():
             ui.label('Unlock intelligent search, AI study companions, and flashcards.').classes('text-lg font-normal opacity-85 text-center max-w-sm')
 
         # Form Side
-        with ui.column().classes('w-full md:w-1/2 h-full items-center justify-center bg-slate-50 dark:bg-slate-900 p-8 transition-colors duration-300 overflow-y-auto'):
-            with ui.card().classes('w-full max-w-md p-8 shadow-xl md:shadow-none border border-slate-200/80 dark:border-slate-800/80 md:border-none bg-white md:bg-transparent dark:bg-slate-900 rounded-3xl'):
-                with ui.column().classes('w-full mb-6'):
-                    ui.label('Create Account').classes('text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-1')
-                    ui.label('Get started with your free digital library').classes('text-sm text-slate-500 dark:text-slate-400')
+        with ui.column().classes('w-full md:w-1/2 h-full items-center justify-center bg-slate-50 dark:bg-slate-900 p-4 sm:p-8 transition-colors duration-300 overflow-y-auto'):
+            with ui.card().classes('w-full max-w-md p-5 sm:p-8 shadow-xl md:shadow-none border border-slate-200/80 dark:border-slate-800/80 md:border-none bg-white md:bg-transparent dark:bg-slate-900 rounded-2xl sm:rounded-3xl'):
+                with ui.column().classes('w-full mb-4 sm:mb-6'):
+                    ui.label('Create Account').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-1')
+                    ui.label('Get started with your free digital library').classes('text-xs sm:text-sm text-slate-500 dark:text-slate-400')
 
                 # Username Field
                 username = ui.input(placeholder='Username') \

@@ -8,6 +8,7 @@ from nicegui import ui, app, events
 try:
     from components.sidebar import sidebar
     from components.header import header
+    from components.bottom_nav import bottom_nav
     from core.database.mongo_manager import mongo_db
     from .planner_service import planner_service
 except ImportError:
@@ -48,9 +49,9 @@ class FlashcardCarousel(ui.element):
             
             # --- CARD CONTAINER (THE SIZE FIXES) ---
             # 1. w-full max-w-xl: Controls width responsiveness
-            # 2. h-96: FIXED HEIGHT (384px). 'h-100' is not standard tailwind, h-96 prevents layout shift.
+            # 2. h-72 sm:h-80 md:h-96: Responsive height that fits mobile viewports
             # 3. relative perspective: Essential for 3D effect
-            container = ui.card().classes('w-full max-w-xl h-96 relative perspective cursor-pointer no-shadow border-0 bg-transparent') \
+            container = ui.card().classes('w-full max-w-xl h-72 sm:h-80 md:h-96 relative perspective cursor-pointer no-shadow border-0 bg-transparent') \
                 .on('click', self.flip)
             
             # 3D Depth style
@@ -58,37 +59,35 @@ class FlashcardCarousel(ui.element):
 
             with container:
                 # --- FRONT FACE ---
-                # absolute inset-0: Ensures it fills the h-96 container exactly
                 self.front = ui.column().classes(
-                    'absolute inset-0 w-full h-full bg-white border border-gray-200 shadow-lg rounded-2xl items-center justify-center p-8 text-center'
+                    'absolute inset-0 w-full h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg rounded-2xl items-center justify-center p-5 sm:p-8 text-center'
                 )
                 self.front.style('backface-visibility: hidden; transition: transform 0.6s; transform-style: preserve-3d;')
                 
                 with self.front:
-                    ui.label("QUESTION").classes('text-xs font-bold tracking-widest text-indigo-400 mb-4')
-                    # overflow-y-auto ensures long text doesn't break the card
-                    ui.label(self.get_text('q')).classes('text-2xl font-medium text-slate-800 overflow-y-auto max-h-full')
-                    ui.label("Tap to reveal").classes('text-xs text-gray-300 mt-auto pt-4')
+                    ui.label("QUESTION").classes('text-xs font-bold tracking-widest text-indigo-500 mb-2 sm:mb-4')
+                    ui.label(self.get_text('q')).classes('text-lg sm:text-2xl font-medium text-slate-800 dark:text-slate-100 overflow-y-auto max-h-full break-words')
+                    ui.label("Tap to reveal").classes('text-xs text-slate-400 mt-auto pt-2 sm:pt-4')
 
                 # --- BACK FACE ---
                 self.back = ui.column().classes(
-                    'absolute inset-0 w-full h-full bg-indigo-600 shadow-lg rounded-2xl items-center justify-center p-8 text-center'
+                    'absolute inset-0 w-full h-full bg-indigo-600 shadow-lg rounded-2xl items-center justify-center p-5 sm:p-8 text-center'
                 )
                 # Start rotated 180deg
                 self.back.style('backface-visibility: hidden; transition: transform 0.6s; transform: rotateY(180deg); transform-style: preserve-3d;')
                 
                 with self.back:
-                    ui.label("ANSWER").classes('text-xs font-bold tracking-widest text-indigo-200 mb-4')
-                    ui.label(self.get_text('a')).classes('text-xl font-medium text-white overflow-y-auto max-h-full')
+                    ui.label("ANSWER").classes('text-xs font-bold tracking-widest text-indigo-200 mb-2 sm:mb-4')
+                    ui.label(self.get_text('a')).classes('text-base sm:text-xl font-medium text-white overflow-y-auto max-h-full break-words')
 
             # --- CONTROLS ---
-            with ui.row().classes('mt-8 gap-6 items-center'):
-                ui.button(icon='arrow_back', on_click=self.prev_card).props('round flat color=grey')
+            with ui.row().classes('mt-4 sm:mt-8 gap-3 sm:gap-6 items-center justify-center flex-wrap'):
+                ui.button(icon='arrow_back', on_click=self.prev_card).props('round flat color=grey size=md')
                 
-                # Main Flip Button (for those who don't want to click the card)
-                ui.button('Flip Card', on_click=self.flip).props('rounded outline color=indigo').classes('px-8')
+                # Main Flip Button
+                ui.button('Flip Card', on_click=self.flip).props('rounded outline color=indigo size=md').classes('px-5 sm:px-8 font-bold')
                 
-                ui.button(icon='arrow_forward', on_click=self.next_card).props('round flat color=grey')
+                ui.button(icon='arrow_forward', on_click=self.next_card).props('round flat color=grey size=md')
 
         # Apply state
         self._apply_rotation()
@@ -146,14 +145,14 @@ class StudyPlannerPage:
     async def open_study_modal(self, task):
         deck = await planner_service.get_deck(task['id'])
 
-        with ui.dialog() as dialog, ui.card().classes('w-full max-w-4xl h-[85vh] flex flex-col p-0 overflow-hidden'):
+        with ui.dialog() as dialog, ui.card().classes('w-[calc(100vw-1.5rem)] sm:w-full max-w-4xl h-[90vh] sm:h-[85vh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800'):
             # Header
-            with ui.row().classes('w-full border-b p-4 justify-between items-center bg-white z-10'):
-                ui.label(task['title']).classes('text-xl font-bold text-slate-700')
-                ui.button(icon='close', on_click=dialog.close).props('flat round color=grey')
+            with ui.row().classes('w-full border-b border-slate-200 dark:border-slate-800 p-3.5 sm:p-4 justify-between items-center bg-white dark:bg-slate-900 z-10'):
+                ui.label(task['title']).classes('text-base sm:text-xl font-bold text-slate-800 dark:text-slate-100 truncate max-w-[200px] sm:max-w-md')
+                ui.button(icon='close', on_click=dialog.close).props('flat round color=grey size=md')
             
             # Content
-            content_area = ui.column().classes('w-full flex-grow items-center justify-center bg-slate-50 p-6 scroll-y-auto')
+            content_area = ui.column().classes('w-full flex-grow items-center justify-center bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 overflow-y-auto')
             
             with content_area:
                 if deck and 'cards' in deck and len(deck['cards']) > 0:
@@ -168,39 +167,39 @@ class StudyPlannerPage:
             FlashcardCarousel(deck['cards'])
             
             # Clean Refresh Button
-            with ui.button(on_click=lambda: self._show_upload_screen(container, task, dialog)).props('round flat color=grey icon=refresh').classes('absolute bottom-4 right-4 opacity-50 hover:opacity-100'):
+            with ui.button(on_click=lambda: self._show_upload_screen(container, task, dialog)).props('round flat color=grey icon=refresh size=md').classes('absolute bottom-4 right-4 opacity-70 hover:opacity-100 bg-white/80 dark:bg-slate-800/80 shadow'):
                 ui.tooltip('Regenerate Deck')
 
     def _show_upload_screen(self, container, task, dialog):
         container.clear()
         with container:
-            ui.icon('school', size='4rem').classes('text-indigo-200 mb-4')
-            ui.label("Create Your Study Deck").classes('text-xl font-bold text-slate-700 mb-2')
-            ui.label("Select a document from your library or upload a new one.").classes('text-sm text-gray-400 mb-8')
+            ui.icon('school', size='3.5em').classes('text-indigo-400 mb-2')
+            ui.label("Create Your Study Deck").classes('text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100 mb-1')
+            ui.label("Select a document from your library or upload a new one.").classes('text-xs sm:text-sm text-slate-400 mb-6 text-center max-w-sm')
 
             # Container for the two options
-            with ui.row().classes('w-full max-w-2xl justify-center gap-8 items-start'):
+            with ui.row().classes('w-full max-w-2xl justify-center gap-4 sm:gap-8 items-stretch flex-col md:flex-row'):
                 
                 # --- OPTION 1: UPLOAD NEW FILE ---
-                with ui.column().classes('items-center border border-gray-200 rounded-xl p-6 bg-white flex-1'):
-                    ui.label("Upload File").classes('font-bold text-slate-600 mb-2')
-                    ui.label("PDF, TXT, DOCX, PPTX").classes('text-xs text-gray-400 mb-4')
+                with ui.column().classes('items-center border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 bg-white dark:bg-slate-900 flex-1 w-full shadow-sm'):
+                    ui.label("Upload File").classes('font-bold text-slate-700 dark:text-slate-200 mb-1 text-sm sm:text-base')
+                    ui.label("PDF, TXT, DOCX, PPTX").classes('text-xs text-slate-400 mb-4')
                     async def handle_upload(e: events.UploadEventArguments):
                         await self._process_deck_generation(e, task, container, dialog, is_upload=True)
 
                     ui.upload(label="Drop file here", auto_upload=True, on_upload=handle_upload)\
-                        .props('color=indigo accept=.pdf,.txt,.docx,.pptx').classes('w-full')
+                        .props('color=indigo accept=.pdf,.txt,.docx,.pptx flat bordered').classes('w-full rounded-xl')
 
                 # --- OPTION 2: SELECT FROM LIBRARY ---
-                with ui.column().classes('items-center border border-gray-200 rounded-xl p-6 bg-white flex-1'):
-                    ui.label("Select from Library").classes('font-bold text-slate-600 mb-2')
-                    ui.label("Excludes large books").classes('text-xs text-gray-400 mb-4')
+                with ui.column().classes('items-center border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 bg-white dark:bg-slate-900 flex-1 w-full shadow-sm'):
+                    ui.label("Select from Library").classes('font-bold text-slate-700 dark:text-slate-200 mb-1 text-sm sm:text-base')
+                    ui.label("Excludes large books").classes('text-xs text-slate-400 mb-4')
                     
                     self.library_select = ui.select({'loading': 'Loading documents...'}, label="Choose Document", on_change=lambda e: self.generate_btn.enable() if e.value else self.generate_btn.disable())\
-                        .props('outlined dense options-dense').classes('w-full mb-4')
+                        .props('outlined dense options-dense').classes('w-full mb-4 text-sm')
                     
                     self.generate_btn = ui.button('Generate Flashcards', on_click=lambda: self._process_deck_generation(self.library_select.value, task, container, dialog, is_upload=False))\
-                        .props('color=indigo outline').classes('w-full').disable()
+                        .props('color=indigo outline').classes('w-full font-bold').disable()
                     
                     # Fetch valid library items asynchronously
                     ui.timer(0.1, self._populate_library_dropdown, once=True)
@@ -292,7 +291,7 @@ class StudyPlannerPage:
                                 def read(self):
                                     return self.content
                             
-                            file_obj = MockFile(name=filename or "library_doc.pdf", content=file_bytes)
+                            file_obj = MockFile(name=Path(found_path).name or "library_doc.pdf", content=file_bytes)
                     else:
                         ui.notify("Could not locate the physical file for this document.", type='negative')
                         spinner.close()
@@ -330,47 +329,48 @@ class StudyPlannerPage:
         if not self.container: return
         self.container.clear()
         with self.container:
-            ui.label('Study Planner').classes('text-4xl font-bold mb-8 text-slate-800')
+            ui.label('Study Planner').classes('text-2xl sm:text-3xl md:text-4xl font-black mb-4 sm:mb-8 text-slate-800 dark:text-slate-100 tracking-tight')
             
-            with ui.row().classes('w-full justify-between items-center mb-8'):
-                ui.label('Your Topics').classes('text-xl text-gray-500 font-medium')
-                ui.button('New Topic', icon='add', on_click=self.open_add_dialog).props('color=indigo')
+            with ui.row().classes('w-full justify-between items-center mb-6 gap-2'):
+                ui.label('Your Topics').classes('text-lg sm:text-xl text-slate-500 dark:text-slate-400 font-semibold')
+                ui.button('New Topic', icon='add', on_click=self.open_add_dialog).props('color=indigo unelevated rounded size=md').classes('font-bold shadow-sm')
 
             if not self.tasks:
-                with ui.column().classes('w-full items-center py-12'):
-                    ui.icon('assignment', size='4rem').classes('text-gray-200 mb-4')
-                    ui.label("No topics yet.").classes('text-gray-400 italic')
+                with ui.column().classes('w-full items-center py-12 sm:py-16 text-center'):
+                    ui.icon('assignment', size='3.5em').classes('text-slate-300 dark:text-slate-600 mb-3')
+                    ui.label("No topics yet.").classes('text-slate-400 text-sm italic')
             
-            with ui.grid().classes('w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'):
+            with ui.grid().classes('w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6'):
                 for task in self.tasks: self.render_task_card(task)
 
     def render_task_card(self, task):
-        with ui.card().classes('p-6 flex flex-col gap-4 hover:shadow-md transition-shadow'):
-            with ui.row().classes('w-full justify-between items-start'):
-                with ui.column().classes('gap-1'):
-                    ui.label(task['title']).classes('text-lg font-bold text-slate-700')
+        with ui.card().classes('p-4 sm:p-6 flex flex-col gap-3 sm:gap-4 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:shadow-lg transition-all'):
+            with ui.row().classes('w-full justify-between items-start gap-2'):
+                with ui.column().classes('gap-0.5 flex-1 min-w-0'):
+                    ui.label(task['title']).classes('text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 leading-snug break-words')
                     date_str = task['due_date'] if task['due_date'] else "No date"
-                    ui.label(f"Due: {date_str}").classes('text-xs text-gray-400')
+                    ui.label(f"Due: {date_str}").classes('text-xs text-slate-400 font-medium')
                 
-                ui.button(icon='delete', on_click=lambda: self.delete_task(task['id'])).props('flat dense round color=grey')
+                ui.button(icon='delete', on_click=lambda: self.delete_task(task['id'])).props('flat dense round color=grey size=md')
             
-            ui.separator().classes('my-2')
-            ui.button("Open Flashcards", icon='school', on_click=lambda: self.open_study_modal(task)).props('flat color=indigo').classes('w-full')
+            ui.separator().classes('my-1 opacity-50')
+            ui.button("Open Flashcards", icon='school', on_click=lambda: self.open_study_modal(task)).props('flat color=indigo size=md').classes('w-full font-bold')
 
     def open_add_dialog(self):
-        with ui.dialog() as self.add_dialog, ui.card().classes('w-96 p-6'):
-            ui.label("New Topic").classes('text-xl font-bold mb-4')
-            name = ui.input("Topic Name").classes('w-full mb-4').props('autofocus')
-            date = ui.input("Target Date").props('type=date').classes('w-full mb-8')
-            with ui.row().classes('w-full justify-end'):
+        with ui.dialog() as self.add_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-md p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl'):
+            ui.label("New Topic").classes('text-xl font-bold mb-4 text-slate-800 dark:text-slate-100')
+            name = ui.input("Topic Name").classes('w-full mb-3 text-sm').props('outlined rounded autofocus')
+            date = ui.input("Target Date").props('outlined rounded type=date').classes('w-full mb-6 text-sm')
+            with ui.row().classes('w-full justify-end gap-2'):
                 ui.button("Cancel", on_click=self.add_dialog.close).props('flat color=grey')
-                ui.button("Create", on_click=lambda: self.add_task(name.value, date.value)).props('color=indigo')
+                ui.button("Create", on_click=lambda: self.add_task(name.value, date.value)).props('unelevated rounded color=indigo font-bold')
         self.add_dialog.open()
 
     def build_ui(self):
-        if 'sidebar' in globals(): sidebar()
-        if 'header' in globals(): header(drawer_reference=None)
-        with ui.column().classes('w-full min-h-screen pt-24 px-8 bg-gray-50'):
+        drawer = sidebar()
+        header(drawer_reference=drawer)
+        bottom_nav()
+        with ui.column().classes('w-full min-h-screen pt-20 px-3 sm:px-4 md:pt-24 md:px-8 bg-slate-50/50 dark:bg-transparent pb-32 md:pb-24'):
             self.container = ui.column().classes('w-full max-w-7xl mx-auto')
 
 @ui.page('/planner')

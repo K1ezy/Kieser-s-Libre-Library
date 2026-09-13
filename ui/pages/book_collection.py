@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Any, List
 from components.sidebar import sidebar
 from components.header import header
+from components.bottom_nav import bottom_nav
 from components.book_card import book_card
 from core.database.mongo_manager import mongo_db
 
@@ -145,11 +146,11 @@ class BookCollection:
 
     def prompt_delete(self, book_id: str, title: str):
         """Shows deletion confirmation dialog."""
-        with ui.dialog() as dialog, ui.card().classes('p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl'):
-            ui.label(f"Delete '{title}'?").classes('text-lg font-bold text-red-600')
-            ui.label("This will permanently remove the file, metadata, and AI knowledge chunks.").classes('text-sm text-slate-500 dark:text-slate-400 mt-1')
+        with ui.dialog() as dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-md p-5 sm:p-6 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl'):
+            ui.label(f"Delete '{title}'?").classes('text-base sm:text-lg font-bold text-red-600')
+            ui.label("This will permanently remove the file, metadata, and AI knowledge chunks.").classes('text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1')
             
-            with ui.row().classes('w-full justify-end gap-3 mt-6'):
+            with ui.row().classes('w-full justify-end gap-2.5 mt-5 sm:mt-6'):
                 ui.button('Cancel', on_click=dialog.close).props('flat color=grey')
                 
                 async def confirm():
@@ -167,48 +168,51 @@ class BookCollection:
     def build_ui(self):
         drawer = sidebar()
         header(drawer_reference=drawer)
+        bottom_nav()
 
-        with ui.column().classes('w-full min-h-screen pt-20 px-4 md:pt-24 md:px-8 max-w-7xl mx-auto bg-slate-50/50 dark:bg-transparent'):
+        with ui.column().classes('w-full min-h-screen pt-20 px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto bg-slate-50/50 dark:bg-transparent pb-32 md:pb-24'):
             
             # --- HERO / FILTER BAR ---
-            with ui.column().classes('w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-6 py-6 mb-8 rounded-3xl shadow-sm'):
-                with ui.row().classes('w-full items-end justify-between gap-4 wrap'):
-                    with ui.column().classes('gap-1'):
-                        ui.label('Library Archive').classes('text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight')
-                        self.hero_count_label = ui.label('Loading collection...').classes('text-slate-500 dark:text-slate-400 font-medium')
+            with ui.column().classes('w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 sm:p-6 mb-6 sm:mb-8 rounded-2xl sm:rounded-3xl shadow-sm'):
+                with ui.row().classes('w-full items-start md:items-end justify-between gap-4 flex-col md:flex-row'):
+                    with ui.column().classes('gap-0.5'):
+                        ui.label('Library Archive').classes('text-2xl sm:text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight')
+                        self.hero_count_label = ui.label('Loading collection...').classes('text-slate-500 dark:text-slate-400 font-medium text-xs sm:text-sm')
                     
-                    with ui.row().classes('w-full md:w-auto gap-2.5 items-center flex-wrap'):
-                        # Format Filter
-                        self.format_select = ui.select(self.unique_formats, value='All', label='Format',
-                                  on_change=lambda e: (self.state.update({'format_filter': e.value}), self.apply_filters_and_sort())) \
-                            .props('outlined dense options-dense').classes('w-full md:w-32')
+                    with ui.column().classes('w-full md:w-auto gap-2'):
+                        # Row 1: Search bar + Refresh
+                        with ui.row().classes('w-full md:w-auto items-center gap-2'):
+                            ui.input(placeholder='Search Title or Author...', 
+                                     on_change=lambda e: (self.state.update({'search_term': e.value}), self.apply_filters_and_sort())) \
+                                .bind_value(self.state, 'search_term') \
+                                .props('outlined rounded dense icon=search clearable') \
+                                .classes('flex-1 md:w-64 text-sm')
 
-                        # Author Filter
-                        self.author_select = ui.select(self.unique_authors, value='All', label='Author',
-                                  on_change=lambda e: (self.state.update({'author_filter': e.value}), self.apply_filters_and_sort())) \
-                            .props('outlined dense options-dense').classes('w-full md:w-48')
+                            ui.button(icon='refresh', on_click=self.load_books) \
+                                .props('flat round dense color=indigo size=md') \
+                                .tooltip('Reload Library')
 
-                        # Sorting
-                        ui.select(['Newest', 'Oldest', 'A-Z', 'Author'], value='Newest', label='Sort By',
-                                  on_change=lambda e: (self.state.update({'sort_by': e.value}), self.apply_filters_and_sort())) \
-                            .props('outlined dense options-dense').classes('w-full md:w-32')
+                        # Row 2: Responsive Filters (Format & Sort By side-by-side, Author underneath on mobile)
+                        with ui.row().classes('w-full md:w-auto items-center gap-2 flex-wrap md:flex-nowrap'):
+                            self.format_select = ui.select(self.unique_formats, value='All', label='Format',
+                                      on_change=lambda e: (self.state.update({'format_filter': e.value}), self.apply_filters_and_sort())) \
+                                .props('outlined dense options-dense').classes('flex-1 md:w-28 text-sm')
 
-                        # Live Local Filter
-                        ui.input(placeholder='Filter Title/Author...', 
-                                 on_change=lambda e: (self.state.update({'search_term': e.value}), self.apply_filters_and_sort())) \
-                            .bind_value(self.state, 'search_term') \
-                            .props('outlined rounded dense icon=search clearable').classes('w-full md:w-60')
+                            ui.select(['Newest', 'Oldest', 'A-Z', 'Author'], value='Newest', label='Sort By',
+                                      on_change=lambda e: (self.state.update({'sort_by': e.value}), self.apply_filters_and_sort())) \
+                                .props('outlined dense options-dense').classes('flex-1 md:w-32 text-sm')
 
-                        # Refresh
-                        ui.button(icon='refresh', on_click=self.load_books).props('flat round dense color=indigo').tooltip('Reload Library')
+                            self.author_select = ui.select(self.unique_authors, value='All', label='Author',
+                                      on_change=lambda e: (self.state.update({'author_filter': e.value}), self.apply_filters_and_sort())) \
+                                .props('outlined dense options-dense').classes('w-full md:w-44 text-sm')
 
             # --- BOOKS GRID ---
-            with ui.column().classes('w-full pb-24 items-center'):
-                with ui.grid().classes('w-full gap-4 md:gap-6 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 mb-8') as self.grid_container:
+            with ui.column().classes('w-full items-center'):
+                with ui.grid().classes('w-full gap-3 sm:gap-4 md:gap-6 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 mb-8') as self.grid_container:
                     pass
 
                 self.load_more_btn = ui.button('Load More Books', on_click=self.load_more_batch) \
-                    .props('outline color=indigo rounded').classes('w-full md:w-48 font-bold')
+                    .props('outline color=indigo rounded').classes('w-full sm:w-48 font-bold')
 
 async def books_page():
     app.storage.client['page_path'] = '/books'

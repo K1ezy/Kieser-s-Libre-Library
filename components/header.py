@@ -47,11 +47,11 @@ def header(drawer_reference=None):
 
     # --- UI: MOBILE SEARCH DIALOG ---
     def open_mobile_search():
-        with ui.dialog() as search_dialog, ui.card().classes('w-full m-4 p-4 rounded-2xl shadow-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800'):
+        with ui.dialog() as search_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-md p-5 rounded-2xl shadow-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800'):
             ui.label('Search Library').classes('text-lg font-bold text-slate-800 dark:text-slate-100 mb-2')
             mobile_input = ui.input(placeholder='Book title, author, topic...') \
                 .props('rounded outlined autofocus prepend-icon=search') \
-                .classes('w-full')
+                .classes('w-full text-base')
 
             mobile_input.on('keydown.enter', lambda e: (handle_search(mobile_input), search_dialog.close()))
 
@@ -64,20 +64,20 @@ def header(drawer_reference=None):
     # --- UI: MAIN HEADER LAYOUT ---
     with ui.header().classes(
         'bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 '
-        'dark:border-slate-800/80 items-center px-3 md:px-6 h-16 fixed top-0 w-full z-40'
+        'dark:border-slate-800/80 items-center px-2.5 sm:px-4 md:px-6 h-16 fixed top-0 w-full z-40'
     ).props('elevated=False'):
 
         # 1. LEFT SECTION: NAVIGATION & BRAND
-        with ui.row().classes('items-center gap-2'):
+        with ui.row().classes('items-center gap-1.5 sm:gap-2 shrink-0'):
             if drawer_reference:
                 ui.button(icon='menu', on_click=drawer_reference.toggle) \
-                    .props('flat round dense color=grey-8') \
+                    .props('flat round dense color=grey-8 size=md') \
                     .tooltip('Toggle Sidebar')
 
-            with ui.row().classes('cursor-pointer items-center gap-2.5').on('click', lambda: ui.navigate.to('/')):
-                with ui.element('div').classes('p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center'):
+            with ui.row().classes('cursor-pointer items-center gap-2').on('click', lambda: ui.navigate.to('/')):
+                with ui.element('div').classes('p-1.5 sm:p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center'):
                     ui.icon('auto_stories', size='sm')
-                ui.label('Libre Library').classes('text-xl font-black text-slate-800 dark:text-slate-100 hidden sm:block tracking-tight')
+                ui.label('Libre Library').classes('text-lg sm:text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight')
 
         ui.space()
 
@@ -91,19 +91,19 @@ def header(drawer_reference=None):
         ui.space()
 
         # 3. RIGHT SECTION: ACTIONS & PROFILE
-        with ui.row().classes('items-center gap-1.5'):
+        with ui.row().classes('items-center gap-1 sm:gap-1.5 shrink-0'):
             ui.button(icon='search', on_click=open_mobile_search) \
-                .props('flat round dense color=grey-7') \
+                .props('flat round dense color=grey-7 size=md') \
                 .classes('md:hidden')
 
             # Quick Actions Menu
-            with ui.button(icon='add_circle').props('flat round dense color=indigo'):
+            with ui.button(icon='add_circle').props('flat round dense color=indigo size=md'):
                 with ui.menu().classes('bg-white dark:bg-slate-900 shadow-xl border border-slate-100 dark:border-slate-800 rounded-2xl p-1'):
                     ui.menu_item('Upload Book', on_click=lambda: ui.navigate.to('/upload')).props('prepend-icon=cloud_upload')
                     ui.menu_item('New Study Task', on_click=lambda: ui.navigate.to('/planner')).props('prepend-icon=check_circle')
 
             # Profile Menu
-            with ui.button().props('flat round dense no-caps'):
+            with ui.button().props('flat round dense no-caps size=md'):
                 ui.avatar(icon='person', color='indigo-50', text_color='indigo', size='md')
                 with ui.menu().classes('bg-white dark:bg-slate-900 shadow-xl border border-slate-100 dark:border-slate-800 rounded-2xl p-1'):
                     ui.menu_item('My Profile', on_click=lambda: ui.navigate.to('/profile')).props('prepend-icon=person')

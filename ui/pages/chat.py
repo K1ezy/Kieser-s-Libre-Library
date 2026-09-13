@@ -14,6 +14,7 @@ import string
 # IMPORT RESPONSIVE COMPONENTS
 from components.sidebar import sidebar 
 from components.header import header 
+from components.bottom_nav import bottom_nav 
 
 # Setup Interface Logger
 logger = logging.getLogger("TARS_UI")
@@ -71,13 +72,13 @@ class ChatInterface:
                     if msg['role'] == 'user':
                         with ui.row().classes('w-full justify-end'):
                             ui.label(msg.get('content', '...')).classes(
-                                'px-4 py-3 bg-indigo-600 text-white rounded-2xl rounded-tr-none text-sm shadow-sm max-w-[85%]'
+                                'px-3.5 py-2.5 sm:px-4 sm:py-3 bg-indigo-600 text-white rounded-2xl rounded-tr-none text-sm shadow-sm max-w-[88%] sm:max-w-[75%] break-words'
                             )
                     else:
                         with ui.row().classes('w-full justify-start'):
                             ui.markdown(msg.get('content', '...')).classes(
-                                'p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 '
-                                'rounded-2xl rounded-tl-none shadow-sm max-w-[95%] text-sm text-slate-800 dark:text-slate-100'
+                                'p-3.5 sm:p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 '
+                                'rounded-2xl rounded-tl-none shadow-sm max-w-[95%] sm:max-w-[85%] text-sm text-slate-800 dark:text-slate-100 break-words overflow-x-auto'
                             )
             
             self.scroll_to_bottom()
@@ -245,7 +246,7 @@ class ChatInterface:
         with self.log_container:
              with ui.row().classes('w-full justify-end mb-4'):
                 ui.label(text).classes(
-                    'px-4 py-3 bg-indigo-600 text-white rounded-2xl rounded-tr-none text-sm shadow-sm max-w-[85%]'
+                    'px-3.5 py-2.5 sm:px-4 sm:py-3 bg-indigo-600 text-white rounded-2xl rounded-tr-none text-sm shadow-sm max-w-[88%] sm:max-w-[75%] break-words'
                 )
         await mongo_db.add_message_to_session(self.session_id, "user", text)
         self.scroll_to_bottom()
@@ -253,9 +254,9 @@ class ChatInterface:
         # 2. AI Placeholder
         with self.log_container:
             with ui.row().classes('w-full justify-start mb-4'):
-                with ui.column().classes('p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl rounded-tl-none shadow-sm max-w-[95%]'):
+                with ui.column().classes('p-3.5 sm:p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl rounded-tl-none shadow-sm max-w-[95%] sm:max-w-[85%] break-words overflow-x-auto'):
                     status = ui.label("Consulting archives...").classes('text-xs text-indigo-500 animate-pulse font-medium')
-                    message_content = ui.markdown()
+                    message_content = ui.markdown().classes('break-words overflow-x-auto max-w-full')
 
         # Intent Detection
         clean_input = text.lower().translate(str.maketrans('', '', string.punctuation)).strip()
@@ -343,45 +344,51 @@ class ChatInterface:
 
     def build_ui(self):
         # 1. UPLOAD DIALOG
-        with ui.dialog() as self.upload_dialog, ui.card().classes('min-w-[320px] md:min-w-[440px] p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl'):
+        with ui.dialog() as self.upload_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-md p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl'):
             ui.label("Ingest Document to TARS").classes('text-lg font-bold text-slate-800 dark:text-slate-100')
             ui.label("Upload PDF, EPUB, DOCX, PPTX, or TXT into your library & knowledge base.").classes('text-xs text-slate-500 dark:text-slate-400 mb-4')
-            ui.upload(on_upload=self.handle_upload, auto_upload=True).props('accept=".pdf,.epub,.docx,.pptx,.txt" color=indigo flat bordered').classes('w-full border-2 border-dashed border-indigo-200 rounded-2xl')
-            ui.button('Close', on_click=self.upload_dialog.close).props('flat color=grey').classes('w-full mt-3')
+            ui.upload(on_upload=self.handle_upload, auto_upload=True).props('accept=".pdf,.epub,.docx,.pptx,.txt" color=indigo flat bordered').classes('w-full border-2 border-dashed border-indigo-200 rounded-xl')
+            ui.button('Close', on_click=self.upload_dialog.close).props('flat color=grey size=md').classes('w-full mt-3')
         
         # 2. RESPONSIVE NAVIGATION
         drawer = sidebar(chat_interface=self) 
         header(drawer_reference=drawer)
+        bottom_nav()
         
         # 3. MAIN LAYOUT
-        with ui.column().classes('w-full h-screen pt-16 bg-slate-50 dark:bg-slate-950 overflow-hidden'):
+        with ui.column().classes('w-full h-screen pt-16 pb-16 md:pb-0 bg-slate-50 dark:bg-slate-950 overflow-hidden'):
             
             # Scrollable Chat Log
-            with ui.column().classes('w-full flex-grow overflow-y-auto p-4 md:p-6 no-scrollbar') as self.scroll_container:
-                with ui.column().classes('w-full max-w-4xl mx-auto gap-4 pb-4') as self.log_container:
-                    ui.label(f'Session: {self.session_id}').classes('text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest self-center my-2')
+            with ui.column().classes('w-full flex-grow overflow-y-auto p-3 sm:p-4 md:p-6 no-scrollbar') as self.scroll_container:
+                with ui.column().classes('w-full max-w-4xl mx-auto gap-3 sm:gap-4 pb-4') as self.log_container:
+                    ui.label(f'Session: {self.session_id}').classes('text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest self-center my-1 sm:my-2')
                 
                 self.scroll_anchor = ui.element('div').classes('h-px w-full')
 
-            # Sticky Input Bar
-            with ui.row().classes(
+            # Sticky Input Bar (Redesigned with top tool bar and full-width input for mobile)
+            with ui.column().classes(
                 'w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 '
-                'p-3 md:p-4 items-end gap-2.5 z-30 shrink-0 max-w-4xl mx-auto rounded-t-3xl shadow-lg'
+                'p-2.5 sm:p-3 md:p-4 gap-1.5 z-30 shrink-0 max-w-4xl mx-auto rounded-t-2xl sm:rounded-t-3xl shadow-lg'
             ):
-                with ui.row().classes('gap-1'):
-                    ui.button(icon='cloud_upload', on_click=lambda: self.upload_dialog.open()).props('flat round dense color=indigo').tooltip('Upload Material')
-                    self.continue_btn = ui.button(icon='fast_forward', on_click=self.continue_generation).props('round dense color=amber').tooltip('Continue Generating')
-                    self.continue_btn.disable()
-                    ui.button(icon='bookmark', on_click=self.save_last_response).props('flat round dense color=indigo').tooltip('Save Note')
+                # Action buttons row
+                with ui.row().classes('w-full items-center justify-between px-1'):
+                    with ui.row().classes('items-center gap-1'):
+                        ui.button(icon='cloud_upload', on_click=lambda: self.upload_dialog.open()).props('flat round dense color=indigo size=sm').tooltip('Upload Material')
+                        self.continue_btn = ui.button(icon='fast_forward', on_click=self.continue_generation).props('round dense color=amber size=sm').tooltip('Continue Generating')
+                        self.continue_btn.disable()
+                        ui.button(icon='bookmark', on_click=self.save_last_response).props('flat round dense color=indigo size=sm').tooltip('Save Note')
+                    with ui.row().classes('items-center gap-1'):
+                        ui.button(icon='delete_sweep', on_click=self.start_new_chat).props('flat round dense color=grey size=sm').tooltip('Clear / New Chat')
 
-                self.text_input = ui.textarea(placeholder='Ask TARS anything about your books or study materials...').props('rows=1 autogrow outlined rounded bg-color=slate-50') \
-                    .classes('flex-grow text-sm max-h-32') \
-                    .on('keydown.enter.prevent', self.send_message)
-                
-                with ui.row():
-                    self.send_btn = ui.button(icon='send', on_click=self.send_message).props('round unelevated color=indigo').classes('shadow-md')
-                    self.stop_btn = ui.button(icon='stop', on_click=self.stop_generation).props('round color=red shadow-md')
-                    self.stop_btn.set_visibility(False)
+                # Input and send button row
+                with ui.row().classes('w-full items-end gap-2'):
+                    self.text_input = ui.textarea(placeholder='Ask TARS anything...').props('rows=1 autogrow outlined rounded bg-color=slate-50') \
+                        .classes('flex-grow text-sm max-h-32') \
+                        .on('keydown.enter.prevent', self.send_message)
+                    with ui.row().classes('shrink-0'):
+                        self.send_btn = ui.button(icon='send', on_click=self.send_message).props('round unelevated color=indigo size=md').classes('shadow-md')
+                        self.stop_btn = ui.button(icon='stop', on_click=self.stop_generation).props('round color=red size=md shadow-md')
+                        self.stop_btn.set_visibility(False)
 
 async def chat_page():
     app.storage.client['page_path'] = '/chat' 

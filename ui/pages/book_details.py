@@ -1,6 +1,7 @@
 from nicegui import ui, app
 from components.sidebar import sidebar
 from components.header import header
+from components.bottom_nav import bottom_nav
 from core.database.mongo_manager import mongo_db
 from pathlib import Path
 from core.config import settings
@@ -45,14 +46,14 @@ class BookDetailsPage:
             cover_url = "/static/default_cover.svg"
 
         with self.content_container:
-            with ui.row().classes('w-full flex-col md:flex-row gap-8 md:gap-12 items-start'):
+            with ui.row().classes('w-full flex-col md:flex-row gap-6 md:gap-12 items-start'):
                 
                 # LEFT: Cover & Quick Actions
                 with ui.column().classes('w-full md:w-1/3 lg:w-1/4 items-center'):
-                    with ui.card().classes('p-0 rounded-3xl overflow-hidden shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 w-48 md:w-64 aspect-[2/3]'):
+                    with ui.card().classes('p-0 rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl sm:shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 w-44 sm:w-52 md:w-64 aspect-[2/3]'):
                         ui.image(cover_url).classes('w-full h-full object-cover')
                     
-                    with ui.column().classes('w-full max-w-xs gap-3 mt-6'):
+                    with ui.column().classes('w-full max-w-xs gap-2.5 sm:gap-3 mt-4 sm:mt-6'):
                         with ui.button(on_click=lambda: ui.navigate.to(f"/read/{self.book_id}")) \
                             .classes('w-full bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl py-3 font-bold shadow-md'):
                             ui.icon('menu_book').classes('mr-2')
@@ -64,10 +65,10 @@ class BookDetailsPage:
                             ui.label('Ask TARS AI')
 
                 # RIGHT: Metadata & Details
-                with ui.column().classes('flex-1 gap-6 w-full'):
+                with ui.column().classes('flex-1 gap-5 sm:gap-6 w-full'):
                     with ui.column().classes('gap-1'):
-                        ui.label(title).classes('text-3xl md:text-5xl font-black text-slate-800 dark:text-slate-100 leading-tight tracking-tight')
-                        ui.label(f"by {author_name}").classes('text-xl text-indigo-600 dark:text-indigo-400 font-semibold')
+                        ui.label(title).classes('text-2xl sm:text-3xl md:text-5xl font-black text-slate-800 dark:text-slate-100 leading-tight tracking-tight')
+                        ui.label(f"by {author_name}").classes('text-base sm:text-xl text-indigo-600 dark:text-indigo-400 font-semibold')
 
                     # Badges
                     with ui.row().classes('gap-2 my-1 flex-wrap'):
@@ -80,7 +81,7 @@ class BookDetailsPage:
                     # Context Box
                     genres = self.book.get('genres', []) or self.book.get('subjects', [])
                     if genres:
-                        with ui.column().classes('gap-2 w-full p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-100 dark:border-slate-800'):
+                        with ui.column().classes('gap-2 w-full p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-100 dark:border-slate-800'):
                             ui.label('Categories & Topics').classes('text-xs font-bold text-indigo-500 uppercase tracking-wider')
                             with ui.row().classes('gap-2 flex-wrap'):
                                 for g in genres[:6]:
@@ -91,10 +92,10 @@ class BookDetailsPage:
                     # Synopsis
                     with ui.column().classes('gap-2'):
                         ui.label('Synopsis').classes('text-xs font-bold text-slate-400 uppercase tracking-wider')
-                        ui.markdown(desc).classes('text-slate-600 dark:text-slate-300 leading-relaxed text-base max-w-prose')
+                        ui.markdown(desc).classes('text-slate-600 dark:text-slate-300 leading-relaxed text-sm sm:text-base max-w-prose break-words')
 
                     # File Details Box
-                    with ui.row().classes('bg-slate-50 dark:bg-slate-800/60 p-5 rounded-2xl border border-slate-100 dark:border-slate-800 gap-8 mt-2'):
+                    with ui.row().classes('bg-slate-50 dark:bg-slate-800/60 p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-slate-800 gap-6 sm:gap-8 mt-2 flex-wrap'):
                         with ui.column().classes('gap-0.5'):
                             ui.label('Added On').classes('text-[10px] text-slate-400 uppercase font-bold')
                             date_str = mongo_db.format_added_date(self.book.get('added_at'))
@@ -107,10 +108,11 @@ class BookDetailsPage:
     def build_ui(self):
         drawer = sidebar()
         header(drawer_reference=drawer)
+        bottom_nav()
         
-        with ui.column().classes('w-full min-h-screen pt-20 px-4 md:pt-24 md:px-8 max-w-7xl mx-auto bg-slate-50/50 dark:bg-transparent pb-24'):
+        with ui.column().classes('w-full min-h-screen pt-20 px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto bg-slate-50/50 dark:bg-transparent pb-32 md:pb-24'):
             ui.button('Back to Library', icon='arrow_back', on_click=lambda: ui.navigate.to('/books')) \
-                .props('flat dense color=indigo').classes('mb-4 font-bold')
+                .props('flat dense color=indigo size=md').classes('mb-3 sm:mb-4 font-bold')
             self.content_container = ui.column().classes('w-full')
 
 async def book_page(book_id: str):

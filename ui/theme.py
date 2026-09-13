@@ -4,25 +4,69 @@ from datetime import datetime
 
 # --- MODERN DESIGN SYSTEM & DARK MODE CSS ---
 GLOBAL_THEME_STYLES = '''
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
             --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --safe-area-top: env(safe-area-inset-top, 0px);
+            --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+            --safe-area-left: env(safe-area-inset-left, 0px);
+            --safe-area-right: env(safe-area-inset-right, 0px);
         }
 
-        body {
+        *, *::before, *::after {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        html, body {
+            overflow-x: hidden;
+            max-width: 100vw;
+            width: 100%;
             font-family: var(--font-family) !important;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
             transition: background-color 0.25s ease, color 0.25s ease;
+            touch-action: manipulation;
+        }
+
+        /* Prevent iOS automatic zoom on focus while retaining clear legibility */
+        @media (max-width: 768px) {
+            input, select, textarea, .q-field__native, .q-field__input {
+                font-size: 16px !important;
+            }
+        }
+
+        /* Responsive Text and Preformatted Code Blocks */
+        pre, code {
+            max-width: 100%;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        table {
+            max-width: 100%;
+            overflow-x: auto;
+            display: block;
+        }
+
+        img {
+            max-width: 100%;
+            height: auto;
         }
 
         /* --- Custom Sleek Scrollbars --- */
         ::-webkit-scrollbar {
-            width: 7px;
-            height: 7px;
+            width: 6px;
+            height: 6px;
         }
         ::-webkit-scrollbar-track {
             background: transparent;

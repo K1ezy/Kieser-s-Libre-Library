@@ -1,6 +1,7 @@
 from nicegui import ui, app, run
 from components.sidebar import sidebar
 from components.header import header
+from components.bottom_nav import bottom_nav
 from core.database.mongo_manager import mongo_db
 from core.ai_engine.llm_engine import tars_engine
 from core.utils.text_extractor import extract_text_from_file
@@ -212,23 +213,24 @@ class SummarizerTool:
     def build_ui(self):
         drawer = sidebar()
         header(drawer_reference=drawer)
+        bottom_nav()
 
-        with ui.column().classes('w-full min-h-screen pt-20 px-4 md:pt-24 md:px-8 max-w-7xl mx-auto bg-slate-50/50 dark:bg-transparent pb-24'):
+        with ui.column().classes('w-full min-h-screen pt-20 px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto bg-slate-50/50 dark:bg-transparent pb-32 md:pb-24'):
             
-            with ui.column().classes('gap-1 mb-8'):
-                ui.label('AI Document Summarizer').classes('text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight')
-                ui.label('Extract authoritative insights, chapters, and executive summaries directly from your course materials and books.').classes('text-sm text-slate-500 dark:text-slate-400')
+            with ui.column().classes('gap-1 mb-6 sm:mb-8'):
+                ui.label('AI Document Summarizer').classes('text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight')
+                ui.label('Extract authoritative insights, chapters, and executive summaries directly from your course materials and books.').classes('text-xs sm:text-sm text-slate-500 dark:text-slate-400')
 
-            with ui.row().classes('w-full gap-8 items-start flex-col lg:flex-row'):
+            with ui.row().classes('w-full gap-5 sm:gap-8 items-start flex-col lg:flex-row'):
                 
                 # Controls Card
-                with ui.card().classes('w-full lg:w-1/3 p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm'):
-                    ui.label('Select Document').classes('font-bold text-sm text-slate-700 dark:text-slate-200 uppercase tracking-wider mb-2')
+                with ui.card().classes('w-full lg:w-1/3 p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm'):
+                    ui.label('Select Document').classes('font-bold text-xs sm:text-sm text-slate-700 dark:text-slate-200 uppercase tracking-wider mb-2')
                     
                     self.book_select = ui.select(
                         {}, label='Choose from Library', with_input=True, 
                         on_change=lambda e: setattr(self, 'selected_book_id', e.value)
-                    ).props('outlined rounded').classes('w-full mb-4')
+                    ).props('outlined rounded').classes('w-full mb-3 sm:mb-4 text-sm')
 
                     self.selected_mode = 'detailed'
                     self.mode_select = ui.select(
@@ -236,26 +238,26 @@ class SummarizerTool:
                         value='detailed',
                         label='Summary Depth',
                         on_change=lambda e: setattr(self, 'selected_mode', e.value)
-                    ).props('outlined rounded').classes('w-full mb-6')
+                    ).props('outlined rounded').classes('w-full mb-4 sm:mb-6 text-sm')
                     
                     self.generate_btn = ui.button('Generate Summary', icon='bolt', on_click=self.generate_summary) \
-                        .props('unelevated rounded color=indigo').classes('w-full py-3 font-bold shadow-md')
+                        .props('unelevated rounded color=indigo size=md').classes('w-full py-2.5 sm:py-3 font-bold shadow-md')
 
                 # Output Card
-                with ui.card().classes('w-full lg:w-2/3 p-8 min-h-[460px] rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm'):
-                    with ui.row().classes('w-full justify-between items-center mb-4 pb-3 border-b border-slate-100 dark:border-slate-800'):
+                with ui.card().classes('w-full lg:w-2/3 p-4 sm:p-6 md:p-8 min-h-[360px] sm:min-h-[460px] rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm'):
+                    with ui.row().classes('w-full justify-between items-center mb-3 sm:mb-4 pb-3 border-b border-slate-100 dark:border-slate-800'):
                         with ui.row().classes('items-center gap-2'):
                             ui.icon('summarize', size='sm').classes('text-indigo-500')
-                            ui.label('Executive Summary Output').classes('text-xs font-bold text-slate-400 uppercase tracking-widest')
+                            ui.label('Executive Summary Output').classes('text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest')
                         
                         self.copy_btn = ui.button(
                             'Copy', icon='content_copy', 
                             on_click=lambda: (ui.run_javascript(f"navigator.clipboard.writeText({repr(self.current_summary_text)});"), ui.notify("Summary copied to clipboard!", type='positive'))
-                        ).props('flat dense color=indigo').classes('text-xs font-bold')
+                        ).props('flat dense color=indigo size=sm').classes('text-xs font-bold')
                         self.copy_btn.set_visibility(False)
                     
                     self.summary_output = ui.markdown('Select a document from the left and click **Generate Summary** to begin.') \
-                        .classes('prose max-w-none text-slate-700 dark:text-slate-300 leading-relaxed text-sm md:text-base')
+                        .classes('prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed text-sm md:text-base break-words overflow-x-auto')
 
 async def summarizer_page():
     app.storage.client['page_path'] = '/summarizer'

@@ -78,13 +78,13 @@ def book_card(
             'rounded-2xl overflow-hidden bg-white dark:bg-slate-900 cursor-pointer flex flex-col'
         ).on('click', lambda: ui.navigate.to(target_url)):
             
-            # Cover Container (Fixed 2:3 aspect ratio)
-            with ui.element('div').classes('w-full h-52 sm:h-56 relative overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center'):
+            # Cover Container (Fixed 2:3 aspect ratio adapted for mobile)
+            with ui.element('div').classes('w-full h-44 xs:h-48 sm:h-52 md:h-56 relative overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center'):
                 ui.image(cover_url).classes('w-full h-full object-cover transition-transform duration-500 group-hover:scale-105') \
                     .props('loading=lazy')
                 
                 # Format Badge overlay
-                with ui.element('div').classes(f'absolute bottom-2 left-2 px-2 py-0.5 rounded-md text-[10px] font-black tracking-wider border shadow-sm backdrop-blur-md {txt_col} {bg_col}'):
+                with ui.element('div').classes(f'absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-1.5 sm:px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black tracking-wider border shadow-sm backdrop-blur-md {txt_col} {bg_col}'):
                     ui.label(file_type)
                 
                 # Hover "Read" indicator overlay
@@ -95,14 +95,14 @@ def book_card(
                     ).props('rounded unelevated color=indigo size=sm text-color=white')
 
             # Content Info
-            with ui.column().classes('p-3.5 gap-1 w-full flex-grow justify-between bg-white dark:bg-slate-900'):
+            with ui.column().classes('p-2.5 sm:p-3.5 gap-0.5 sm:gap-1 w-full flex-grow justify-between bg-white dark:bg-slate-900'):
                 with ui.column().classes('gap-0.5 w-full'):
-                    ui.label(title).classes('font-bold text-sm text-slate-800 dark:text-slate-100 leading-snug line-clamp-2 min-h-[2.5rem]')
-                    ui.label(author_display).classes('text-xs text-slate-500 dark:text-slate-400 font-medium truncate w-full')
+                    ui.label(title).classes('font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-100 leading-snug line-clamp-2 min-h-[2rem] sm:min-h-[2.5rem]')
+                    ui.label(author_display).classes('text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium truncate w-full')
 
         # Admin / Quick Delete Action Overlay
         if on_delete:
             with ui.button(icon='delete', on_click=lambda b_id=book_id, t=title: on_delete(b_id, t)) \
-                    .props('flat round dense color=red') \
-                    .classes('absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/90 dark:bg-slate-800/90 shadow-md z-20 hover:scale-110'):
+                    .props('flat round dense color=red size=sm') \
+                    .classes('absolute top-1.5 right-1.5 sm:top-2 sm:right-2 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-all duration-200 bg-white/90 dark:bg-slate-800/90 shadow-md z-20 hover:scale-110'):
                 ui.tooltip('Delete Book')
