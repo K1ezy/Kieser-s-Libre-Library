@@ -19,7 +19,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
                 with ui.element('div').classes('p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center'):
                     ui.icon('local_library', size='sm')
                 ui.label('Libre Library').classes('text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight ml-2.5')
-            ui.button(icon='close', on_click=drawer.close).props('flat round dense color=grey-7 size=md').classes('md:hidden')
+            ui.button(icon='close', on_click=drawer.hide).props('flat round dense color=grey-7 size=md').classes('md:hidden')
 
         # 3. NAVIGATION LINKS (Scrollable Area)
         with ui.column().classes('w-full p-4 gap-1.5 flex-grow overflow-y-auto no-scrollbar'):
