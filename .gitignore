@@ -1,0 +1,31 @@
+# Python Environment
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# AI Model Weights (Large binaries - keep locally)
+models/*.gguf
+models/*.bin
+models/all-MiniLM-L6-v2/
+
+# User Data & Storage (Persistent runtime data)
+data/
+uploads/*
+!uploads/.gitkeep
+chroma_db/
+E-Books/
+
+# NiceGUI / App Local Storage
+.nicegui/
+*.log
+
+# IDE & OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+ngrok.exe

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPUB Reader with Translation</title>
+    <style>
+        body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; background-color: #fff; font-family: sans-serif; }
+        
+        /* Toolbar for Translation and Controls */
+        #toolbar { 
+            height: 60px; 
+            background: #fff; 
+            border-bottom: 1px solid #eee; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            padding: 0 20px;
+            z-index: 100;
+        }
+
+        /* FIXED: Moved inline style from the label to here */
+        #toolbar-brand { font-weight: bold; color: #4f46e5; }
+
+        #viewer { flex: 1; width: 100%; height: 100%; overflow: hidden; position: relative; }
+        
+        #controls { height: 50px; background: #f8f9fa; border-top: 1px solid #ddd; display: flex; align-items: center; justify-content: center; gap: 20px; z-index: 10; }
+        
+        /* FIXED: Moved inline style from page-info to here */
+        #page-info { font-size: 12px; color: #666; }
+
+        button { padding: 8px 20px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 14px; color: #333; }
+        button:hover { background: #e9ecef; }
+        
+        #error-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #721c24; background-color: #f8d7da; padding: 20px; border-radius: 5px; display: none; z-index: 100; }
+        
+        /* Google Translate branding overrides */
+        .goog-logo-link { display:none !important; } 
+        .goog-te-gadget { color: transparent !important; }
+        .goog-te-gadget .goog-te-combo { color: #333 !important; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
+    </style>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+</head>
+<body>
+    <div id="toolbar">
+        <div id="toolbar-brand">Libre Translator</div>
+        <div id="google_translate_element"></div>
+    </div>
+
+    <div id="error-msg"></div>
+    <div id="viewer"></div>
+    
+    <div id="controls">
+        <button id="prev">Previous</button>
+        <span id="page-info"></span>
+        <button id="next">Next</button>
+    </div>
+
+    <script>
+        function googleTranslateElementInit() {
+            new google.translate.TranslateElement({
+                pageLanguage: 'en', 
+                layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+                autoDisplay: false
+            }, 'google_translate_element');
+        }
+    </script>
+    <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const bookUrl = urlParams.get('file');
+        const errorDiv = document.getElementById('error-msg');
+
+        if (!bookUrl) {
+            errorDiv.style.display = 'block';
+            errorDiv.innerText = "Error: No book file specified.";
+        } else {
+            try {
+                var book = ePub(bookUrl);
+                var rendition = book.renderTo("viewer", {
+                    width: "100%",
+                    height: "100%",
+                    flow: "scrolled-doc",
+                    manager: "default"
+                });
+
+                rendition.display();
+
+                document.getElementById("next").addEventListener("click", () => rendition.next());
+                document.getElementById("prev").addEventListener("click", () => rendition.prev());
+
+                document.addEventListener("keyup", (e) => {
+                    if(e.key === "ArrowLeft") rendition.prev();
+                    if(e.key === "ArrowRight") rendition.next();
+                });
+
+            } catch (e) {
+                errorDiv.style.display = 'block';
+                errorDiv.innerText = "Error: " + e.message;
+            }
+        }
+    </script>
+</body>
+</html>

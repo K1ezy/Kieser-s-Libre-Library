@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 420" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e1b4b" />
+      <stop offset="50%" stop-color="#312e81" />
+      <stop offset="100%" stop-color="#4f46e5" />
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#818cf8" />
+      <stop offset="100%" stop-color="#c084fc" />
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="35%" r="50%">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#1e1b4b" stop-opacity="0" />
+    </radialGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="300" height="420" rx="12" fill="url(#bgGradient)" />
+  <rect width="300" height="420" rx="12" fill="url(#glow)" />
+
+  <!-- Spine indicator -->
+  <rect x="0" y="0" width="16" height="420" rx="4" fill="#0f172a" fill-opacity="0.25" />
+  <line x1="16" y1="0" x2="16" y2="420" stroke="#818cf8" stroke-opacity="0.2" stroke-width="1" />
+
+  <!-- Geometric Accents -->
+  <circle cx="150" cy="165" r="72" fill="none" stroke="url(#accentGradient)" stroke-width="1.5" stroke-dasharray="4 6" opacity="0.6" />
+  <circle cx="150" cy="165" r="84" fill="none" stroke="#6366f1" stroke-width="0.75" opacity="0.3" />
+
+  <!-- Book Icon -->
+  <g filter="url(#shadow)" transform="translate(110, 125)">
+    <path d="M40 10 C 25 2, 8 2, 0 8 L 0 62 C 8 56, 25 56, 40 64 C 55 56, 72 56, 80 62 L 80 8 C 72 2, 55 2, 40 10 Z" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+    <path d="M40 10 L 40 64" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" />
+    <path d="M12 24 C 20 20, 30 20, 38 23" stroke="#c7d2fe" stroke-width="1.5" stroke-linecap="round" opacity="0.8" />
+    <path d="M12 36 C 20 32, 30 32, 38 35" stroke="#c7d2fe" stroke-width="1.5" stroke-linecap="round" opacity="0.8" />
+    <path d="M42 23 C 50 20, 60 20, 68 24" stroke="#c7d2fe" stroke-width="1.5" stroke-linecap="round" opacity="0.8" />
+    <path d="M42 35 C 50 32, 60 32, 68 36" stroke="#c7d2fe" stroke-width="1.5" stroke-linecap="round" opacity="0.8" />
+  </g>
+
+  <!-- Title & Branding -->
+  <text x="150" y="275" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="16" fill="#f8fafc" letter-spacing="2">LIBRE LIBRARY</text>
+  <text x="150" y="298" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="500" font-size="11" fill="#a5b4fc" letter-spacing="1">DIGITAL ARCHIVE</text>
+
+  <!-- Bottom Accent Bar -->
+  <rect x="60" y="345" width="180" height="2" rx="1" fill="url(#accentGradient)" opacity="0.8" />
+</svg>
