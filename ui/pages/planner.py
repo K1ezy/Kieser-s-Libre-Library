@@ -123,29 +123,58 @@ class StudyPlannerPage:
         self.add_dialog = None
         
     async def init(self):
-        uid = app.storage.user.get('user_id') or app.storage.user.get('token')
-        if uid:
-            self.tasks = await mongo_db.db.tasks.find({'user_id': uid}).sort('created_at', -1).to_list(None)
-            self.render_dashboard()
-        else: ui.navigate.to('/login')
+        try:
+            if mongo_db.db is None:
+                await mongo_db.initialize()
+            uid = app.storage.user.get('user_id') or app.storage.user.get('token')
+            if uid:
+                self.tasks = await mongo_db.db.tasks.find({'user_id': uid}).sort('created_at', -1).to_list(100)
+                self.render_dashboard()
+            else:
+                ui.navigate.to('/login')
+        except Exception as e:
+            print(f"Error initializing planner: {e}")
+            if self.container:
+                self.container.clear()
+                with self.container:
+                    ui.label("Error loading planner tasks. Please refresh.").classes('text-red-500')
 
     async def add_task(self, title, date):
         if not title: return
-        uid = app.storage.user.get('user_id') or app.storage.user.get('token')
-        new_task = {'id': str(uuid.uuid4()), 'user_id': uid, 'title': title, 'due_date': date, 'completed': False, 'created_at': datetime.utcnow()}
-        await mongo_db.db.tasks.insert_one(new_task)
-        if self.add_dialog: self.add_dialog.close()
-        await self.init()
+        try:
+            if mongo_db.db is None:
+                await mongo_db.initialize()
+            uid = app.storage.user.get('user_id') or app.storage.user.get('token')
+            new_task = {
+                'id': str(uuid.uuid4()),
+                'user_id': uid,
+                'title': title.strip(),
+                'due_date': date,
+                'completed': False,
+                'created_at': datetime.utcnow()
+            }
+            await mongo_db.db.tasks.insert_one(new_task)
+            if self.add_dialog: self.add_dialog.close()
+            ui.notify("Topic added successfully!", type='positive')
+            await self.init()
+        except Exception as e:
+            ui.notify(f"Could not add topic: {e}", type='negative')
 
     async def delete_task(self, task_id):
-        await mongo_db.db.tasks.delete_one({'id': task_id})
-        await planner_service.delete_deck_by_task(task_id)
-        await self.init()
+        try:
+            if mongo_db.db is None:
+                await mongo_db.initialize()
+            await mongo_db.db.tasks.delete_one({'id': task_id})
+            await planner_service.delete_deck(task_id)
+            ui.notify("Topic deleted.", type='info')
+            await self.init()
+        except Exception as e:
+            ui.notify(f"Error deleting topic: {e}", type='negative')
 
     async def open_study_modal(self, task):
         deck = await planner_service.get_deck(task['id'])
 
-        with ui.dialog() as dialog, ui.card().classes('w-[calc(100vw-1.5rem)] sm:w-full max-w-4xl h-[90vh] sm:h-[85vh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800'):
+        with ui.dialog() as dialog, ui.card().classes('w-[calc(100vw-1.5rem)] sm:w-full max-w-4xl h-[90vh] sm:h-[85vh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl'):
             # Header
             with ui.row().classes('w-full border-b border-slate-200 dark:border-slate-800 p-3.5 sm:p-4 justify-between items-center bg-white dark:bg-slate-900 z-10'):
                 ui.label(task['title']).classes('text-base sm:text-xl font-bold text-slate-800 dark:text-slate-100 truncate max-w-[200px] sm:max-w-md')
@@ -183,17 +212,17 @@ class StudyPlannerPage:
                 # --- OPTION 1: UPLOAD NEW FILE ---
                 with ui.column().classes('items-center border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 bg-white dark:bg-slate-900 flex-1 w-full shadow-sm'):
                     ui.label("Upload File").classes('font-bold text-slate-700 dark:text-slate-200 mb-1 text-sm sm:text-base')
-                    ui.label("PDF, TXT, DOCX, PPTX").classes('text-xs text-slate-400 mb-4')
+                    ui.label("PDF, TXT, DOCX, PPTX, EPUB").classes('text-xs text-slate-400 mb-4')
                     async def handle_upload(e: events.UploadEventArguments):
                         await self._process_deck_generation(e, task, container, dialog, is_upload=True)
 
-                    ui.upload(label="Drop file here", auto_upload=True, on_upload=handle_upload)\
-                        .props('color=indigo accept=.pdf,.txt,.docx,.pptx flat bordered').classes('w-full rounded-xl')
+                    ui.upload(label="Drop file here", auto_upload=True, on_upload=handle_upload, max_file_size=200_000_000)\
+                        .props('color=indigo accept=.pdf,.txt,.docx,.pptx,.epub flat bordered').classes('w-full rounded-xl')
 
                 # --- OPTION 2: SELECT FROM LIBRARY ---
                 with ui.column().classes('items-center border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 bg-white dark:bg-slate-900 flex-1 w-full shadow-sm'):
                     ui.label("Select from Library").classes('font-bold text-slate-700 dark:text-slate-200 mb-1 text-sm sm:text-base')
-                    ui.label("Excludes large books").classes('text-xs text-slate-400 mb-4')
+                    ui.label("Choose an existing book").classes('text-xs text-slate-400 mb-4')
                     
                     self.library_select = ui.select({'loading': 'Loading documents...'}, label="Choose Document", on_change=lambda e: self.generate_btn.enable() if e.value else self.generate_btn.disable())\
                         .props('outlined dense options-dense').classes('w-full mb-4 text-sm')
@@ -209,7 +238,6 @@ class StudyPlannerPage:
             all_books = await mongo_db.get_all_books()
             options = {}
             for b in all_books:
-                # Get extension from original filename if available, else derive from formats
                 raw_name = b.get('filename')
                 filename = str(raw_name).lower() if raw_name else ''
                 ext = None
@@ -218,12 +246,12 @@ class StudyPlannerPage:
                 else:
                     formats = b.get('formats', {})
                     if 'pdf' in formats: ext = '.pdf'
+                    elif 'epub' in formats: ext = '.epub'
                     elif 'txt' in formats: ext = '.txt'
                     elif 'docx' in formats: ext = '.docx'
                     elif 'pptx' in formats: ext = '.pptx'
                 
-                # Allow specific document formats, disallow epub/mobi
-                allowed_exts = ['.pdf', '.txt', '.docx', '.pptx']
+                allowed_exts = ['.pdf', '.epub', '.txt', '.docx', '.pptx']
                 if ext in allowed_exts:
                     options[b['id']] = b.get('title', 'Unknown Document')
             
@@ -243,87 +271,81 @@ class StudyPlannerPage:
             self.library_select.update()
 
     async def _process_deck_generation(self, source_data, task, container, dialog, is_upload: bool):
-        # 1. Spinner
-        with ui.dialog() as spinner, ui.card().classes('p-8 items-center'):
-            ui.spinner('dots', size='3em', color='indigo')
-            ui.label("Analyzing content...").classes('mt-2 text-indigo-500')
-        spinner.open()
-        
-        # 2. Prepare file object
-        file_obj = None
-        if is_upload:
-            file_obj = getattr(source_data, 'content', getattr(source_data, 'file', source_data))
-        else:
-            # `source_data` is the book ID from the library select
-            book_id = source_data
-            if book_id in ('none', 'error', 'loading'):
-                spinner.close()
-                return
-                
-            try:
-                # Fetch book document to find the file path
-                book_doc = await mongo_db.get_book_details(book_id)
-                if book_doc:
-                    from pathlib import Path
-                    from core.config import settings
-                    
-                    found_path = None
-                    if book_doc.get('local_path') and Path(book_doc['local_path']).exists():
-                        found_path = str(book_doc['local_path'])
-                    else:
-                        book_folder = settings.BASE_DIR / 'data' / 'books' / book_id
-                        if book_folder.exists():
-                            candidates = [f for f in book_folder.iterdir() if f.is_file() and f.suffix.lower() in ('.pdf', '.epub', '.docx', '.pptx', '.txt')]
-                            if candidates:
-                                found_path = str(candidates[0])
-                    
-                    if found_path:
-                        # Open the file and pass it as a file object
-                        with open(found_path, 'rb') as f:
-                            # Read into memory to pass to FlashcardService (which expects bytes or an object with .read())
-                            file_bytes = f.read()
-                            
-                            # Create a dummy object that behaves like an upload event content
-                            class MockFile:
-                                def __init__(self, name, content):
-                                    self.name = name
-                                    self.content = content
-                                def read(self):
-                                    return self.content
-                            
-                            file_obj = MockFile(name=Path(found_path).name or "library_doc.pdf", content=file_bytes)
-                    else:
-                        ui.notify("Could not locate the physical file for this document.", type='negative')
-                        spinner.close()
-                        return
-                else:
-                    ui.notify("Document not found in database.", type='negative')
-                    spinner.close()
-                    return
-            except Exception as e:
-                print(f"Error fetching library file: {e}")
-                ui.notify(f"Error accessing file: {e}", type='negative')
-                spinner.close()
-                return
-        
-        # 3. Process with FlashcardService
-        success, message = await planner_service.generate_deck(task['id'], file_obj)
-        
-        # 4. Wait loop for background processing
-        found_deck = None
-        if success:
-            for i in range(15): # Increased polling
-                found_deck = await planner_service.get_deck(task['id'])
-                if found_deck and found_deck.get('cards'):
-                    break
-                await asyncio.sleep(0.5)
-        
-        spinner.close()
+        # In-place loading inside the modal container to prevent nested modal glitches
+        container.clear()
+        with container:
+            with ui.column().classes('items-center justify-center p-6 sm:p-8 text-center max-w-md mx-auto'):
+                ui.spinner('dots', size='3.5em', color='indigo')
+                ui.label("Generating Study Deck").classes('mt-4 text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100')
+                status_label = ui.label("Analyzing content and creating flashcards with TARS AI...").classes('text-xs sm:text-sm text-indigo-500 dark:text-indigo-400 mt-1.5')
+                ui.label("This typically takes 10–25 seconds.").classes('text-xs text-slate-400 mt-2')
 
-        if found_deck and found_deck.get('cards'):
-            ui.timer(0.1, lambda: self._render_carousel_view(container, task, dialog, found_deck), once=True)
-        else:
-            ui.notify(f"Failed: {message or 'Generation timed out'}", type='negative')
+        def update_status(msg: str):
+            status_label.text = msg
+
+        file_obj = source_data
+
+        if not is_upload:
+            book_id = source_data
+            if not book_id or book_id in ('none', 'error', 'loading'):
+                ui.notify("Please select a valid document.", type='warning')
+                self._show_upload_screen(container, task, dialog)
+                return
+
+            try:
+                book_doc = await mongo_db.get_book_details(book_id)
+                if not book_doc:
+                    ui.notify("Document not found in database.", type='negative')
+                    self._show_upload_screen(container, task, dialog)
+                    return
+
+                from pathlib import Path
+                from core.config import settings
+
+                found_path = None
+                if book_doc.get('local_path') and Path(book_doc['local_path']).exists():
+                    found_path = str(book_doc['local_path'])
+                else:
+                    book_folder = settings.BASE_DIR / 'data' / 'books' / book_id
+                    if book_folder.exists():
+                        candidates = [f for f in book_folder.iterdir() if f.is_file() and f.suffix.lower() in ('.pdf', '.epub', '.docx', '.pptx', '.txt')]
+                        if candidates:
+                            found_path = str(candidates[0])
+
+                if not found_path:
+                    ui.notify("Could not locate physical file for document.", type='negative')
+                    self._show_upload_screen(container, task, dialog)
+                    return
+
+                file_obj = found_path
+            except Exception as ex:
+                ui.notify(f"Error loading book: {ex}", type='negative')
+                self._show_upload_screen(container, task, dialog)
+                return
+
+        # Generate Deck with real-time status updates
+        try:
+            success, message = await planner_service.generate_deck(task['id'], file_obj, on_status=update_status)
+        except Exception as gen_err:
+            success = False
+            message = str(gen_err)
+
+        if success:
+            found_deck = await planner_service.get_deck(task['id'])
+            if found_deck and found_deck.get('cards'):
+                ui.notify(f"Study deck ready: {len(found_deck['cards'])} cards generated!", type='positive')
+                self._render_carousel_view(container, task, dialog, found_deck)
+                return
+
+        # On failure, render error state inside container with retry button
+        container.clear()
+        with container:
+            with ui.column().classes('items-center justify-center p-6 sm:p-8 text-center max-w-md mx-auto'):
+                ui.icon('error_outline', size='3.5em').classes('text-red-400 mb-2')
+                ui.label("Generation Incomplete").classes('text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100')
+                ui.label(message or "Could not extract sufficient cards from this document.").classes('text-xs sm:text-sm text-red-500 mb-6 text-center')
+                ui.button("Try Another Document", icon='refresh', on_click=lambda: self._show_upload_screen(container, task, dialog))\
+                    .props('color=indigo unelevated rounded')
 
     def render_dashboard(self):
         if not self.container: return
@@ -348,13 +370,13 @@ class StudyPlannerPage:
             with ui.row().classes('w-full justify-between items-start gap-2'):
                 with ui.column().classes('gap-0.5 flex-1 min-w-0'):
                     ui.label(task['title']).classes('text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 leading-snug break-words')
-                    date_str = task['due_date'] if task['due_date'] else "No date"
+                    date_str = task.get('due_date') or "No date"
                     ui.label(f"Due: {date_str}").classes('text-xs text-slate-400 font-medium')
                 
-                ui.button(icon='delete', on_click=lambda: self.delete_task(task['id'])).props('flat dense round color=grey size=md')
+                ui.button(icon='delete', on_click=lambda t_id=task['id']: self.delete_task(t_id)).props('flat dense round color=grey size=md')
             
             ui.separator().classes('my-1 opacity-50')
-            ui.button("Open Flashcards", icon='school', on_click=lambda: self.open_study_modal(task)).props('flat color=indigo size=md').classes('w-full font-bold')
+            ui.button("Open Flashcards", icon='school', on_click=lambda t=task: self.open_study_modal(t)).props('flat color=indigo size=md').classes('w-full font-bold')
 
     def open_add_dialog(self):
         with ui.dialog() as self.add_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-md p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl'):
