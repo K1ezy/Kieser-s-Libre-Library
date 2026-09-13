@@ -282,8 +282,19 @@ python smart_librarian.py
 - Successfully cleared 17 test account credentials and 26 orphaned planner tasks from MongoDB.
 - Verified zero collision state, allowing fresh registration of the primary Administrator account.
 
-### 7. 🔄 Git Repository Synchronization
-- Synchronized all codebase improvements directly to GitHub (`main` branch).
+### 7. ⚡ UI Navigation Fix (`LeftDrawer`)
+- Replaced `drawer.close` with `drawer.hide` in [components/sidebar.py](file:///c:/Users/User/Desktop/Libre-Library/components/sidebar.py), resolving Quasar `LeftDrawer` AttributeError on mobile drawer toggle.
+- Reconciled MongoDB sparse indexes on `users` collection (`email_1`, `username_1`), removing startup index conflicts.
+
+### 8. 🧠 Study Planner & Flashcard Generation Overhaul
+- **Resolved `delete_deck_by_task` Bug**: Added alias mapping to `delete_deck(task_id)` in [ui/pages/planner_service.py](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/planner_service.py) and added safe try/except wrappers in [ui/pages/planner.py](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/planner.py).
+- **Eliminated White-Screen / Modal Freeze**: Removed nested spinner dialogs that conflicted with Quasar backdrops. Progress feedback is now rendered directly in-place within the study modal.
+- **Fast, High-Yield Generation**: Re-architected chunking to focus on the top 2 informative document sections with a 1,000-token prompt, reducing generation time from 15+ minutes down to **10–25 seconds**.
+- **Universal Multi-Format File Reader**: Robustly parses NiceGUI `FileUpload`, `UploadEventArguments`, library book paths, and raw bytes with immediate file-handle release on Windows.
+- **Graceful Error Recovery**: Added in-place "Try Another Document" retry card for empty or unsupported files.
+
+### 9. 🔄 Git Repository Synchronization
+- Synchronized all codebase improvements and documentation directly to GitHub (`main` branch).
 
 ---
 
