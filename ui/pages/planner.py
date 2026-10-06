@@ -60,13 +60,13 @@ class FlashcardCarousel(ui.element):
             with container:
                 # --- FRONT FACE ---
                 self.front = ui.column().classes(
-                    'absolute inset-0 w-full h-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg rounded-2xl items-center justify-center p-5 sm:p-8 text-center'
+                    'absolute inset-0 w-full h-full bg-white border border-slate-200 shadow-lg rounded-2xl items-center justify-center p-5 sm:p-8 text-center'
                 )
                 self.front.style('backface-visibility: hidden; transition: transform 0.6s; transform-style: preserve-3d;')
                 
                 with self.front:
                     ui.label("QUESTION").classes('text-xs font-bold tracking-widest text-indigo-500 mb-2 sm:mb-4')
-                    ui.label(self.get_text('q')).classes('text-lg sm:text-2xl font-medium text-slate-800 dark:text-slate-100 overflow-y-auto max-h-full break-words')
+                    ui.label(self.get_text('q')).classes('text-lg sm:text-2xl font-medium text-slate-800 overflow-y-auto max-h-full break-words')
                     ui.label("Tap to reveal").classes('text-xs text-slate-400 mt-auto pt-2 sm:pt-4')
 
                 # --- BACK FACE ---
@@ -126,9 +126,9 @@ class StudyPlannerPage:
         try:
             if mongo_db.db is None:
                 await mongo_db.initialize()
-            uid = app.storage.user.get('user_id') or app.storage.user.get('token')
+            uid = app.storage.user.get('user_id')
             if uid:
-                self.tasks = await mongo_db.db.tasks.find({'user_id': uid}).sort('created_at', -1).to_list(100)
+                self.tasks = await mongo_db.get_tasks(user_id=uid)
                 self.render_dashboard()
             else:
                 ui.navigate.to('/login')
@@ -142,46 +142,43 @@ class StudyPlannerPage:
     async def add_task(self, title, date):
         if not title: return
         try:
-            if mongo_db.db is None:
-                await mongo_db.initialize()
-            uid = app.storage.user.get('user_id') or app.storage.user.get('token')
-            new_task = {
-                'id': str(uuid.uuid4()),
-                'user_id': uid,
-                'title': title.strip(),
-                'due_date': date,
-                'completed': False,
-                'created_at': datetime.utcnow()
-            }
-            await mongo_db.db.tasks.insert_one(new_task)
+            uid = app.storage.user.get('user_id')
+            if not uid:
+                ui.notify("Authentication required.", type='warning')
+                return
+            created = await mongo_db.add_task(title=title.strip(), due_date=date or "", user_id=uid)
             if self.add_dialog: self.add_dialog.close()
-            ui.notify("Topic added successfully!", type='positive')
-            await self.init()
+            if created:
+                ui.notify("Topic added successfully!", type='positive')
+                await self.init()
+            else:
+                ui.notify("Could not add topic.", type='negative')
         except Exception as e:
             ui.notify(f"Could not add topic: {e}", type='negative')
 
     async def delete_task(self, task_id):
         try:
-            if mongo_db.db is None:
-                await mongo_db.initialize()
-            await mongo_db.db.tasks.delete_one({'id': task_id})
-            await planner_service.delete_deck(task_id)
-            ui.notify("Topic deleted.", type='info')
-            await self.init()
+            success = await mongo_db.delete_task(task_id)
+            if success:
+                ui.notify("Topic deleted.", type='info')
+                await self.init()
+            else:
+                ui.notify("Failed to delete topic.", type='negative')
         except Exception as e:
             ui.notify(f"Error deleting topic: {e}", type='negative')
+
 
     async def open_study_modal(self, task):
         deck = await planner_service.get_deck(task['id'])
 
-        with ui.dialog() as dialog, ui.card().classes('w-[calc(100vw-1.5rem)] sm:w-full max-w-4xl h-[90vh] sm:h-[85vh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl'):
+        with ui.dialog() as dialog, ui.card().classes('w-[calc(100vw-1.5rem)] sm:w-full max-w-4xl h-[90vh] sm:h-[85vh] flex flex-col p-0 overflow-hidden rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-2xl'):
             # Header
-            with ui.row().classes('w-full border-b border-slate-200 dark:border-slate-800 p-3.5 sm:p-4 justify-between items-center bg-white dark:bg-slate-900 z-10'):
-                ui.label(task['title']).classes('text-base sm:text-xl font-bold text-slate-800 dark:text-slate-100 truncate max-w-[200px] sm:max-w-md')
+            with ui.row().classes('w-full border-b border-slate-200 p-3.5 sm:p-4 justify-between items-center bg-white z-10'):
+                ui.label(task['title']).classes('text-base sm:text-xl font-bold text-slate-800 truncate max-w-[200px] sm:max-w-md')
                 ui.button(icon='close', on_click=dialog.close).props('flat round color=grey size=md')
             
             # Content
-            content_area = ui.column().classes('w-full flex-grow items-center justify-center bg-slate-50 dark:bg-slate-950 p-4 sm:p-6 overflow-y-auto')
+            content_area = ui.column().classes('w-full flex-grow items-center justify-center bg-slate-50 p-4 sm:p-6 overflow-y-auto')
             
             with content_area:
                 if deck and 'cards' in deck and len(deck['cards']) > 0:
@@ -196,22 +193,22 @@ class StudyPlannerPage:
             FlashcardCarousel(deck['cards'])
             
             # Clean Refresh Button
-            with ui.button(on_click=lambda: self._show_upload_screen(container, task, dialog)).props('round flat color=grey icon=refresh size=md').classes('absolute bottom-4 right-4 opacity-70 hover:opacity-100 bg-white/80 dark:bg-slate-800/80 shadow'):
+            with ui.button(on_click=lambda: self._show_upload_screen(container, task, dialog)).props('round flat color=grey icon=refresh size=md').classes('absolute bottom-4 right-4 opacity-70 hover:opacity-100 bg-white shadow'):
                 ui.tooltip('Regenerate Deck')
 
     def _show_upload_screen(self, container, task, dialog):
         container.clear()
         with container:
             ui.icon('school', size='3.5em').classes('text-indigo-400 mb-2')
-            ui.label("Create Your Study Deck").classes('text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100 mb-1')
+            ui.label("Create Your Study Deck").classes('text-lg sm:text-xl font-bold text-slate-800 mb-1')
             ui.label("Select a document from your library or upload a new one.").classes('text-xs sm:text-sm text-slate-400 mb-6 text-center max-w-sm')
 
             # Container for the two options
             with ui.row().classes('w-full max-w-2xl justify-center gap-4 sm:gap-8 items-stretch flex-col md:flex-row'):
                 
                 # --- OPTION 1: UPLOAD NEW FILE ---
-                with ui.column().classes('items-center border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 bg-white dark:bg-slate-900 flex-1 w-full shadow-sm'):
-                    ui.label("Upload File").classes('font-bold text-slate-700 dark:text-slate-200 mb-1 text-sm sm:text-base')
+                with ui.column().classes('items-center border border-slate-200 rounded-2xl p-4 sm:p-6 bg-white flex-1 w-full shadow-sm'):
+                    ui.label("Upload File").classes('font-bold text-slate-700 mb-1 text-sm sm:text-base')
                     ui.label("PDF, TXT, DOCX, PPTX, EPUB").classes('text-xs text-slate-400 mb-4')
                     async def handle_upload(e: events.UploadEventArguments):
                         await self._process_deck_generation(e, task, container, dialog, is_upload=True)
@@ -220,8 +217,8 @@ class StudyPlannerPage:
                         .props('color=indigo accept=.pdf,.txt,.docx,.pptx,.epub flat bordered').classes('w-full rounded-xl')
 
                 # --- OPTION 2: SELECT FROM LIBRARY ---
-                with ui.column().classes('items-center border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-6 bg-white dark:bg-slate-900 flex-1 w-full shadow-sm'):
-                    ui.label("Select from Library").classes('font-bold text-slate-700 dark:text-slate-200 mb-1 text-sm sm:text-base')
+                with ui.column().classes('items-center border border-slate-200 rounded-2xl p-4 sm:p-6 bg-white flex-1 w-full shadow-sm'):
+                    ui.label("Select from Library").classes('font-bold text-slate-700 mb-1 text-sm sm:text-base')
                     ui.label("Choose an existing book").classes('text-xs text-slate-400 mb-4')
                     
                     self.library_select = ui.select({'loading': 'Loading documents...'}, label="Choose Document", on_change=lambda e: self.generate_btn.enable() if e.value else self.generate_btn.disable())\
@@ -276,8 +273,8 @@ class StudyPlannerPage:
         with container:
             with ui.column().classes('items-center justify-center p-6 sm:p-8 text-center max-w-md mx-auto'):
                 ui.spinner('dots', size='3.5em', color='indigo')
-                ui.label("Generating Study Deck").classes('mt-4 text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100')
-                status_label = ui.label("Analyzing content and creating flashcards with TARS AI...").classes('text-xs sm:text-sm text-indigo-500 dark:text-indigo-400 mt-1.5')
+                ui.label("Generating Study Deck").classes('mt-4 text-lg sm:text-xl font-bold text-slate-800')
+                status_label = ui.label("Analyzing content and creating flashcards with TARS AI...").classes('text-xs sm:text-sm text-indigo-600 mt-1.5')
                 ui.label("This typically takes 10–25 seconds.").classes('text-xs text-slate-400 mt-2')
 
         def update_status(msg: str):
@@ -342,7 +339,7 @@ class StudyPlannerPage:
         with container:
             with ui.column().classes('items-center justify-center p-6 sm:p-8 text-center max-w-md mx-auto'):
                 ui.icon('error_outline', size='3.5em').classes('text-red-400 mb-2')
-                ui.label("Generation Incomplete").classes('text-lg sm:text-xl font-bold text-slate-800 dark:text-slate-100')
+                ui.label("Generation Incomplete").classes('text-lg sm:text-xl font-bold text-slate-800')
                 ui.label(message or "Could not extract sufficient cards from this document.").classes('text-xs sm:text-sm text-red-500 mb-6 text-center')
                 ui.button("Try Another Document", icon='refresh', on_click=lambda: self._show_upload_screen(container, task, dialog))\
                     .props('color=indigo unelevated rounded')
@@ -351,25 +348,25 @@ class StudyPlannerPage:
         if not self.container: return
         self.container.clear()
         with self.container:
-            ui.label('Study Planner').classes('text-2xl sm:text-3xl md:text-4xl font-black mb-4 sm:mb-8 text-slate-800 dark:text-slate-100 tracking-tight')
+            ui.label('Study Planner').classes('text-2xl sm:text-3xl md:text-4xl font-black mb-4 sm:mb-8 text-slate-800 tracking-tight')
             
             with ui.row().classes('w-full justify-between items-center mb-6 gap-2'):
-                ui.label('Your Topics').classes('text-lg sm:text-xl text-slate-500 dark:text-slate-400 font-semibold')
+                ui.label('Your Topics').classes('text-lg sm:text-xl text-slate-500 font-semibold')
                 ui.button('New Topic', icon='add', on_click=self.open_add_dialog).props('color=indigo unelevated rounded size=md').classes('font-bold shadow-sm')
 
             if not self.tasks:
                 with ui.column().classes('w-full items-center py-12 sm:py-16 text-center'):
-                    ui.icon('assignment', size='3.5em').classes('text-slate-300 dark:text-slate-600 mb-3')
+                    ui.icon('assignment', size='3.5em').classes('text-slate-300 mb-3')
                     ui.label("No topics yet.").classes('text-slate-400 text-sm italic')
             
             with ui.grid().classes('w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6'):
                 for task in self.tasks: self.render_task_card(task)
 
     def render_task_card(self, task):
-        with ui.card().classes('p-4 sm:p-6 flex flex-col gap-3 sm:gap-4 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:shadow-lg transition-all'):
+        with ui.card().classes('p-4 sm:p-6 flex flex-col gap-3 sm:gap-4 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 hover:shadow-lg transition-all'):
             with ui.row().classes('w-full justify-between items-start gap-2'):
                 with ui.column().classes('gap-0.5 flex-1 min-w-0'):
-                    ui.label(task['title']).classes('text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 leading-snug break-words')
+                    ui.label(task['title']).classes('text-base sm:text-lg font-bold text-slate-800 leading-snug break-words')
                     date_str = task.get('due_date') or "No date"
                     ui.label(f"Due: {date_str}").classes('text-xs text-slate-400 font-medium')
                 
@@ -379,8 +376,8 @@ class StudyPlannerPage:
             ui.button("Open Flashcards", icon='school', on_click=lambda t=task: self.open_study_modal(t)).props('flat color=indigo size=md').classes('w-full font-bold')
 
     def open_add_dialog(self):
-        with ui.dialog() as self.add_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-md p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl'):
-            ui.label("New Topic").classes('text-xl font-bold mb-4 text-slate-800 dark:text-slate-100')
+        with ui.dialog() as self.add_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-md p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-2xl'):
+            ui.label("New Topic").classes('text-xl font-bold mb-4 text-slate-800')
             name = ui.input("Topic Name").classes('w-full mb-3 text-sm').props('outlined rounded autofocus')
             date = ui.input("Target Date").props('outlined rounded type=date').classes('w-full mb-6 text-sm')
             with ui.row().classes('w-full justify-end gap-2'):
@@ -392,11 +389,12 @@ class StudyPlannerPage:
         drawer = sidebar()
         header(drawer_reference=drawer)
         bottom_nav()
-        with ui.column().classes('w-full min-h-screen pt-20 px-3 sm:px-4 md:pt-24 md:px-8 bg-slate-50/50 dark:bg-transparent pb-32 md:pb-24'):
-            self.container = ui.column().classes('w-full max-w-7xl mx-auto')
+        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
+            self.container = ui.column().classes('w-full')
 
 @ui.page('/planner')
 async def planner_page():
+    app.storage.client['page_path'] = '/planner'
     page = StudyPlannerPage()
     page.build_ui()
     await page.init()

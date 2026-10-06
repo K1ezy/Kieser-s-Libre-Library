@@ -1,11 +1,12 @@
-import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from jose import JWTError, jwt
 from nicegui import app
 from core.config import settings
 
-SECRET_KEY = getattr(settings, "JWT_SECRET", settings.SECRET_KEY)
+def _get_secret() -> str:
+    return settings.JWT_SECRET or settings.SECRET_KEY
+
 ALGORITHM = getattr(settings, "JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = getattr(settings, "ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24)
 
@@ -13,11 +14,11 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     """Generates a signed JWT access token with expiration."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, _get_secret(), algorithm=ALGORITHM)
     return encoded_jwt
 
 def verify_token(token: str) -> Optional[Dict[str, Any]]:
@@ -25,7 +26,7 @@ def verify_token(token: str) -> Optional[Dict[str, Any]]:
     if not token:
         return None
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, _get_secret(), algorithms=[ALGORITHM])
         return payload
     except JWTError:
         return None
@@ -60,7 +61,7 @@ def set_user_session(user: dict, token: str):
 def clear_user_session():
     """
     Safely clears authentication credentials from user storage while preserving
-    UI preferences like 'dark_mode'.
+    client session state.
     """
     for key in ['token', 'user_id', 'role', 'username']:
         app.storage.user.pop(key, None)

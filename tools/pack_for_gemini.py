@@ -19,7 +19,7 @@ def get_file_size_mb(file_path):
     return os.path.getsize(file_path) / (1024 * 1024)
 
 def pack_project():
-    project_root = Path(__file__).parent
+    project_root = Path(__file__).resolve().parent.parent
     part_num = 1
     current_size = 0
     total_files = 0
@@ -46,7 +46,7 @@ def pack_project():
     all_files.sort()
 
     # 3. WRITE FILES
-    out_f = open(f"{BASE_FILENAME}_{part_num}.txt", 'w', encoding='utf-8')
+    out_f = open(project_root / f"{BASE_FILENAME}_{part_num}.txt", 'w', encoding='utf-8')
     out_f.write(f"PROJECT CONTEXT - PART {part_num}\n")
     out_f.write(f"================================\n\n")
 
@@ -72,7 +72,7 @@ def pack_project():
                 
                 part_num += 1
                 current_size = 0
-                out_f = open(f"{BASE_FILENAME}_{part_num}.txt", 'w', encoding='utf-8')
+                out_f = open(project_root / f"{BASE_FILENAME}_{part_num}.txt", 'w', encoding='utf-8')
                 out_f.write(f"PROJECT CONTEXT - PART {part_num}\n")
                 out_f.write(f"================================\n\n")
                 print(f"Starting Part {part_num}...")

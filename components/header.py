@@ -3,17 +3,14 @@ from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import clear_user_session
 import logging
 
-# Setup Logger
 logger = logging.getLogger("APP_HEADER")
 
 def header(drawer_reference=None):
     """
-    The Main Application Header with glassmorphism and fast indexed search.
+    Main Application Header with glassmorphism, responsive navigation, and fast indexed search.
+    Clean light color theory matching with zero dark mode clutter.
     """
-
-    # --- LOGIC: SEARCH HANDLER ---
     async def handle_search(e):
-        """Executes fast server-side search."""
         try:
             query = e.sender.value.strip()
         except AttributeError:
@@ -23,10 +20,7 @@ def header(drawer_reference=None):
             return
 
         try:
-            # 1. Indexed Server-Side Search
             matches = await mongo_db.search_books(query, limit=10)
-
-            # 2. Navigation Logic
             if len(matches) == 1:
                 target_book = matches[0]
                 ui.notify(f"Opening '{target_book.get('title')}'...", type='positive')
@@ -37,7 +31,6 @@ def header(drawer_reference=None):
                 ui.navigate.to('/books')
             else:
                 ui.notify(f"No books found for '{query}'", type='warning')
-
         except Exception as err:
             logger.error(f"Search Error: {err}")
             ui.notify("Search temporarily unavailable.", type='negative')
@@ -45,10 +38,12 @@ def header(drawer_reference=None):
             if hasattr(e, 'sender') and hasattr(e.sender, 'value'):
                 e.sender.value = ""
 
-    # --- UI: MOBILE SEARCH DIALOG ---
     def open_mobile_search():
-        with ui.dialog() as search_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-md p-5 rounded-2xl shadow-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800'):
-            ui.label('Search Library').classes('text-lg font-bold text-slate-800 dark:text-slate-100 mb-2')
+        with ui.dialog() as search_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-md p-5 rounded-3xl shadow-2xl bg-white border border-slate-200'):
+            with ui.row().classes('w-full justify-between items-center mb-2'):
+                ui.label('Search Library').classes('text-base font-black text-slate-800')
+                ui.button(icon='close', on_click=search_dialog.close).props('flat round dense size=sm color=grey')
+
             mobile_input = ui.input(placeholder='Book title, author, topic...') \
                 .props('rounded outlined autofocus prepend-icon=search') \
                 .classes('w-full text-base')
@@ -56,56 +51,66 @@ def header(drawer_reference=None):
             mobile_input.on('keydown.enter', lambda e: (handle_search(mobile_input), search_dialog.close()))
 
             with ui.row().classes('w-full justify-end mt-4 gap-2'):
-                ui.button('Cancel', on_click=search_dialog.close).props('flat color=grey')
+                ui.button('Cancel', on_click=search_dialog.close).props('flat rounded-xl color=grey size=sm font-bold')
                 ui.button('Search', on_click=lambda: (handle_search(mobile_input), search_dialog.close())) \
-                    .props('unelevated color=indigo')
+                    .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-md')
         search_dialog.open()
 
-    # --- UI: MAIN HEADER LAYOUT ---
     with ui.header().classes(
-        'bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 '
-        'dark:border-slate-800/80 items-center px-2.5 sm:px-4 md:px-6 h-16 fixed top-0 w-full z-40'
+        'bg-white/95 backdrop-blur-md border-b border-slate-200 '
+        'items-center px-3 sm:px-4 md:px-6 h-16 pt-[env(safe-area-inset-top,0px)] '
+        'fixed top-0 w-full z-40 select-none shadow-sm'
     ).props('elevated=False'):
 
-        # 1. LEFT SECTION: NAVIGATION & BRAND
-        with ui.row().classes('items-center gap-1.5 sm:gap-2 shrink-0'):
+        # 1. LEFT: SIDEBAR TOGGLE & BRAND LOGO
+        with ui.row().classes('items-center gap-1.5 sm:gap-2 shrink-0 min-w-0'):
             if drawer_reference:
                 ui.button(icon='menu', on_click=drawer_reference.toggle) \
                     .props('flat round dense color=grey-8 size=md') \
                     .tooltip('Toggle Sidebar')
 
-            with ui.row().classes('cursor-pointer items-center gap-2').on('click', lambda: ui.navigate.to('/')):
-                with ui.element('div').classes('p-1.5 sm:p-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center'):
-                    ui.icon('auto_stories', size='sm')
-                ui.label('Libre Library').classes('text-lg sm:text-xl font-black text-slate-800 dark:text-slate-100 tracking-tight')
+            with ui.row().classes('cursor-pointer items-center gap-2 min-w-0').on('click', lambda: ui.navigate.to('/')):
+                with ui.element('div').classes('p-1.5 sm:p-2 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100 shadow-sm'):
+                    ui.icon('local_library', size='sm')
+                ui.label('Libre Library').classes('text-base sm:text-xl font-black text-slate-900 tracking-tight truncate max-w-[130px] xs:max-w-none')
 
         ui.space()
 
-        # 2. CENTER SECTION: DESKTOP SEARCH
+        # 2. CENTER: DESKTOP SEARCH INPUT
         with ui.row().classes('hidden md:flex flex-grow max-w-xl mx-4'):
             search_input = ui.input(placeholder='Search books, authors, or topics...') \
                 .props('rounded outlined dense prepend-icon=search bg-color=slate-50') \
-                .classes('w-full transition-all focus-within:shadow-md focus-within:bg-white dark:focus-within:bg-slate-800')
+                .classes('w-full transition-all focus-within:shadow-md focus-within:bg-white text-xs')
             search_input.on('keydown.enter', handle_search)
 
         ui.space()
 
-        # 3. RIGHT SECTION: ACTIONS & PROFILE
-        with ui.row().classes('items-center gap-1 sm:gap-1.5 shrink-0'):
+        # 3. RIGHT: MOBILE SEARCH & USER PROFILE
+        with ui.row().classes('items-center gap-1 sm:gap-2 shrink-0'):
             ui.button(icon='search', on_click=open_mobile_search) \
                 .props('flat round dense color=grey-7 size=md') \
                 .classes('md:hidden')
 
-            # Quick Actions Menu
-            with ui.button(icon='add_circle').props('flat round dense color=indigo size=md'):
-                with ui.menu().classes('bg-white dark:bg-slate-900 shadow-xl border border-slate-100 dark:border-slate-800 rounded-2xl p-1'):
-                    ui.menu_item('Upload Book', on_click=lambda: ui.navigate.to('/upload')).props('prepend-icon=cloud_upload')
-                    ui.menu_item('New Study Task', on_click=lambda: ui.navigate.to('/planner')).props('prepend-icon=check_circle')
+            user_name = app.storage.user.get('username') or 'Account'
+            user_role = app.storage.user.get('role', 'user')
 
-            # Profile Menu
-            with ui.button().props('flat round dense no-caps size=md'):
-                ui.avatar(icon='person', color='indigo-50', text_color='indigo', size='md')
-                with ui.menu().classes('bg-white dark:bg-slate-900 shadow-xl border border-slate-100 dark:border-slate-800 rounded-2xl p-1'):
-                    ui.menu_item('My Profile', on_click=lambda: ui.navigate.to('/profile')).props('prepend-icon=person')
-                    ui.menu_item('Logout', on_click=lambda: (clear_user_session(), ui.navigate.to('/login'))) \
-                        .classes('text-red-600').props('prepend-icon=logout')
+            with ui.button().props('flat round dense no-caps size=md').classes('p-0.5 ml-0.5 sm:ml-1'):
+                ui.avatar(icon='person', color='indigo-50', text_color='indigo', size='32px') \
+                    .classes('border border-indigo-200 shadow-sm')
+                with ui.menu().classes('bg-white shadow-2xl border border-slate-200 rounded-2xl p-2 min-w-[190px]'):
+                    with ui.row().classes('px-3 py-2 border-b border-slate-100 mb-1 items-center gap-2.5'):
+                        ui.icon('account_circle', size='sm').classes('text-indigo-600')
+                        with ui.column().classes('gap-0 flex-1 min-w-0'):
+                            ui.label(user_name).classes('text-xs font-bold text-slate-900 truncate w-full')
+                            ui.label(user_role.upper()).classes('text-[9px] font-bold text-indigo-600 uppercase tracking-wider')
+
+                    ui.menu_item('Account Profile', on_click=lambda: ui.navigate.to('/profile')).props('prepend-icon=person').classes('text-xs font-medium')
+                    if user_role == 'admin':
+                        ui.menu_item('Admin Console', on_click=lambda: ui.navigate.to('/admin')).props('prepend-icon=admin_panel_settings').classes('text-xs font-medium')
+
+                    ui.separator().classes('my-1')
+                    def sign_out():
+                        clear_user_session()
+                        ui.notify("Signed out successfully.", type='info')
+                        ui.navigate.to('/login')
+                    ui.menu_item('Sign Out', on_click=sign_out).props('prepend-icon=logout').classes('text-xs font-bold text-rose-600')

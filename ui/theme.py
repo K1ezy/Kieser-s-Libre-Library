@@ -1,19 +1,20 @@
 from nicegui import ui, app
 from core.config import settings
-from datetime import datetime
 
-# --- MODERN DESIGN SYSTEM & DARK MODE CSS ---
+# --- MODERN CLEAN LIGHT DESIGN SYSTEM ---
 GLOBAL_THEME_STYLES = '''
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#4f46e5">
+    <meta name="color-scheme" content="light">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
+            color-scheme: light !important;
             --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             --safe-area-top: env(safe-area-inset-top, 0px);
             --safe-area-bottom: env(safe-area-inset-bottom, 0px);
@@ -26,15 +27,86 @@ GLOBAL_THEME_STYLES = '''
             -webkit-tap-highlight-color: transparent;
         }
 
-        html, body {
+        /* Permanently enforce clean, coherent light theme across all devices & mobile OS settings */
+        html, body, body.body--dark {
             overflow-x: hidden;
             max-width: 100vw;
             width: 100%;
             font-family: var(--font-family) !important;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
-            transition: background-color 0.25s ease, color 0.25s ease;
             touch-action: manipulation;
+            overscroll-behavior-y: none;
+            -webkit-overflow-scrolling: touch;
+            background-color: #f8fafc !important; /* Tailwind slate-50 */
+            color: #0f172a !important;            /* Tailwind slate-900 */
+        }
+
+        /* Neutralize Quasar dark mode artifacts on body or child elements */
+        body.body--dark .bg-white,
+        .bg-white {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+        }
+
+        body.body--dark .bg-slate-50,
+        .bg-slate-50 {
+            background-color: #f8fafc !important;
+        }
+
+        body.body--dark .text-slate-900,
+        .text-slate-900 {
+            color: #0f172a !important;
+        }
+
+        body.body--dark .text-slate-800,
+        .text-slate-800 {
+            color: #1e293b !important;
+        }
+
+        body.body--dark .text-slate-700,
+        .text-slate-700 {
+            color: #334155 !important;
+        }
+
+        body.body--dark .text-slate-500,
+        .text-slate-500 {
+            color: #64748b !important;
+        }
+
+        body.body--dark .text-slate-400,
+        .text-slate-400 {
+            color: #94a3b8 !important;
+        }
+
+        /* Quasar components light mode enforcement */
+        .q-header {
+            background-color: rgba(255, 255, 255, 0.95) !important;
+            color: #0f172a !important;
+            border-bottom: 1px solid #e2e8f0 !important;
+        }
+
+        .q-drawer {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            border-right: 1px solid #e2e8f0 !important;
+        }
+
+        .q-dialog .q-card,
+        .q-menu {
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            border: 1px solid #e2e8f0 !important;
+        }
+
+        .q-field--outlined .q-field__control {
+            background-color: #ffffff !important;
+            border-color: #cbd5e1 !important;
+        }
+
+        .q-field__native,
+        .q-field__input {
+            color: #0f172a !important;
         }
 
         /* Prevent iOS automatic zoom on focus while retaining clear legibility */
@@ -42,6 +114,19 @@ GLOBAL_THEME_STYLES = '''
             input, select, textarea, .q-field__native, .q-field__input {
                 font-size: 16px !important;
             }
+            .q-btn:active {
+                transform: scale(0.97);
+            }
+        }
+
+        .touch-pan-x {
+            touch-action: pan-x;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .touch-pan-y {
+            touch-action: pan-y;
+            -webkit-overflow-scrolling: touch;
         }
 
         /* Responsive Text and Preformatted Code Blocks */
@@ -63,7 +148,7 @@ GLOBAL_THEME_STYLES = '''
             height: auto;
         }
 
-        /* --- Custom Sleek Scrollbars --- */
+        /* Custom Sleek Light Scrollbars */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -78,132 +163,28 @@ GLOBAL_THEME_STYLES = '''
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(99, 102, 241, 0.7);
         }
-
-        /* --- Dark Mode System Adaptation --- */
-        body.body--dark {
-            background-color: #0b0f19 !important; /* Premium Midnight Slate */
-            color: #f1f5f9 !important;
-        }
-
-        body.body--dark .q-header {
-            background-color: rgba(15, 23, 42, 0.9) !important;
-            border-bottom-color: #1e293b !important;
-        }
-
-        body.body--dark .q-drawer {
-            background-color: #0f172a !important;
-            border-right-color: #1e293b !important;
-        }
-
-        body.body--dark .bg-white {
-            background-color: #131d31 !important;
-            color: #f8fafc !important;
-            border-color: #1e293b !important;
-        }
-
-        body.body--dark .bg-slate-50,
-        body.body--dark .bg-gray-50 {
-            background-color: #0b0f19 !important;
-        }
-
-        body.body--dark .bg-gray-100 {
-            background-color: #1a253c !important;
-        }
-
-        body.body--dark .bg-indigo-50 {
-            background-color: rgba(99, 102, 241, 0.15) !important;
-            color: #a5b4fc !important;
-        }
-
-        body.body--dark .text-slate-800,
-        body.body--dark .text-gray-900,
-        body.body--dark .text-gray-800 {
-            color: #f8fafc !important;
-        }
-
-        body.body--dark .text-slate-700,
-        body.body--dark .text-gray-700 {
-            color: #cbd5e1 !important;
-        }
-
-        body.body--dark .text-slate-500,
-        body.body--dark .text-slate-400,
-        body.body--dark .text-gray-500 {
-            color: #94a3b8 !important;
-        }
-
-        body.body--dark .border-gray-100,
-        body.body--dark .border-gray-200,
-        body.body--dark .border-slate-100,
-        body.body--dark .border-slate-200,
-        body.body--dark .border-b,
-        body.body--dark .border-t {
-            border-color: #1e293b !important;
-        }
-
-        /* Form Inputs & Quasar Controls in Dark Mode */
-        body.body--dark .q-field--outlined .q-field__control {
-            border-color: #334155 !important;
-            background-color: #131d31 !important;
-        }
-
-        body.body--dark .q-field__native,
-        body.body--dark .q-field__prefix,
-        body.body--dark .q-field__suffix,
-        body.body--dark .q-field__input {
-            color: #f1f5f9 !important;
-        }
-
-        body.body--dark .q-menu,
-        body.body--dark .q-dialog .q-card {
-            background-color: #131d31 !important;
-            color: #f1f5f9 !important;
-            border: 1px solid #1e293b !important;
-        }
-
-        body.body--dark ::-webkit-scrollbar-thumb {
-            background: rgba(100, 116, 139, 0.5);
-        }
     </style>
 '''
 
-def is_night_time() -> bool:
-    """Returns True if it's between 7 PM and 6 AM."""
-    hour = datetime.now().hour
-    return hour < 6 or hour >= 19
-
-def get_current_mode_value() -> bool:
-    """Returns True if Dark Mode is active."""
-    user_pref = app.storage.user.get('dark_mode')
-    if user_pref is None:
-        return is_night_time()
-    return bool(user_pref)
-
-def toggle_dark_mode(e):
-    """Callback for dark mode toggles."""
-    is_dark = e.value if hasattr(e, 'value') else not get_current_mode_value()
-    app.storage.user['dark_mode'] = is_dark
-    
-    if is_dark:
-        ui.dark_mode().enable()
-    else:
-        ui.dark_mode().disable()
-
 def apply_theme():
-    """Applies global CSS design tokens, custom font, and initial color theme."""
+    """Applies clean, unified light design tokens, Inter typography, and crisp palette."""
     ui.add_head_html(GLOBAL_THEME_STYLES)
     ui.colors(
-        primary=settings.UI_THEME_COLOR,
-        secondary="#818cf8",
-        accent="#a855f7",
-        positive="#10b981",
-        negative="#ef4444",
-        info="#0ea5e9",
-        warning="#f59e0b"
+        primary="#4f46e5",    # Indigo 600
+        secondary="#6366f1",  # Indigo 500
+        accent="#7c3aed",     # Purple 600
+        positive="#10b981",   # Emerald 500
+        negative="#f43f5e",   # Rose 500
+        info="#0ea5e9",       # Sky 500
+        warning="#f59e0b"     # Amber 500
     )
-    
-    should_be_dark = get_current_mode_value()
-    if should_be_dark:
-        ui.dark_mode().enable()
-    else:
-        ui.dark_mode().disable()
+    ui.dark_mode().disable()
+    if 'dark_mode' in app.storage.user:
+        app.storage.user.pop('dark_mode', None)
+    ui.run_javascript("""
+        document.documentElement.classList.remove('dark');
+        document.body.classList.remove('body--dark');
+        if (window.Quasar && window.Quasar.dark) {
+            window.Quasar.dark.set(false);
+        }
+    """)

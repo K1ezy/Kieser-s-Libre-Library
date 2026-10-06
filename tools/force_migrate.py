@@ -1,12 +1,16 @@
 import asyncio
 import os
+import sys
 import uuid
 import json
 from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
 from core.database.mongo_manager import mongo_db
 
 # --- CONFIGURATION ---
-BASE_DIR = Path(__file__).resolve().parent
 BOOKS_DIR = BASE_DIR / 'data' / 'books'
 
 async def force_migrate():

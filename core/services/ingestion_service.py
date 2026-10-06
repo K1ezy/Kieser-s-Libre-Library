@@ -31,11 +31,14 @@ class IngestionService:
         self.allowed_extensions = {'.pdf', '.epub', '.docx', '.pptx', '.txt', '.md'}
 
     def _sanitize_filename(self, filename: str) -> str:
-        """Sanitizes filename for cross-platform filesystem safety."""
-        safe_name = "".join([c for c in filename if c.isalnum() or c in "._- "])
-        return safe_name.strip().replace(" ", "_")
+        """Sanitizes filename for cross-platform filesystem safety and path traversal protection."""
+        base_name = Path(filename).name
+        safe_name = "".join([c for c in base_name if c.isalnum() or c in "._- "])
+        clean = safe_name.strip().replace(" ", "_")
+        return clean or "document.bin"
 
     async def process_upload(self, file_obj, filename: str) -> dict:
+
         start_time = datetime.now()
         clean_filename = self._sanitize_filename(filename)
         ext = Path(clean_filename).suffix.lower()
@@ -77,38 +80,49 @@ class IngestionService:
             async with aiofiles.open(file_path, 'wb') as f:
                 await f.write(content)
 
-            # 3. Automatic Cover Extraction
+            # 3. Extract Embedded Local Metadata & Cover Art
+            from core.utils.metadata_scraper import extract_local_file_metadata
+            local_meta = await run.io_bound(extract_local_file_metadata, file_path)
+
             cover_path = book_folder / "cover.jpg"
-            if ext == '.pdf':
-                try:
-                    import fitz
-                    doc = fitz.open(str(file_path))
-                    if len(doc) > 0:
-                        page = doc[0]
-                        pix = page.get_pixmap(dpi=150)
-                        pix.save(str(cover_path))
-                    doc.close()
-                except Exception as cover_err:
-                    logger.warning(f"PDF cover extraction notice: {cover_err}")
+            if not cover_path.exists() and ext == '.pdf':
+                def _render_pdf_cover(src_p: Path, dst_p: Path):
+                    try:
+                        import fitz
+                        doc = fitz.open(str(src_p))
+                        if len(doc) > 0:
+                            page = doc[0]
+                            pix = page.get_pixmap(dpi=150)
+                            pix.save(str(dst_p))
+                        doc.close()
+                    except Exception as err:
+                        logger.warning(f"PDF cover extraction notice: {err}")
+
+                await run.io_bound(_render_pdf_cover, file_path, cover_path)
 
             cover_url = f"/static_books/{book_id}/cover.jpg" if cover_path.exists() else "/static/default_cover.svg"
 
-            # 4. Extract text for AI knowledge base
-            extracted_text = await run.io_bound(extract_text_from_file, str(file_path))
-            
-            # Ingest into vector store
-            facts_learned = 0
-            if extracted_text and len(extracted_text) > 20:
-                facts_learned = await run.io_bound(tars_archive.ingest_text, extracted_text, clean_filename)
+            # 4. Formats dictionary & display metadata
+            clean_title = local_meta.get('title') or clean_filename.replace(ext, "").replace("_", " ").replace("-", " ").strip().title()
+            authors = local_meta.get('authors') or ["Unknown"]
+            display_author = authors[0] if authors else "Unknown"
 
-            # 5. Formats dictionary & display metadata
-            clean_title = clean_filename.replace(ext, "").replace("_", " ").replace("-", " ").strip().title()
+            # 5. Extract structured text & ingest with page awareness into ChromaDB
+            facts_learned = await run.io_bound(
+                tars_archive.ingest_document,
+                str(file_path),
+                clean_filename,
+                book_id,
+                clean_title
+            )
 
             metadata = {
                 "id": book_id,
                 "title": clean_title,
-                "authors": ["Unknown"],
-                "display_author": "Unknown",
+                "authors": authors,
+                "display_author": display_author,
+                "description": local_meta.get('description', ''),
+                "subjects": local_meta.get('subjects', []),
                 "added_at": time.time(),
                 "file_type": ext.replace(".", "").upper(),
                 "formats": {ext.replace(".", "").lower(): f"/static_books/{book_id}/{clean_filename}"},
@@ -121,7 +135,7 @@ class IngestionService:
 
             # Register in MongoDB
             await mongo_db.add_book_metadata(metadata)
-            logger.info(f"Book registered in library: {metadata['title']} ({facts_learned} chunks indexed)")
+            logger.info(f"Book registered in library: {metadata['title']} by {display_author} ({facts_learned} chunks indexed)")
 
             elapsed = (datetime.now() - start_time).total_seconds()
             msg = f"Successfully added to library. TARS learned {facts_learned} facts." if facts_learned > 0 else "Successfully added to library."

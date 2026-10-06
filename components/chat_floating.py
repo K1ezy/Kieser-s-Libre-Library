@@ -38,7 +38,7 @@ class FloatingChat:
         await mongo_db.add_message_to_session(self.session_id, "user", text)
         
         with self.log_container:
-            response_msg = ui.chat_message(name='TARS', sent=False).classes('bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100')
+            response_msg = ui.chat_message(name='TARS', sent=False).classes('bg-slate-100 text-slate-800')
             with response_msg:
                 spinner = ui.spinner('dots', size='sm')
                 content_label = ui.markdown()
@@ -76,11 +76,12 @@ class FloatingChat:
     def _build_ui(self):
         ui.button(icon='smart_toy', on_click=self.toggle) \
             .props('fab color=indigo') \
-            .classes('fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-40 shadow-2xl hover:scale-105 active:scale-95 transition-transform')
+            .classes('fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-3.5 sm:bottom-6 sm:right-6 z-40 shadow-2xl hover:scale-105 active:scale-95 transition-transform')
             
         with ui.dialog() as self.dialog, ui.card().classes(
-            'w-[calc(100vw-2rem)] max-w-sm h-[75vh] max-h-[500px] p-0 flex flex-col fixed bottom-20 right-4 sm:right-6 shadow-2xl rounded-3xl '
-            'border border-slate-200 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-900'
+            'w-[calc(100vw-1.5rem)] max-w-sm h-[70dvh] max-h-[500px] p-0 flex flex-col fixed '
+            'bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-3 sm:right-6 shadow-2xl rounded-3xl '
+            'border border-slate-200 overflow-hidden bg-white'
         ):
             with ui.row().classes('w-full bg-gradient-to-r from-indigo-600 to-indigo-700 p-3.5 items-center justify-between text-white shrink-0'):
                 with ui.row().classes('items-center gap-2'):
@@ -88,10 +89,10 @@ class FloatingChat:
                     ui.label('TARS Quick Assistant').classes('font-bold text-sm')
                 ui.button(icon='close', on_click=self.toggle).props('flat round dense color=white size=sm')
                 
-            self.log_container = ui.column().classes('w-full flex-grow overflow-y-auto p-4 bg-slate-50 dark:bg-slate-950 gap-2.5 break-words')
+            self.log_container = ui.column().classes('w-full flex-grow overflow-y-auto p-4 bg-slate-50 gap-2.5 break-words')
             self.log_container.props('id=floating-chat-log')
             
-            with ui.row().classes('w-full p-2.5 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 items-center gap-1.5 shrink-0'):
+            with ui.row().classes('w-full p-2.5 bg-white border-t border-slate-200 items-center gap-1.5 shrink-0'):
                 self.text_input = ui.input(placeholder='Ask TARS...').props('dense rounded outlined bg-color=slate-50') \
                     .classes('flex-grow text-sm').on('keydown.enter.prevent', self.send_message)
                 ui.button(icon='send', on_click=self.send_message).props('flat round dense color=indigo size=md')

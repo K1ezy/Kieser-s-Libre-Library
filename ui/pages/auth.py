@@ -35,12 +35,7 @@ async def login_page():
         ui.navigate.to('/')
         return
 
-    dark = ui.dark_mode()
-    ui.button(icon='dark_mode', on_click=dark.toggle) \
-        .classes('absolute top-4 right-4 z-50 text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:white transition-colors') \
-        .props('flat round size=md')
-
-    with ui.row().classes('w-full h-screen m-0 p-0 overflow-hidden'):
+    with ui.row().classes('w-full min-h-[100dvh] h-[100dvh] m-0 p-0 overflow-hidden'):
         # Brand Side
         with ui.column().classes('hidden md:flex w-1/2 h-full bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 items-center justify-center text-white p-12 relative overflow-hidden'):
             # Ambient background glow
@@ -63,11 +58,11 @@ async def login_page():
                     ui.label('Reader')
 
         # Form Side
-        with ui.column().classes('w-full md:w-1/2 h-full items-center justify-center bg-slate-50 dark:bg-slate-900 p-4 sm:p-8 transition-colors duration-300 overflow-y-auto'):
-            with ui.card().classes('w-full max-w-md p-5 sm:p-8 shadow-xl md:shadow-none border border-slate-200/80 dark:border-slate-800/80 md:border-none bg-white md:bg-transparent dark:bg-slate-900 rounded-2xl sm:rounded-3xl'):
+        with ui.column().classes('w-full md:w-1/2 h-full items-center justify-center bg-slate-50 p-4 sm:p-8 overflow-y-auto'):
+            with ui.card().classes('w-full max-w-md p-5 sm:p-8 shadow-xl md:shadow-none border border-slate-200/80 md:border-none bg-white md:bg-transparent rounded-2xl sm:rounded-3xl'):
                 with ui.column().classes('w-full mb-4 sm:mb-6'):
-                    ui.label('Welcome Back').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-1')
-                    ui.label('Sign in with your email or username').classes('text-xs sm:text-sm text-slate-500 dark:text-slate-400')
+                    ui.label('Welcome Back').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-1')
+                    ui.label('Sign in with your email or username').classes('text-xs sm:text-sm text-slate-500')
 
                 # Identifier Field (Email or Username)
                 identifier = ui.input(placeholder='Email or Username') \
@@ -126,8 +121,8 @@ async def login_page():
                 ui.button('Sign In', on_click=try_login).classes(BTN_STYLE)
 
                 with ui.row().classes('w-full justify-center items-center mt-6 gap-1 text-sm'):
-                    ui.label("Don't have an account?").classes('text-slate-500 dark:text-slate-400')
-                    ui.link('Create Account', '/signup').classes('text-indigo-600 dark:text-indigo-400 font-bold hover:underline')
+                    ui.label("Don't have an account?").classes('text-slate-500')
+                    ui.link('Create Account', '/signup').classes('text-indigo-600 font-bold hover:underline')
 
 
 async def signup_page():
@@ -136,12 +131,7 @@ async def signup_page():
         ui.navigate.to('/')
         return
 
-    dark = ui.dark_mode()
-    ui.button(icon='dark_mode', on_click=dark.toggle) \
-        .classes('absolute top-4 right-4 z-50 text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:white transition-colors') \
-        .props('flat round size=md')
-
-    with ui.row().classes('w-full h-screen m-0 p-0 overflow-hidden'):
+    with ui.row().classes('w-full min-h-[100dvh] h-[100dvh] m-0 p-0 overflow-hidden'):
         # Brand Side
         with ui.column().classes('hidden md:flex w-1/2 h-full bg-gradient-to-br from-purple-900 via-indigo-900 to-indigo-800 items-center justify-center text-white p-12 relative overflow-hidden'):
             ui.element('div').classes('absolute w-96 h-96 bg-purple-500/20 rounded-full blur-3xl -top-20 -right-20')
@@ -152,11 +142,11 @@ async def signup_page():
             ui.label('Unlock intelligent search, AI study companions, and flashcards.').classes('text-lg font-normal opacity-85 text-center max-w-sm')
 
         # Form Side
-        with ui.column().classes('w-full md:w-1/2 h-full items-center justify-center bg-slate-50 dark:bg-slate-900 p-4 sm:p-8 transition-colors duration-300 overflow-y-auto'):
-            with ui.card().classes('w-full max-w-md p-5 sm:p-8 shadow-xl md:shadow-none border border-slate-200/80 dark:border-slate-800/80 md:border-none bg-white md:bg-transparent dark:bg-slate-900 rounded-2xl sm:rounded-3xl'):
+        with ui.column().classes('w-full md:w-1/2 h-full items-center justify-center bg-slate-50 p-4 sm:p-8 overflow-y-auto'):
+            with ui.card().classes('w-full max-w-md p-5 sm:p-8 shadow-xl md:shadow-none border border-slate-200/80 md:border-none bg-white md:bg-transparent rounded-2xl sm:rounded-3xl'):
                 with ui.column().classes('w-full mb-4 sm:mb-6'):
-                    ui.label('Create Account').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-1')
-                    ui.label('Get started with your free digital library').classes('text-xs sm:text-sm text-slate-500 dark:text-slate-400')
+                    ui.label('Create Account').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-1')
+                    ui.label('Get started with your free digital library').classes('text-xs sm:text-sm text-slate-500')
 
                 # Username Field
                 username = ui.input(placeholder='Username') \
@@ -249,5 +239,5 @@ async def signup_page():
                 ui.button('Create Account', on_click=try_signup).classes(BTN_STYLE)
 
                 with ui.row().classes('w-full justify-center items-center mt-6 gap-1 text-sm'):
-                    ui.label('Already have an account?').classes('text-slate-500 dark:text-slate-400')
-                    ui.link('Sign In', '/login').classes('text-indigo-600 dark:text-indigo-400 font-bold hover:underline')
+                    ui.label('Already have an account?').classes('text-slate-500')
+                    ui.link('Sign In', '/login').classes('text-indigo-600 font-bold hover:underline')

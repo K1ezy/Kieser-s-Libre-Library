@@ -1,134 +1,212 @@
 # 📚 Libre-Library
 
-> **Intelligent, AI-Powered Personal Digital Library, E-Reader & Study Hub**  
-> Built with **Python**, **NiceGUI** (Vue/Quasar/Tailwind), **MongoDB**, **ChromaDB**, and **Local LLMs** (Llama 3.2 / RAG).
+<div align="center">
+
+![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python&logoColor=white)
+![NiceGUI](https://img.shields.io/badge/NiceGUI-2.0+-5c6ac4?logo=vue.js&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-Motor%20Async-green?logo=mongodb&logoColor=white)
+![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector%20Store-orange?logo=databricks&logoColor=white)
+![LLM](https://img.shields.io/badge/Local%20LLM-Llama%203.2%203B-purple?logo=meta&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-22%2F22%20Passing-brightgreen?logo=pytest&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-blue)
+
+**Intelligent, AI-Powered Personal Digital Library, E-Reader & Study Companion**  
+*Private, Offline-First, and Zero Data Leakage.*
+
+[Features](#-key-features) • [Architecture](#-system-architecture) • [Directory Structure](#-folder--file-architecture) • [Quickstart](#-getting-started) • [OPDS Catalog](#-opds-12-e-reader-catalog-feed) • [Testing](#-automated-testing-suite) • [Changelog](#-changelog--quality-of-life-improvements)
+
+</div>
 
 ---
 
 ## 🌟 Overview
 
-**Libre-Library** is a modern, self-hosted personal digital library and learning assistant. It combines a clean, mobile-optimized digital reading interface with local Retrieval-Augmented Generation (RAG) AI capabilities. Users can organize, read, search, summarize, and study their books and research documents offline with zero data leakage.
+**Libre-Library** is a self-hosted personal digital library and learning workstation. It integrates a reading interface with local **Retrieval-Augmented Generation (RAG)** artificial intelligence. Users can organize, read, search, summarize, and study their books and documents without relying on external cloud APIs or leaking personal data.
 
-Whether accessed on a desktop workstation or on a mobile phone via local network or secure tunnels (ngrok), Libre-Library delivers a fluid, responsive, and distraction-free experience.
+Built on an asynchronous Python stack using **NiceGUI** (FastAPI + Quasar + Vue 3 + Tailwind CSS), **MongoDB** (Motor), and **ChromaDB**, Libre-Library provides a clean, coherent light aesthetic optimized for desktop workstations, tablets, and mobile devices (iPhone / Android) alike.
+
+---
+
+## 🏗️ System Architecture
+
+```mermaid
+graph TD
+    subgraph Client["Presentation & Client Layer"]
+        Browser["Desktop & Mobile Web App<br/>(NiceGUI / Quasar / Tailwind CSS)"]
+        EReader["E-Reader Devices / Apps<br/>(KOReader, Moon+ Reader, Apple Books)"]
+    end
+
+    subgraph Server["Application & Security Layer"]
+        FastAPI["FastAPI Application Server<br/>(Port 8080 / Asynchronous)"]
+        AuthGuard["Security & Auth Guard<br/>(JWT HS256 + Bcrypt + CORS Whitelist)"]
+        Router["Page Routers & Ingestion Hub"]
+        OPDSRouter["OPDS 1.2 XML Catalog Feed<br/>(/opds)"]
+    end
+
+    subgraph Intelligence["AI & Knowledge Processing Layer"]
+        LLM["TARS AI Engine<br/>(llama-cpp-python / Llama 3.2 3B GGUF)"]
+        RAG["TARS Archive RAG Pipeline<br/>(SentenceTransformers all-MiniLM-L6-v2)"]
+        Summarizer["AI Document Summarizer<br/>(Multi-Mode Study Guide Extraction)"]
+        Planner["Flashcard Study Deck Generator<br/>(Active Recall Card Synthesis)"]
+    end
+
+    subgraph Storage["Storage & Persistence Layer"]
+        Mongo[("MongoDB Database<br/>(Motor Async Driver)")]
+        Chroma[("ChromaDB Vector Store<br/>(Cosine Semantic Embeddings)")]
+        Disk[("File System Storage<br/>(data/books / covers / metadata)")]
+    end
+
+    Browser --> AuthGuard
+    AuthGuard --> Router
+    Router --> FastAPI
+    EReader --> OPDSRouter
+    OPDSRouter --> FastAPI
+
+    FastAPI --> Intelligence
+    FastAPI --> Storage
+
+    LLM <--> RAG
+    RAG <--> Chroma
+    Summarizer --> LLM
+    Planner --> LLM
+
+    Router <--> Mongo
+    Router <--> Disk
+```
 
 ---
 
 ## ✨ Key Features
 
-### 🤖 Local AI & RAG Engine (TARS Assistant)
-- **Zero-Cloud Privacy**: Powered by local quantized models (default: `Llama-3.2-3B-Instruct-Q8_0.gguf`) running on GPU/CPU via `llama-cpp-python`.
-- **Retrieval-Augmented Generation (RAG)**: Integrates ChromaDB vector storage and HuggingFace Sentence Transformers (`all-MiniLM-L6-v2`) to query and chat with your entire document collection with precise source citations.
-- **Contextual Ingestion**: Automatically chunks, embeds, and indexes PDFs, EPUBs, TXT, and Markdown files.
-- **Persistent Chat Sessions**: Dedicated conversation history, multi-session management, and floating quick-chat widget available on any page.
+### 🤖 Local AI & RAG Engine (TARS Librarian)
+- **100% Private Offline Inference**: Powered by local quantized models (default: `Llama-3.2-3B-Instruct-Q8_0.gguf`) running on GPU/CPU via `llama-cpp-python` with zero telemetry.
+- **Semantic Vector Retrieval (RAG)**: Uses ChromaDB and `all-MiniLM-L6-v2` Sentence Transformers to index, retrieve, and cite exact page passages from your documents.
+- **Thread-Safe Query Caching**: In-memory LRU query cache prevents redundant embedding computations and accelerates repeated questions.
+- **Lazy Initialization**: ChromaDB and embedding weights load on-demand, preventing slow cold boot times.
+- **Multimodal Audio & Accessibility**: Integrated 1-click clipboard copy and Web Speech text-to-speech audio synthesis.
 
-### 📖 Universal Digital E-Reader
-- **Multi-Format Support**: Native reader for EPUB and PDF documents.
-- **Responsive Layout**: Full-bleed reading view, adjustable typography, dark/light themes, and mobile-friendly navigation.
-- **Seamless Metadata Extraction**: Automatically parses covers, authors, summaries, and publication details.
+### 📱 Mobile-First Ergonomics
+- **Bottom Navigation Dock (`md:hidden`)**: A glassmorphic bottom dock anchored above the device home indicator using safe-area insets (`env(safe-area-inset-bottom, 0px)`).
+- **Dynamic Viewport Heights (`100dvh`)**: Replaced fragile `100vh` units with `100dvh`, preventing mobile address-bar shifts and bounce glitches on iOS Safari and Chrome.
+- **Horizontal Swipe Status Chips**: Reading status tabs (All, Favorites, Currently Reading, Want to Read, Completed) feature native horizontal swipe physics (`-webkit-overflow-scrolling: touch`).
+- **Two-Column Responsive Filters**: Collapses multi-filter select toolbars into 2 compact columns on phones, cutting vertical scrolling in half.
+- **iOS Auto-Zoom Suppression**: Enforces `font-size: 16px` on form inputs to prevent intrusive browser auto-zoom.
+- **Floating Chat FAB Safe Clearance**: Floating TARS action button is offset to float safely above the mobile bottom dock.
 
-### 📑 Smart Document Ingestion & Summarizer
-- **Drag-and-Drop Ingestion Hub**: Upload and process single or multi-volume books and lecture slides.
-- **Automated Summaries**: Generates high-yield chapter summaries, key takeaways, and core concept breakdowns.
-- **Metadata Enrichment**: Built-in tools for synchronizing book synopses, authors, and cover art.
+### 🎨 Clean, Coherent Light Design System
+- **Complete Dark Mode Purge**: Fully eradicated conflicting dark mode styles, legacy night-time auto toggles, and Quasar `.body--dark` class injections.
+- **System Color Scheme Lock**: Declared `<meta name="color-scheme" content="light">` to instruct mobile operating systems not to force-invert colors.
+- **Curated Palette**:
+  - **Canvas**: Clean Slate 50 (`#f8fafc`)
+  - **Surfaces**: Crisp White (`#ffffff`) with subtle Slate 200 borders (`#e2e8f0`)
+  - **Primary**: Royal Indigo (`#4f46e5` / `#4338ca`)
+  - **Typography**: High-contrast Slate 900 (`#0f172a`) headings and Slate 700 (`#334155`) body
 
-### 📅 Active Study Planner & Flashcards
-- **Interactive Task Calendar**: Track study tasks, due dates, reading goals, and milestones.
-- **Flashcard Decks**: Automatically generated and custom study decks with responsive carousel cards for active recall.
-- **Real-time Status Tracking**: Toggle task completion with instant synchronization to MongoDB.
+### 📡 OPDS 1.2 E-Reader Catalog Feed
+- **Built-in Catalog Server**: Exposes an Atom/XML OPDS feed at `/opds`.
+- **E-Reader Wireless Sync**: Connect physical e-readers (Kobo, Kindle via KOReader) or mobile apps (Moon+ Reader, Apple Books, Chunky) directly over local Wi-Fi to browse, search, and download your books.
+- **Automatic Cover & Acquisition Links**: Generates standard OPDS image and download links for PDF, EPUB, DOCX, and PPTX formats.
 
-### 📱 Mobile-First Responsive Design
-- **Engineered for Mobile Screens**: Specially optimized for 320px–430px smartphone viewports (iPhone, Android) up to 4K displays.
-- **Persistent Bottom Navigation Bar**: Quick mobile navigation across Home, Books, Chat, Planner, and Profile.
-- **Touch-Optimized UI**: 44px+ minimum touch targets, collapsible sidebars, non-overlapping floating action buttons, and iOS auto-zoom prevention (`font-size: 16px`).
+### 📖 Universal Reader Interface
+- **Native Document Support**: Clean reading viewers for EPUB, PDF, DOCX, PPTX, TXT, and Markdown.
+- **Reading Progress & Status**: Tracks reading progress, last page read, and categorized shelves in MongoDB.
+- **Metadata Resolution**: Automatically resolves local book paths, cover images, and publication data.
 
-### 🔐 Security & User Management
-- **Role-Based Access Control**: Multi-user support with `admin` and `user` tiers. The first registered user is automatically designated as **Admin**.
-- **Modern Authentication**: Secure password hashing with `bcrypt` and stateless JWT session management via HTTP-only NiceGUI storage.
-- **Case-Insensitive & Sanitized Auth**: Normalizes usernames and emails, preventing duplicates and whitespace errors.
+### 🧠 Study Planner & 3D Flashcards
+- **Topic & Milestone Tracker**: Create, track, and manage study goals and target completion dates.
+- **AI Flashcard Synthesis**: Automatically generates active-recall study flashcard decks from any document in **10–25 seconds**.
+- **Interactive 3D Carousel**: Responsive flashcard cards with 3D flip animation (`perspective: 1000px`), question front-face, and answer back-face.
 
----
+### 📑 Document Summarizer
+- **4 Pedagogical Modes**:
+  1. *Exhaustive Study Guide*: Multi-chapter in-depth breakdown.
+  2. *Executive Overview*: High-yield concise brief.
+  3. *Key Concepts & Definitions*: Glossary and core formulas/theories.
+  4. *Q&A Active Recall Prep*: Test questions and model answers.
+- **Direct Book Record Persistence**: 1-click saving of generated summaries into the book's MongoDB document.
 
-## 🛠️ Architecture & Tech Stack
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    User Interface (NiceGUI)                 │
-│         Vue 3 / Quasar / TailwindCSS / Theme System         │
-└──────────────────────────────┬──────────────────────────────┘
-                               │
-┌──────────────────────────────▼──────────────────────────────┐
-│                  Application Layer (FastAPI)                │
-│         Routing / JWT Auth Guard / Session Management       │
-└──────────────┬───────────────────────────────┬──────────────┘
-               │                               │
-┌──────────────▼──────────────┐ ┌──────────────▼──────────────┐
-│      Database & Storage     │ │          AI / RAG Core      │
-│  - MongoDB (Motor Async)    │ │  - llama-cpp-python (Llama) │
-│  - Document & User Data     │ │  - ChromaDB Vector Store    │
-│  - Task / Study Planner     │ │  - SentenceTransformers     │
-└─────────────────────────────┘ └─────────────────────────────┘
-```
-
-- **Frontend & App Framework**: [NiceGUI](https://nicegui.io/) (FastAPI + Quasar + Vue 3 + Tailwind CSS)
-- **Primary Database**: MongoDB (asynchronous driver via `motor`)
-- **Vector Database**: [ChromaDB](https://www.trychroma.com/) for document embeddings and semantic search
-- **Embeddings Model**: `sentence-transformers/all-MiniLM-L6-v2`
-- **LLM Runtime**: `llama-cpp-python` (with GPU CUDA offloading support)
-- **Authentication**: Passlib / Bcrypt + PyJWT
-- **Public Tunneling**: Ngrok integration for remote access
+### 🔐 Enterprise Security & Hardening
+- **Path Traversal Guards**: Strict alphanumeric regex checks and resolved path confinement (`is_relative_to`) prevent directory traversal attacks.
+- **Cryptographic Key Generation**: Auto-generates persistent 256-bit entropy keys (`secrets.token_urlsafe(32)`) saved to `data/.secret_key`.
+- **Password Security**: Salted `bcrypt` hashing with case-insensitive, whitespace-sanitized credential handling.
+- **JWT Expiry Enforcement**: Stateless HS256 tokens with configurable expiration and session verification.
+- **Restricted CORS Policy**: Explicitly restricts origins to localhost, local LAN IPs, and authorized ngrok tunnels.
 
 ---
 
-## 📂 Project Directory Structure
+## 📂 Folder & File Architecture
 
 ```plaintext
 Libre-Library/
-├── assets/                  # App images, logos, and UI assets
-├── components/              # Reusable UI components
-│   ├── book_card.py         # Responsive book display card
-│   ├── bottom_nav.py        # Mobile bottom navigation bar
-│   ├── chat_floating.py     # Floating action button & quick-chat modal
-│   ├── header.py            # Responsive top header & search dialog
-│   └── sidebar.py           # Collapsible navigation drawer
-├── core/                    # Core backend logic & services
-│   ├── ai_engine/           # LLM & RAG retrieval pipelines
-│   │   ├── llm_engine.py    # Local Llama-3.2 runner & streaming
-│   │   └── rag_pipeline.py  # ChromaDB semantic query & context injection
-│   ├── auth/                # JWT handler & session helpers
-│   ├── database/            # MongoDB connection & schema managers
-│   │   └── mongo_manager.py # Motor asynchronous MongoDB repository
-│   ├── external_api/        # Book API integrations (dBooks, etc.)
-│   ├── library/             # Book scanner & file system watchers
-│   ├── services/            # Ingestion & document chunking services
-│   └── utils/               # Text extractors (PDF, EPUB, TXT, MD)
-├── data/                    # App data directory (books, metadata, vectors)
-│   ├── books/               # Organized book folders & metadata.json
-│   └── chroma_db/           # Chroma vector database indices
-├── E-Books/                 # Raw/incoming electronic books directory
-├── models/                  # Local LLM weights (.gguf files)
-├── static/                  # Static assets & EPUB.js web reader
-├── tools/                   # Maintenance & administrative CLI scripts
-│   ├── fix_authors.py       # Metadata author cleaning
-│   └── manage_users.py      # User account listing & deletion utility
-├── ui/                      # UI pages & styling
-│   ├── pages/               # Main application pages
-│   │   ├── admin.py         # Admin control panel
-│   │   ├── auth.py          # Login & registration screens
-│   │   ├── book_collection.py# Book catalog & search filter
-│   │   ├── book_details.py  # Book detail view & actions
-│   │   ├── chat.py          # Full-page AI chat assistant
-│   │   ├── home.py          # Dashboard, reading stats, hero
-│   │   ├── planner.py       # Study planner, calendar & flashcards
-│   │   ├── profile.py       # User profile management
-│   │   ├── reader_interface.py# E-reader interface
-│   │   ├── summarizer.py    # AI book/chapter summarizer
-│   │   └── upload.py        # Ingestion Hub file uploader
-│   └── theme.py             # Global typography, color tokens, CSS rules
-├── cleanup_bad_data.py      # Cleans corrupted/placeholder book metadata
-├── download_model.py        # Automated GGUF model downloader
-├── main.py                  # Application entry point & route definitions
-├── requirements.txt         # Python package dependencies
-└── start_app.bat            # One-click Windows startup & ngrok launcher
+├── assets/                          # Application graphics, icons, and branding
+├── components/                      # Reusable UI component modules
+│   ├── book_card.py                 # Responsive book display card with format chips
+│   ├── bottom_nav.py                # Mobile glassmorphic bottom navigation dock
+│   ├── chat_floating.py             # Floating TARS quick-chat FAB & drawer modal
+│   ├── header.py                    # Glassmorphism top navigation & mobile search dialog
+│   └── sidebar.py                   # Desktop navigation drawer with profile footer
+├── core/                            # Core backend logic & services
+│   ├── ai_engine/                   # AI & LLM integration layer
+│   │   ├── llm_engine.py            # Local Llama-3.2 runner & streaming pipeline
+│   │   └── rag_pipeline.py          # ChromaDB semantic query & context injection
+│   ├── auth/                        # Authentication & session layer
+│   │   └── jwt_handler.py           # JWT token issuance, verification & session helpers
+│   ├── config.py                    # Pydantic Settings & environment configuration
+│   ├── database/                    # Database connection & repository layer
+│   │   └── mongo_manager.py         # Motor asynchronous MongoDB manager
+│   ├── external_api/                # External protocols & catalog feeds
+│   │   ├── dbooks_manager.py        # External book catalog search integration
+│   │   └── opds_router.py           # OPDS 1.2 XML catalog feed for e-readers
+│   ├── services/                    # High-level domain services
+│   │   └── ingestion_service.py     # Document processing, chunking & RAG indexing
+│   └── utils/                       # Utility & extraction helpers
+│       ├── metadata_scraper.py      # Automated cover & synopsis enrichment
+│       └── text_extractor.py        # Multi-format document text extractor (PDF/EPUB/DOCX/PPTX)
+├── data/                            # Persistent runtime application data (git-ignored)
+│   ├── books/                       # Organized book directories & physical files
+│   └── chroma_db/                   # Chroma vector database indices
+├── E-Books/                         # Ingest directory for incoming e-books
+├── models/                          # Local GGUF quantized model weights
+├── static/                          # Static web assets & EPUB.js reader engine
+├── tests/                           # Automated unit test suite
+│   ├── __init__.py                  # Test package definition
+│   ├── test_auth.py                 # Authentication & JWT security tests
+│   ├── test_database.py             # MongoDB schema & query normalization tests
+│   ├── test_rag.py                  # ChromaDB & RAG pipeline integration tests
+│   └── test_text_extractor.py       # Multi-format document extraction tests
+├── tools/                           # Standalone maintenance & administrative CLI tools
+│   ├── cleanup_bad_data.py          # Cleans corrupt/placeholder metadata records
+│   ├── debug_library.py             # MongoDB & file system diagnostics
+│   ├── debug_loader.py              # Native document extractor test harness
+│   ├── filescanner.py               # Codebase structure analyzer
+│   ├── fix_authors.py               # Metadata author cleaning script
+│   ├── force_migrate.py             # Force-indexes book files into MongoDB
+│   ├── gpu_test.py                  # CUDA / llama-cpp GPU engine validation
+│   ├── manage_users.py              # User account listing & deletion utility
+│   ├── migrate_library.py           # Legacy directory migration script
+│   ├── organize_ebooks.py           # E-Books folder organizer & repair
+│   ├── pack_for_gemini.py           # Context packing utility for LLM analysis
+│   └── test_imports.py              # Dependency import validator
+├── ui/                              # User interface views and theme
+│   ├── pages/                       # Application route pages
+│   │   ├── admin.py                 # Admin console & OPDS catalog feed link
+│   │   ├── auth.py                  # Login & registration forms
+│   │   ├── book_collection.py       # Library catalog with filters & infinite scroll
+│   │   ├── book_details.py          # Book synopsis, cover & reading actions
+│   │   ├── chat.py                  # Full-page TARS conversational assistant
+│   │   ├── home.py                  # Dashboard, greeting, statistics & quick actions
+│   │   ├── planner.py               # Study planner, milestones & flashcards
+│   │   ├── planner_service.py       # Flashcard synthesis service
+│   │   ├── profile.py               # User profile & reading statistics
+│   │   ├── reader_interface.py      # E-reader interface (EPUB, PDF, DOCX, PPTX)
+│   │   ├── summarizer.py            # AI study guide & chapter summarizer
+│   │   └── upload.py                # Document Ingestion Hub & real-time log
+│   └── theme.py                     # Light theme system, Inter typography & CSS rules
+├── download_model.py                # Script to download Llama 3.2 GGUF weights
+├── main.py                          # NiceGUI application entrypoint & route map
+├── requirements.txt                 # Pinned project dependencies
+├── smart_librarian.py               # Metadata synchronization tool
+└── start_app.bat                    # Windows one-click startup & ngrok launcher
 ```
 
 ---
@@ -136,10 +214,10 @@ Libre-Library/
 ## 🚀 Getting Started
 
 ### 1. Prerequisites
-- **Python**: Version 3.11 or 3.12 (recommended)
-- **MongoDB Community Server**: Running locally on port `27017`
-- **Git**: Installed and configured
-- *(Optional)* **NVIDIA GPU with CUDA**: For high-speed LLM inference
+- **Python**: 3.11 or 3.12
+- **MongoDB Community Server**: Running locally on `localhost:27017`
+- **Git**: Installed
+- *(Optional)* **NVIDIA GPU with CUDA**: For accelerated LLM inference
 
 ### 2. Installation & Setup
 
@@ -151,9 +229,9 @@ Libre-Library/
 
 2. **Create and activate a virtual environment**:
    ```bash
-   # Windows
+   # Windows (PowerShell)
    python -m venv .venv
-   .venv\Scripts\activate
+   .venv\Scripts\Activate.ps1
    ```
 
 3. **Install dependencies**:
@@ -167,9 +245,8 @@ Libre-Library/
    ```
    *Downloads `Llama-3.2-3B-Instruct-Q8_0.gguf` into the `models/` directory.*
 
-5. **Verify MongoDB**:
-   Ensure MongoDB service is running:
-   ```bash
+5. **Start MongoDB**:
+   ```powershell
    net start MongoDB
    ```
 
@@ -177,127 +254,128 @@ Libre-Library/
 
 ## 🖥️ Running the Application
 
-### Option A: One-Click Startup (Recommended for Windows)
+### Option A: One-Click Startup (Windows)
 Double-click `start_app.bat` or run:
-```bash
+```bat
 start_app.bat
 ```
-*This automatically starts the Libre-Library server on port `8080` and initializes an `ngrok` tunnel for remote mobile access.*
+*Starts Libre-Library on port `8080` and optionally initializes an `ngrok` tunnel for remote mobile access.*
 
 ### Option B: Manual Command Line
 ```bash
 python main.py
 ```
-- **Local Access**: Open `http://localhost:8080` in your browser.
-- **First-Time Login**: Head to `/signup` to register. The first user created automatically receives **Administrator** privileges!
+- Open `http://localhost:8080` in your web browser.
+- **First-Time Setup**: Register at `/signup`. The first registered user is automatically granted **Administrator** status.
 
 ---
 
 ## ⚙️ Configuration (`core/config.py`)
 
-Configuration values can be overridden via environment variables or a `.env` file:
+All settings can be configured via environment variables or a `.env` file:
 
 | Variable | Default Value | Description |
 |---|---|---|
-| `PROJECT_NAME` | `Libre Library` | Application title |
+| `PROJECT_NAME` | `Libre Library` | Web application display title |
 | `MONGO_URI` | `mongodb://localhost:27017` | MongoDB connection URI |
-| `DB_NAME` | `libre_library_db` | Primary database name |
-| `SECRET_KEY` | `libre_library_secure_key_2025` | Session cookie encryption secret |
-| `JWT_SECRET` | `libre_library_secure_key_2025` | JWT token signing key |
-| `ACCESS_TOKEN_EXPIRE_MINUTES`| `1440` (24h) | Access token expiration |
-| `MODEL_FILENAME` | `Llama-3.2-3B-Instruct-Q8_0.gguf` | AI Model filename in `models/` |
-| `GPU_LAYERS` | `20` | Layers offloaded to GPU (`-1` for full) |
-| `CONTEXT_WINDOW` | `8192` | LLM context window size |
+| `DB_NAME` | `libre_library_db` | Main database name |
+| `SECRET_KEY` | *(Auto-generated 256-bit)* | Session cookie encryption secret |
+| `JWT_SECRET` | *(Auto-generated 256-bit)* | JWT signing key |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440` (24 Hours) | JWT access token lifespan |
+| `UI_THEME_COLOR` | `#4f46e5` | Primary Indigo brand color |
+| `MODEL_FILENAME` | `Llama-3.2-3B-Instruct-Q8_0.gguf` | Active LLM weights filename in `models/` |
+| `GPU_LAYERS` | `20` | Layers offloaded to CUDA GPU (`-1` for full offload) |
+| `CONTEXT_WINDOW` | `8192` | LLM context token window |
+
+---
+
+## 📡 OPDS 1.2 E-Reader Catalog Feed
+
+Libre-Library includes an **OPDS (Open Publication Distribution System)** catalog:
+- **URL**: `http://<your-ip-or-domain>:8080/opds`
+- **Supported E-Readers**:
+  - **KOReader** (Kindle / Kobo / Android / Linux)
+  - **Moon+ Reader** (Android)
+  - **Apple Books** (iOS / iPadOS)
+  - **Chunky Comic Reader** (iPadOS)
+- **Features**: Live search feed, category grouping, publication date sorting, high-resolution cover art, and direct EPUB/PDF download.
+
+---
+
+## 🧪 Automated Testing Suite
+
+Libre-Library includes a unit test suite verifying core system components:
+
+```bash
+# Run all automated tests:
+python -m unittest discover tests
+
+# Run specific test modules:
+python -m unittest tests.test_auth
+python -m unittest tests.test_database
+python -m unittest tests.test_rag
+python -m unittest tests.test_text_extractor
+```
+
+### Test Coverage Highlights
+- `tests/test_auth.py`: Password hashing, token generation, role verification, and expiration handling.
+- `tests/test_database.py`: Safe float timestamp normalization, user profile schema validation, and query operations.
+- `tests/test_rag.py`: ChromaDB initialization, query caching, text chunking, and lazy loading.
+- `tests/test_text_extractor.py`: Plain text, markdown, and multi-format document extraction.
 
 ---
 
 ## 🛠️ CLI Management Utilities
 
-### User & Credential Management
-A dedicated CLI tool is provided at `tools/manage_users.py` to inspect or reset registered users:
+Administrative and maintenance tools are organized under the `tools/` directory:
 
 ```bash
-# List all registered user accounts and roles:
-python tools/manage_users.py list
+# Account Management
+python tools/manage_users.py list      # List registered accounts and roles
+python tools/manage_users.py delete    # Wipe accounts to re-initialize admin account
 
-# Delete all user accounts & credentials (resets database for new admin signup):
-python tools/manage_users.py delete
-```
-
-### Library Data Maintenance
-```bash
-# Scan and clean corrupted/placeholder metadata:
-python cleanup_bad_data.py
-
-# Fix and normalize author fields across books:
-python tools/fix_authors.py
-
-# Re-index and enrich library book metadata:
-python smart_librarian.py
+# Data Integrity & Metadata
+python tools/cleanup_bad_data.py       # Scan and clean corrupted/placeholder metadata
+python tools/fix_authors.py            # Normalize author fields across library records
+python tools/force_migrate.py          # Force index physical book files into MongoDB
+python tools/gpu_test.py               # Validate CUDA / llama-cpp GPU offload
 ```
 
 ---
 
-## 📋 Changelog & Updates (Implemented Today - Sept 13, 2026)
+## 📋 Changelog & Quality of Life Improvements
 
-### 1. 🚀 Codebase Overhaul & Async MongoDB Migration
-- Converted database interaction across all services to asynchronous `Motor` operations, eliminating event-loop stalls.
-- Optimized query indexes for users, books, and planner tasks.
+### 1. 🛡️ Security & Stability Refactoring (Tier 1–3)
+- **Directory Traversal Protection**: Hardened file access in the reader interface with path normalization and `is_relative_to` verification.
+- **Dynamic Cryptographic Secrets**: Replaced static keys with auto-generated 256-bit entropy keys stored in `data/.secret_key`.
+- **CORS Whitelist**: Locked down allowed origins to localhost, local LAN subnets, and verified ngrok domains.
+- **Safe Date Normalization**: Created `to_timestamp()` to eliminate datetime comparison crashes during catalog sorting.
+- **Architectural Cleanup**: Reorganized 11 loose diagnostic scripts into `tools/`.
 
-### 2. 🔐 Authentication System & Normalization Fixes
-- **Whitespace & Case Normalization**: Fixed registration and login edge-cases where trailing spaces or inconsistent casing locked users out.
-- **Duplicate Account Reconciliation**: Added `normalize_existing_users()` to merge duplicate account records.
-- **First-User Admin Provisioning**: Built automated admin role assignment for the initial registered user.
+### 2. ⚡ Performance & Scalability
+- **Vector Query Caching**: Added thread-safe caching to `TarsArchive` to avoid redundant embedding calculations.
+- **Lazy Initialization**: ChromaDB and SentenceTransformer models initialize on first access rather than blocking application startup.
+- **I/O Worker Offloading**: Document extraction offloaded to background threads using `run.io_bound`, keeping the UI responsive.
+- **Indexed MongoDB Queries**: Added compound and sparse indexes on user and document collections.
 
-### 3. 🤖 TARS AI Engine & Ingestion Hub Fixes
-- **Engine Online Status**: Resolved offline status indicator for TARS by adding model validation checks and fallback logic.
-- **Ingestion Hub Parsing**: Fixed file uploading issues by rewriting `core/utils/text_extractor.py` to reliably extract text from PDFs, EPUBs, and plain text files.
-- **RAG Query Accuracy**: Improved prompt synthesis and chunk scoring for academic papers, lecture slides, and technical documents.
+### 3. 📱 Mobile-First Responsive Redesign
+- **Bottom Navigation Dock**: Glassmorphism dock (`components/bottom_nav.py`) with safe-area insets (`env(safe-area-inset-bottom, 0px)`).
+- **Viewport Stabilization**: Adopted `100dvh` units and disabled pull-to-refresh overscroll bounce.
+- **Touch-Friendly Controls**: Added horizontal swipe status chips (`touch-pan-x`) and compact 2-column mobile filter selects.
+- **Floating Chat FAB Positioning**: Offset quick-chat button to clear the mobile bottom navigation bar.
 
-### 4. 📦 Repository Size Optimization
-- Cleaned redundant 10.5 GB build artifacts, stale virtual environment duplicates, and heavy model caches.
-- Configured `.gitignore` to protect source control from model weights (`*.gguf`), local databases, and temporary logs.
+### 4. 🎨 Coherent Light Theme & Dark Mode Purge
+- **Complete Dark Mode Removal**: Eradicated all `dark:` classes, Quasar `body--dark` styles, and legacy night-time toggles.
+- **Meta Color Scheme Lock**: Enforced `<meta name="color-scheme" content="light">` to prevent mobile OS auto-inversion.
+- **Unified Design System**: Cohesive Slate 50 background, crisp white cards, Slate 900 typography, and Royal Indigo accents.
 
-### 5. 📱 Comprehensive Mobile-First UI/UX Overhaul
-- **Global Theme & Viewport**:
-  - Added mobile viewport tags with `viewport-fit=cover`.
-  - Added CSS safe-area variables (`env(safe-area-inset-*)`).
-  - Added horizontal scroll locking (`overflow-x: hidden`) and touch momentum scrolling.
-  - Implemented iOS auto-zoom prevention by enforcing `font-size: 16px` on form inputs.
-- **Mobile Bottom Navigation Bar**:
-  - Created [components/bottom_nav.py](file:///c:/Users/User/Desktop/Libre-Library/components/bottom_nav.py) with active destination highlighting (`/`, `/books`, `/chat`, `/planner`, `/profile`).
-- **Pages Optimized Across All Screen Sizes (320px–430px up to Desktop)**:
-  - **Home**: Adaptive hero banner, dynamic stat tiles, responsive book shelf.
-  - **Book Collection**: Collapsible 2-column mobile filters, touch-friendly book action buttons.
-  - **Book Details**: Centered responsive book cover, wrapped genre chips, and non-overlapping action buttons.
-  - **Reader Interface**: Truncated document header titles to prevent action button overflow.
-  - **Chat**: Redesigned 2-row sticky input bar (quick actions above, input below) and responsive chat bubbles.
-  - **Study Planner**: Responsive calendar sizing, connected drawer toggles, and responsive flashcard carousels.
-  - **Summarizer**: Fluid summary containers with clean word wrapping.
-  - **Upload**: Single-column mobile layout for document ingestion.
-  - **Profile**: Responsive avatar card and user statistics grid.
-  - **Admin**: Horizontally scrollable data tables and responsive management tools.
-
-### 6. 🧹 Database User Wipe & Reset
-- Successfully cleared 17 test account credentials and 26 orphaned planner tasks from MongoDB.
-- Verified zero collision state, allowing fresh registration of the primary Administrator account.
-
-### 7. ⚡ UI Navigation Fix (`LeftDrawer`)
-- Replaced `drawer.close` with `drawer.hide` in [components/sidebar.py](file:///c:/Users/User/Desktop/Libre-Library/components/sidebar.py), resolving Quasar `LeftDrawer` AttributeError on mobile drawer toggle.
-- Reconciled MongoDB sparse indexes on `users` collection (`email_1`, `username_1`), removing startup index conflicts.
-
-### 8. 🧠 Study Planner & Flashcard Generation Overhaul
-- **Resolved `delete_deck_by_task` Bug**: Added alias mapping to `delete_deck(task_id)` in [ui/pages/planner_service.py](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/planner_service.py) and added safe try/except wrappers in [ui/pages/planner.py](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/planner.py).
-- **Eliminated White-Screen / Modal Freeze**: Removed nested spinner dialogs that conflicted with Quasar backdrops. Progress feedback is now rendered directly in-place within the study modal.
-- **Fast, High-Yield Generation**: Re-architected chunking to focus on the top 2 informative document sections with a 1,000-token prompt, reducing generation time from 15+ minutes down to **10–25 seconds**.
-- **Universal Multi-Format File Reader**: Robustly parses NiceGUI `FileUpload`, `UploadEventArguments`, library book paths, and raw bytes with immediate file-handle release on Windows.
-- **Graceful Error Recovery**: Added in-place "Try Another Document" retry card for empty or unsupported files.
-
-### 9. 🔄 Git Repository Synchronization
-- Synchronized all codebase improvements and documentation directly to GitHub (`main` branch).
+### 5. 🧠 Study Planner & Summarizer Enhancements
+- **Fast Flashcard Synthesis**: Optimized prompt chunking to generate complete flashcard decks in **10–25 seconds**.
+- **3D Card Flip**: Carousel cards with 3D perspective flip effects and touch support.
+- **Multi-Mode Summarizer**: 4 study guide modes with 1-click MongoDB document persistence.
 
 ---
 
 ## 📜 License
 
-This project is licensed under the **MIT License**. Free for personal and educational use.
+This project is licensed under the **MIT License**. Free for personal, academic, and non-commercial use.

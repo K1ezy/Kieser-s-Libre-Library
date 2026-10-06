@@ -50,7 +50,7 @@ class BookDetailsPage:
                 
                 # LEFT: Cover & Quick Actions
                 with ui.column().classes('w-full md:w-1/3 lg:w-1/4 items-center'):
-                    with ui.card().classes('p-0 rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl sm:shadow-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 w-44 sm:w-52 md:w-64 aspect-[2/3]'):
+                    with ui.card().classes('p-0 rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl sm:shadow-2xl border border-slate-200 bg-white w-44 sm:w-52 md:w-64 aspect-[2/3]'):
                         ui.image(cover_url).classes('w-full h-full object-cover')
                     
                     with ui.column().classes('w-full max-w-xs gap-2.5 sm:gap-3 mt-4 sm:mt-6'):
@@ -60,57 +60,57 @@ class BookDetailsPage:
                             ui.label('Read Now')
                         
                         with ui.button(on_click=lambda: ui.navigate.to('/chat')) \
-                            .classes('w-full bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-2xl py-3 font-bold'):
+                            .classes('w-full bg-white text-indigo-600 border border-indigo-200 hover:bg-indigo-50 rounded-2xl py-3 font-bold shadow-sm'):
                             ui.icon('smart_toy').classes('mr-2')
                             ui.label('Ask TARS AI')
 
                 # RIGHT: Metadata & Details
                 with ui.column().classes('flex-1 gap-5 sm:gap-6 w-full'):
                     with ui.column().classes('gap-1'):
-                        ui.label(title).classes('text-2xl sm:text-3xl md:text-5xl font-black text-slate-800 dark:text-slate-100 leading-tight tracking-tight')
-                        ui.label(f"by {author_name}").classes('text-base sm:text-xl text-indigo-600 dark:text-indigo-400 font-semibold')
+                        ui.label(title).classes('text-2xl sm:text-3xl md:text-5xl font-black text-slate-900 leading-tight tracking-tight')
+                        ui.label(f"by {author_name}").classes('text-base sm:text-xl text-indigo-600 font-semibold')
 
                     # Badges
                     with ui.row().classes('gap-2 my-1 flex-wrap'):
-                        ui.label(self.book.get('file_type', 'E-BOOK').upper()).classes('px-3 py-1 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded-full shadow-sm')
+                        ui.label(self.book.get('file_type', 'E-BOOK').upper()).classes('px-3 py-1 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full shadow-sm border border-indigo-100')
                         for lang in self.book.get('languages', ['en'])[:2]:
-                            ui.label(lang.upper()).classes('px-3 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold rounded-full shadow-sm')
+                            ui.label(lang.upper()).classes('px-3 py-1 bg-slate-100 text-slate-700 text-xs font-bold rounded-full shadow-sm border border-slate-200')
 
                     ui.separator().classes('opacity-50')
                     
                     # Context Box
                     genres = self.book.get('genres', []) or self.book.get('subjects', [])
                     if genres:
-                        with ui.column().classes('gap-2 w-full p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-100 dark:border-slate-800'):
-                            ui.label('Categories & Topics').classes('text-xs font-bold text-indigo-500 uppercase tracking-wider')
+                        with ui.column().classes('gap-2 w-full p-4 sm:p-5 bg-slate-50 rounded-2xl border border-slate-200'):
+                            ui.label('Categories & Topics').classes('text-xs font-bold text-indigo-600 uppercase tracking-wider')
                             with ui.row().classes('gap-2 flex-wrap'):
                                 for g in genres[:6]:
-                                    with ui.row().classes('items-center gap-1 bg-purple-100/50 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg'):
-                                        ui.icon('tag', size='14px').classes('text-purple-600 dark:text-purple-400')
-                                        ui.label(str(g)).classes('text-xs font-bold text-purple-700 dark:text-purple-300')
+                                    with ui.row().classes('items-center gap-1 bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-lg'):
+                                        ui.icon('tag', size='14px').classes('text-purple-600')
+                                        ui.label(str(g)).classes('text-xs font-bold text-purple-700')
 
                     # Synopsis
                     with ui.column().classes('gap-2'):
                         ui.label('Synopsis').classes('text-xs font-bold text-slate-400 uppercase tracking-wider')
-                        ui.markdown(desc).classes('text-slate-600 dark:text-slate-300 leading-relaxed text-sm sm:text-base max-w-prose break-words')
+                        ui.markdown(desc).classes('text-slate-700 leading-relaxed text-sm sm:text-base max-w-prose break-words')
 
                     # File Details Box
-                    with ui.row().classes('bg-slate-50 dark:bg-slate-800/60 p-4 sm:p-5 rounded-2xl border border-slate-100 dark:border-slate-800 gap-6 sm:gap-8 mt-2 flex-wrap'):
+                    with ui.row().classes('bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 gap-6 sm:gap-8 mt-2 flex-wrap'):
                         with ui.column().classes('gap-0.5'):
                             ui.label('Added On').classes('text-[10px] text-slate-400 uppercase font-bold')
                             date_str = mongo_db.format_added_date(self.book.get('added_at'))
-                            ui.label(date_str).classes('font-bold text-slate-700 dark:text-slate-200 text-sm')
+                            ui.label(date_str).classes('font-bold text-slate-800 text-sm')
                         
                         with ui.column().classes('gap-0.5'):
                             ui.label('Format').classes('text-[10px] text-slate-400 uppercase font-bold')
-                            ui.label(f"Digital {self.book.get('file_type', 'E-Book').upper()}").classes('font-bold text-slate-700 dark:text-slate-200 text-sm')
+                            ui.label(f"Digital {self.book.get('file_type', 'E-Book').upper()}").classes('font-bold text-slate-800 text-sm')
 
     def build_ui(self):
         drawer = sidebar()
         header(drawer_reference=drawer)
         bottom_nav()
         
-        with ui.column().classes('w-full min-h-screen pt-20 px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto bg-slate-50/50 dark:bg-transparent pb-32 md:pb-24'):
+        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
             ui.button('Back to Library', icon='arrow_back', on_click=lambda: ui.navigate.to('/books')) \
                 .props('flat dense color=indigo size=md').classes('mb-3 sm:mb-4 font-bold')
             self.content_container = ui.column().classes('w-full')

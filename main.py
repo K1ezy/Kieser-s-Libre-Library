@@ -5,8 +5,24 @@ from core.database.mongo_manager import mongo_db
 from core.external_api.dbooks_manager import shutdown_client
 from core.auth.jwt_handler import is_user_authenticated
 from components.chat_floating import FloatingChat 
+from core.external_api.opds_router import opds_router
+from core.ai_engine.llm_engine import tars_engine
 from pathlib import Path
+from fastapi.middleware.cors import CORSMiddleware
 import asyncio
+
+# Secure CORS policy: Restrict to configured origins, localhost, LAN, and ngrok tunnels
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.get_cors_origins(),
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|.*\.ngrok-free\.app|.*\.ngrok\.io|.*\.ngrok\.app)(:\d+)?$",
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+# Register OPDS 1.2 Catalog Router for E-Readers (KOReader, Moon+ Reader, Apple Books)
+app.include_router(opds_router)
 
 # --- PAGE IMPORTS ---
 import ui.pages.home as home
@@ -76,7 +92,6 @@ async def reader_route(book_id: str):
     app.storage.client['page_path'] = '/read'
     apply_theme()
     await reader.reader_page(book_id)
-    FloatingChat()
 
 @ui.page('/profile')
 async def profile_route():
@@ -91,10 +106,7 @@ async def book_detail_route(book_id: str):
     if not check_auth(): return
     app.storage.client['page_path'] = '/book' 
     apply_theme()
-    if asyncio.iscoroutinefunction(book_details.book_page):
-        await book_details.book_page(book_id)
-    else:
-        book_details.book_page(book_id)
+    await book_details.book_page(book_id)
     FloatingChat()
 
 @ui.page('/planner')
@@ -143,6 +155,7 @@ async def admin_route():
 @app.on_startup
 async def startup():
     await mongo_db.initialize()
+    await tars_engine.ensure_db_settings_loaded()
 
 if __name__ in {"__main__", "__mp_main__"}:
     app.on_shutdown(shutdown_client) 
@@ -153,5 +166,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         port=8080,
         storage_secret=settings.SECRET_KEY,
         dark=False,
-        reload=True
+        reload=settings.RELOAD,
+        uvicorn_reload_excludes=["data/*", "data/**", "chroma_db/*", "*.log"]
     )

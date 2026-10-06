@@ -22,14 +22,32 @@ class SummarizerTool:
         self.doc_badge = None
         self.generate_btn = None
         self.copy_btn = None
+        self.save_doc_btn = None
+        self.view_book_btn = None
         self.current_summary_text = ""
 
     async def initialize(self):
         all_books = await mongo_db.get_all_books(limit=500)
-        self.books = {b['id']: b.get('title', 'Untitled') for b in all_books}
-        
+        self.books = {}
+        for b in all_books:
+            b_id = b.get('id') or (str(b.get('_id')) if b.get('_id') else None)
+            if b_id:
+                title = b.get('title', 'Untitled')
+                self.books[str(b_id)] = title
+
+
+        # Pop pre-selection from user storage
+        try:
+            pre_book = app.storage.user.pop('summarize_book_id', None)
+            if pre_book:
+                self.selected_book_id = str(pre_book)
+        except Exception:
+            pass
+
         if self.book_select:
             self.book_select.options = self.books
+            if self.selected_book_id and self.selected_book_id in self.books:
+                self.book_select.value = self.selected_book_id
             self.book_select.update()
 
     async def resolve_document_path(self, book_id: str, book_doc: dict) -> Optional[str]:
@@ -81,7 +99,6 @@ class SummarizerTool:
         
         title = self.books.get(self.selected_book_id, "Selected Document")
         
-        # Disable button during generation
         if self.generate_btn:
             self.generate_btn.disable()
         if self.copy_btn:
@@ -89,7 +106,6 @@ class SummarizerTool:
 
         self.summary_output.content = f"🔍 **Locating and extracting text from *{title}*...**"
         
-        # 1. Authoritative document retrieval
         book_doc = await mongo_db.get_book_details(self.selected_book_id)
         if not book_doc:
             self.summary_output.content = f"⚠️ **Notice:** Document record not found in the library database."
@@ -104,19 +120,13 @@ class SummarizerTool:
             size_mb = Path(local_path).stat().st_size / (1024 * 1024)
             self.summary_output.content = f"📖 **Reading *{title}* ({ext}, {size_mb:.1f} MB)...**"
             
-            # Extract actual text from the file
             raw_text = await run.io_bound(extract_text_from_file, local_path)
             if raw_text and len(raw_text.strip()) > 30:
                 clean_text = raw_text.strip()
-                # Intelligent length handling:
-                # For presentation slides, research papers, and chapters (up to 24,000 chars / ~5,500 tokens),
-                # pass the ENTIRE document text so zero slides or topics are omitted!
                 MAX_SINGLE_PASS_CHARS = 24000
                 if len(clean_text) <= MAX_SINGLE_PASS_CHARS:
                     context_text = clean_text
                 else:
-                    # Multi-section proportional sampling across the entire document
-                    # Ensures beginning, early, middle, late, and conclusion are all captured
                     chunk = 4500
                     total = len(clean_text)
                     p1 = clean_text[:chunk]
@@ -140,50 +150,64 @@ class SummarizerTool:
             if self.generate_btn: self.generate_btn.enable()
             return
 
-        # 2. Strict Educational Summarization Prompt
         selected_mode = getattr(self, 'selected_mode', 'detailed')
+        
         if selected_mode == 'brief':
             prompt_text = (
-                f"You are an expert academic research assistant.\n"
-                f"Below is the verified text extracted from: '{title}'.\n\n"
+                f"You are an expert research librarian and academic analyst.\n"
+                f"Below is the verified text extracted from the document: '{title}'.\n\n"
                 "CRITICAL INSTRUCTIONS:\n"
-                "1. Base your summary STRICTLY on the provided text below. Do NOT reference outside fiction or unrelated materials.\n"
-                "2. Provide a concise, high-level executive summary highlighting the core purpose, major themes, and key conclusions.\n\n"
-                f"--- START OF DOCUMENT: {title} ---\n{context_text}\n--- END OF DOCUMENT ---\n\n"
-                "Organize under:\n"
-                "### Executive Overview\n"
-                "### Key Findings & Methodologies\n"
-                "### Strategic Takeaways\n"
+                "1. Base your summary STRICTLY and EXCLUSIVELY on the provided text below. Do NOT hallucinate outside materials.\n"
+                "2. Provide an authoritative Executive Overview highlighting the central thesis, primary objectives, key findings, and strategic takeaways.\n"
+                "3. Structure your response clearly using markdown headings:\n"
+                "### 🎯 Executive Summary & Core Objective\n"
+                "### 🔍 Key Findings & Main Themes\n"
+                "### 💡 Major Takeaways & Practical Applications\n\n"
+                f"--- START OF DOCUMENT: {title} ---\n{context_text}\n--- END OF DOCUMENT ---"
+            )
+        elif selected_mode == 'concepts':
+            prompt_text = (
+                f"You are a master educator and subject matter expert.\n"
+                f"Below is the verified text extracted from the document: '{title}'.\n\n"
+                "CRITICAL INSTRUCTIONS:\n"
+                "1. Extract and explain all CORE CONCEPTS, TERMINOLOGY, FRAMEWORKS, and PRINCIPLES found in this document.\n"
+                "2. Base explanations purely on the text provided.\n"
+                "3. Structure your response under:\n"
+                "### 📚 Foundational Terminology & Definitions\n"
+                "### ⚙️ Core Principles, Frameworks & Methodologies\n"
+                "### ⚠️ Critical Distinctions & Rules to Remember\n\n"
+                f"--- START OF DOCUMENT: {title} ---\n{context_text}\n--- END OF DOCUMENT ---"
+            )
+        elif selected_mode == 'qa':
+            prompt_text = (
+                f"You are a university professor creating an active recall exam review guide.\n"
+                f"Below is the verified text extracted from the document: '{title}'.\n\n"
+                "CRITICAL INSTRUCTIONS:\n"
+                "1. Generate 8-12 high-yield study questions and in-depth answers covering the most vital topics of this document.\n"
+                "2. Include both conceptual understanding and applied analysis questions.\n"
+                "3. Format each item clearly with:\n"
+                "**Q[N]: [Clear, testable question]**\n"
+                "**Answer:** [Accurate explanation referencing the document]\n\n"
+                f"--- START OF DOCUMENT: {title} ---\n{context_text}\n--- END OF DOCUMENT ---"
             )
         else:
             prompt_text = (
                 f"You are an expert academic professor and educational summarizer.\n"
                 f"Below is the verified text extracted from the document: '{title}'.\n\n"
                 "CRITICAL INSTRUCTIONS:\n"
-                "1. Base your summary STRICTLY and EXCLUSIVELY on the provided document text below. Do NOT reference outside fiction or unrelated materials.\n"
-                "2. BE EXHAUSTIVE AND COMPLETE: Do NOT omit any frameworks, hierarchies, methodologies, criteria, or classifications.\n"
-                "3. Use domain-appropriate academic headings based purely on the document's actual subject matter. Do NOT invent unrelated headings (such as 'Security Controls') unless the document is explicitly about security.\n\n"
-                f"--- START OF DOCUMENT: {title} ---\n{context_text}\n--- END OF DOCUMENT ---\n\n"
-                "Produce an exhaustive, high-yield master study guide covering:\n\n"
-                "### 1. Executive Overview, Research Process & Hypothesis Criteria\n"
-                "- Formal definitions, goals, and the complete 6-step research process (with examples).\n"
-                "- Policy & decision-making pipeline (Findings -> Policies -> Development).\n"
-                "- Literature review (purpose, gaps, sources) and Hypothesis formulation (mandatory criteria: Clear & Specific, Testable, Falsifiable).\n\n"
-                "### 2. Structural Hierarchy & Key Areas of Computer Science Research\n"
-                "- The 4-Tier Knowledge Hierarchy (Foundational Knowledge, Systems & Architecture, Core Applied Areas, Advanced Specializations - list all subjects in each tier).\n"
-                "- Key computer science research areas.\n\n"
-                "### 3. Sustainable Research in Computer Science\n"
-                "- Detail all sustainability dimensions: Energy-Efficient Computing, Green Software Engineering, Circular Economy in Computing, Climate Informatics, and Sustainable AI.\n\n"
-                "### 4. Comprehensive Research Methodologies Catalog\n"
-                "- Qualitative vs. Quantitative (purposes, data collection, analysis, CS & theoretical examples).\n"
-                "- Experimental Research (interventions, control vs experimental groups, confounding variables) vs. Observational Research.\n"
-                "- Descriptive vs. Correlational Research (purposes, designs, cross-sectional studies, CS examples).\n"
-                "- Comparative Studies (purposes, benchmarks, CS examples) and Case Studies (in-depth analysis, CS examples, and the 6-step case study execution framework).\n\n"
-                "### 5. The 5 Major Challenges in Computer Science Research\n"
-                "- Detail all sub-challenges across: Data-Related, Algorithmic & Technical, Ethical & Societal, Resource & Infrastructure, and Research Process.\n\n"
-                "### 6. Emerging Technologies & Future Directions\n"
-                "- Specific emerging technologies (GenAI/LLMs, Domain-Specific AI, Edge AI, GNNs, BCI, XR, Emotion AI, Assistive AI).\n"
-                "- Future directions and concluding takeaways (Human-Centered AI, Explainability/Trust, Sustainable AI, AI for Science & Society).\n"
+                "1. Base your summary STRICTLY and EXCLUSIVELY on the provided document text below. Do NOT invent outside topics or reference unrelated domains.\n"
+                "2. BE EXHAUSTIVE AND THOROUGH: Ensure all major sections, arguments, methodologies, criteria, and classifications present in the text are comprehensively covered.\n"
+                "3. Derive section headings DYNAMICALLY based directly on the actual subject matter and themes of the document.\n"
+                "4. Structure your response with the following format:\n"
+                "### 1. Document Overview & Primary Goals\n"
+                "- Context, purpose, scope, and target audience.\n\n"
+                "### 2. Comprehensive Section & Topic Breakdown\n"
+                "- In-depth explanation of each key topic, model, or narrative progression presented in the text.\n\n"
+                "### 3. Key Methodologies, Evidence & Analysis\n"
+                "- Specific data, procedures, qualitative/quantitative points, or arguments made.\n\n"
+                "### 4. Critical Insights & Key Implications\n"
+                "- High-yield conclusions, lessons learned, and future directions.\n\n"
+                f"--- START OF DOCUMENT: {title} ---\n{context_text}\n--- END OF DOCUMENT ---"
             )
 
         messages = [
@@ -191,7 +215,6 @@ class SummarizerTool:
             {"role": "user", "content": prompt_text}
         ]
 
-        # 3. Stream Response with TARS
         self.summary_output.content = f"🧠 **TARS AI is analyzing and generating executive summary for *{title}*...**\n\n"
         buffer = f"## Summary: {title}\n\n"
         
@@ -203,6 +226,10 @@ class SummarizerTool:
             self.current_summary_text = buffer
             if self.copy_btn:
                 self.copy_btn.set_visibility(True)
+            if self.save_doc_btn:
+                self.save_doc_btn.text = 'Save to Book'
+                self.save_doc_btn.enable()
+                self.save_doc_btn.set_visibility(True)
         except Exception as e:
             logger.error(f"Summarizer generation error: {e}", exc_info=True)
             ui.notify(f"Generation Error: {e}", type='negative')
@@ -210,57 +237,104 @@ class SummarizerTool:
             if self.generate_btn:
                 self.generate_btn.enable()
 
+    async def save_to_document(self):
+        """Saves current summary directly to the book record in MongoDB."""
+        if not self.selected_book_id or not self.current_summary_text:
+            ui.notify("No summary text available to save.", type='warning')
+            return
+        try:
+            success = await mongo_db.save_book_summary(self.selected_book_id, self.current_summary_text)
+            if success:
+                if self.save_doc_btn:
+                    self.save_doc_btn.text = 'Saved to Book ✓'
+                    self.save_doc_btn.disable()
+                if self.view_book_btn:
+                    self.view_book_btn.set_visibility(True)
+                ui.notify("Summary saved to Book record! Click 'View on Book Page ➔' to see it.", type='positive', duration=6)
+            else:
+                ui.notify("Failed to save summary to document.", type='negative')
+        except Exception as ex:
+            ui.notify(f"Error saving: {ex}", type='negative')
+
     def build_ui(self):
         drawer = sidebar()
         header(drawer_reference=drawer)
         bottom_nav()
 
-        with ui.column().classes('w-full min-h-screen pt-20 px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto bg-slate-50/50 dark:bg-transparent pb-32 md:pb-24'):
+        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
             
             with ui.column().classes('gap-1 mb-6 sm:mb-8'):
-                ui.label('AI Document Summarizer').classes('text-2xl sm:text-3xl font-black text-slate-800 dark:text-slate-100 tracking-tight')
-                ui.label('Extract authoritative insights, chapters, and executive summaries directly from your course materials and books.').classes('text-xs sm:text-sm text-slate-500 dark:text-slate-400')
+                ui.label('AI Document Summarizer').classes('text-2xl sm:text-3xl font-black text-slate-900 tracking-tight')
+                ui.label('Extract authoritative insights, chapters, study guides, and executive summaries directly from your documents.').classes('text-xs sm:text-sm text-slate-500')
 
             with ui.row().classes('w-full gap-5 sm:gap-8 items-start flex-col lg:flex-row'):
                 
                 # Controls Card
-                with ui.card().classes('w-full lg:w-1/3 p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm'):
-                    ui.label('Select Document').classes('font-bold text-xs sm:text-sm text-slate-700 dark:text-slate-200 uppercase tracking-wider mb-2')
+                with ui.card().classes('w-full lg:w-1/3 p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):
+                    ui.label('Select Document').classes('font-bold text-xs sm:text-sm text-slate-800 uppercase tracking-wider mb-2')
                     
+                    try:
+                        pre_book = app.storage.user.pop('summarize_book_id', None)
+                        if pre_book:
+                            self.selected_book_id = str(pre_book)
+                    except Exception:
+                        pass
+
+                    init_val = self.selected_book_id if (self.selected_book_id and self.selected_book_id in self.books) else None
+
                     self.book_select = ui.select(
-                        {}, label='Choose from Library', with_input=True, 
+                        self.books, label='Choose from Library', with_input=True, 
+                        value=init_val,
                         on_change=lambda e: setattr(self, 'selected_book_id', e.value)
-                    ).props('outlined rounded').classes('w-full mb-3 sm:mb-4 text-sm')
+                    ).props('outlined rounded bg-color=white').classes('w-full mb-3 sm:mb-4 text-sm')
 
                     self.selected_mode = 'detailed'
                     self.mode_select = ui.select(
-                        {'detailed': 'Exhaustive Study Guide (All Topics)', 'brief': 'Executive Overview (Concise)'},
+                        {
+                            'detailed': 'Exhaustive Study Guide (Full Depth)',
+                            'brief': 'Executive Overview (Concise)',
+                            'concepts': 'Key Concepts & Definitions',
+                            'qa': 'Q&A Active Recall Prep'
+                        },
                         value='detailed',
-                        label='Summary Depth',
+                        label='Study Guide Mode',
                         on_change=lambda e: setattr(self, 'selected_mode', e.value)
-                    ).props('outlined rounded').classes('w-full mb-4 sm:mb-6 text-sm')
+                    ).props('outlined rounded bg-color=white').classes('w-full mb-4 sm:mb-6 text-sm')
                     
                     self.generate_btn = ui.button('Generate Summary', icon='bolt', on_click=self.generate_summary) \
-                        .props('unelevated rounded color=indigo size=md').classes('w-full py-2.5 sm:py-3 font-bold shadow-md')
+                        .props('unelevated rounded-xl color=indigo size=md').classes('w-full py-2.5 sm:py-3 font-bold shadow-md')
 
                 # Output Card
-                with ui.card().classes('w-full lg:w-2/3 p-4 sm:p-6 md:p-8 min-h-[360px] sm:min-h-[460px] rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm'):
-                    with ui.row().classes('w-full justify-between items-center mb-3 sm:mb-4 pb-3 border-b border-slate-100 dark:border-slate-800'):
+                with ui.card().classes('w-full lg:w-2/3 p-4 sm:p-6 md:p-8 min-h-[360px] sm:min-h-[460px] rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):
+                    with ui.row().classes('w-full justify-between items-center mb-3 sm:mb-4 pb-3 border-b border-slate-100 flex-wrap gap-2'):
                         with ui.row().classes('items-center gap-2'):
-                            ui.icon('summarize', size='sm').classes('text-indigo-500')
-                            ui.label('Executive Summary Output').classes('text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest')
+                            ui.icon('summarize', size='sm').classes('text-indigo-600')
+                            ui.label('Study Summary Output').classes('text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest')
                         
-                        self.copy_btn = ui.button(
-                            'Copy', icon='content_copy', 
-                            on_click=lambda: (ui.run_javascript(f"navigator.clipboard.writeText({repr(self.current_summary_text)});"), ui.notify("Summary copied to clipboard!", type='positive'))
-                        ).props('flat dense color=indigo size=sm').classes('text-xs font-bold')
-                        self.copy_btn.set_visibility(False)
+                        with ui.row().classes('items-center gap-2 flex-wrap'):
+                            self.view_book_btn = ui.button(
+                                'View on Book Page ➔', icon='open_in_new', 
+                                on_click=lambda: ui.navigate.to(f"/book/{self.selected_book_id}")
+                            ).props('unelevated rounded-lg color=indigo size=sm').classes('text-xs font-bold')
+                            self.view_book_btn.set_visibility(False)
+
+                            self.save_doc_btn = ui.button(
+                                'Save to Book', icon='save', 
+                                on_click=self.save_to_document
+                            ).props('unelevated rounded-lg color=positive size=sm').classes('text-xs font-bold')
+                            self.save_doc_btn.set_visibility(False)
+
+                            self.copy_btn = ui.button(
+                                'Copy', icon='content_copy', 
+                                on_click=lambda: (ui.run_javascript(f"navigator.clipboard.writeText({repr(self.current_summary_text)});"), ui.notify("Summary copied to clipboard!", type='positive'))
+                            ).props('outline rounded-lg color=indigo size=sm').classes('text-xs font-bold')
+                            self.copy_btn.set_visibility(False)
                     
                     self.summary_output = ui.markdown('Select a document from the left and click **Generate Summary** to begin.') \
-                        .classes('prose dark:prose-invert max-w-none text-slate-700 dark:text-slate-300 leading-relaxed text-sm md:text-base break-words overflow-x-auto')
+                        .classes('prose max-w-none text-slate-700 leading-relaxed text-sm md:text-base break-words overflow-x-auto')
 
 async def summarizer_page():
     app.storage.client['page_path'] = '/summarizer'
     tool = SummarizerTool()
-    tool.build_ui()
     await tool.initialize()
+    tool.build_ui()

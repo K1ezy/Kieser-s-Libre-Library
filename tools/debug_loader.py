@@ -1,6 +1,10 @@
 import os
 import sys
 from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
 from core.utils.text_extractor import extract_text_from_file
 
 # --- CONFIGURATION ---
@@ -37,7 +41,7 @@ def test_unified_extractor():
     
     # Test on any existing files in data/books or current dir
     test_files = [pdf_path, pptx_path]
-    books_dir = Path("data/books")
+    books_dir = BASE_DIR / "data" / "books"
     if books_dir.exists():
         for b in books_dir.iterdir():
             if b.is_dir():

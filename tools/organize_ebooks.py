@@ -4,11 +4,15 @@ import shutil
 import uuid
 import urllib.parse
 import json
+import sys
 from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
 from core.database.mongo_manager import mongo_db
 
 # --- CONFIGURATION ---
-BASE_DIR = Path(__file__).resolve().parent
 # 1. Source: Where your files are stuck (The old folder)
 SOURCE_DIR = BASE_DIR / 'E-Books'
 # 2. Destination: Where the app actually looks (The new folder)

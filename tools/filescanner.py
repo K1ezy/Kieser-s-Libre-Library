@@ -1,13 +1,16 @@
 import os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 # Files and folders to completely ignore
 IGNORE_DIRS = {'.venv', '__pycache__', '.git', '.idea', '.vscode'}
 ALLOWED_EXTENSIONS = {'.py'}
 
-output_file = "project_summary.txt"
+output_file = BASE_DIR / "project_summary.txt"
 
 with open(output_file, "w", encoding="utf-8") as outfile:
-    for root, dirs, files in os.walk("."):
+    for root, dirs, files in os.walk(BASE_DIR):
         # Modify dirs in-place to skip ignored directories
         dirs[:] = [d for d in dirs if d not in IGNORE_DIRS]
         

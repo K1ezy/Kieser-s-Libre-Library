@@ -21,7 +21,7 @@ timeout /t 3 /nobreak >nul
 :: 4. Launch Ngrok Tunnel
 echo [2/2] Launching Ngrok Tunnel for public web access...
 if exist "ngrok.exe" (
-    start "Ngrok Tunnel" cmd /k "ngrok.exe http 8080"
+    start "Ngrok Tunnel" cmd /k "ngrok.exe http 8080 --host-header=rewrite"
 ) else (
     echo [WARNING] ngrok.exe not found in root directory!
 )

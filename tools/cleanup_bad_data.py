@@ -1,8 +1,10 @@
 import shutil
 import json
+import sys
 from pathlib import Path
 
-DATA_DIR = Path("data/books").resolve()
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data" / "books"
 
 def clean_library():
     print("🧹 LIBRARY CLEANER: INITIALIZED")

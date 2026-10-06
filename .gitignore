@@ -29,3 +29,10 @@ E-Books/
 .DS_Store
 Thumbs.db
 ngrok.exe
+
+# Environment & Secrets
+.env
+.env.*
+.secrets
+.secret_key
+data/.secret_key

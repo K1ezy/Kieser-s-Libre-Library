@@ -9,6 +9,7 @@ import os
 import shutil
 import re
 from pathlib import Path
+from bson import ObjectId
 
 # Setup Logger
 logger = logging.getLogger("TARS_DB")
@@ -42,8 +43,16 @@ class MongoManager:
                 await self.db['books'].create_index("id", unique=True)
                 await self.db['books'].create_index([("added_at", -1)])
                 await self.db['books'].create_index("title")
+                await self.db['books'].create_index([("file_type", 1), ("added_at", -1)])
+                await self.db['books'].create_index([("display_author", 1), ("added_at", -1)])
+                await self.db['books'].create_index("shelves")
+                await self.db['chats'].create_index("id", unique=True)
+                await self.db['chats'].create_index([("user_id", 1), ("timestamp", -1)])
+                await self.db['tasks'].create_index("id", unique=True)
+                await self.db['tasks'].create_index([("user_id", 1), ("created_at", -1)])
                 await self.db['planner'].create_index("id", unique=True)
                 await self.db['planner'].create_index([("created_at", -1)])
+                await self.db['reading_progress'].create_index([("user_id", 1), ("book_id", 1)], unique=True)
                 await self.db['users'].create_index("email", unique=True, sparse=True)
                 await self.db['users'].create_index("username", sparse=True)
                 await self.db['decks'].create_index("task_id")
@@ -106,10 +115,11 @@ class MongoManager:
         sort_by: str = 'newest',
         format_filter: str = 'All',
         author_filter: str = 'All',
-        search_query: str = ''
+        search_query: str = '',
+        projection: Optional[Dict[str, int]] = None
     ) -> List[Dict[str, Any]]:
         """
-        Retrieves books with optional server-side filtering, sorting, and pagination.
+        Retrieves books with optional server-side filtering, sorting, pagination, and field projection.
         """
         if self.db is None: return []
         try:
@@ -146,17 +156,20 @@ class MongoManager:
             elif sort_by.lower() == 'author':
                 sort_field = [("display_author", 1), ("authors", 1)]
 
-            cursor = self.db['books'].find(filter_doc).sort(sort_field).skip(skip).limit(limit)
+            cursor = self.db['books'].find(filter_doc, projection).sort(sort_field).skip(skip).limit(limit)
             return await cursor.to_list(length=limit)
         except Exception as e:
             logger.error(f"Get All Books Error: {e}")
             return []
 
     async def get_book_by_id(self, book_id: str) -> Optional[Dict[str, Any]]:
-        """Finds a book by its unique ID."""
-        if self.db is None: return None
+        """Finds a book by its unique ID, supporting both UUID id and MongoDB _id."""
+        if self.db is None or not book_id: return None
         try:
-            return await self.db['books'].find_one({"id": book_id})
+            doc = await self.db['books'].find_one({"id": book_id})
+            if not doc and ObjectId.is_valid(book_id):
+                doc = await self.db['books'].find_one({"_id": ObjectId(book_id)})
+            return doc
         except Exception:
             return None
 
@@ -182,12 +195,19 @@ class MongoManager:
     async def delete_book(self, book_id: str) -> bool:
         """
         Deletes a book completely:
-        1. Removes from MongoDB 'books' collection.
-        2. Removes physical folder from 'data/books/{book_id}'.
-        3. Removes vector embeddings from ChromaDB.
-        4. Removes any associated planner tasks and decks.
+        1. Validates book_id format to prevent path traversal attacks.
+        2. Removes from MongoDB 'books' collection.
+        3. Safely removes physical folder from 'data/books/{book_id}'.
+        4. Removes vector embeddings from ChromaDB.
+        5. Removes any associated planner tasks and decks.
         """
-        if self.db is None: return False
+        if self.db is None or not book_id: return False
+        
+        # Security: Prevent path traversal in book_id
+        if not re.match(r'^[a-zA-Z0-9_-]+$', str(book_id)):
+            logger.warning(f"Rejected delete_book with suspicious ID: {book_id}")
+            return False
+
         try:
             # 1. Fetch book data first to get path or source name
             book = await self.get_book_by_id(book_id)
@@ -195,9 +215,11 @@ class MongoManager:
             # 2. Remove document from DB
             await self.db['books'].delete_one({"id": book_id})
 
-            # 3. Remove physical files on disk
-            book_dir = settings.BASE_DIR / 'data' / 'books' / book_id
-            if book_dir.exists():
+            # 3. Remove physical files on disk with strict boundary validation
+            books_root = (settings.BASE_DIR / 'data' / 'books').resolve()
+            book_dir = (books_root / book_id).resolve()
+            
+            if book_dir != books_root and book_dir.is_relative_to(books_root) and book_dir.exists():
                 shutil.rmtree(book_dir, ignore_errors=True)
 
             # 4. Remove ChromaDB vectors
@@ -213,6 +235,7 @@ class MongoManager:
                 logger.warning(f"Vector cleanup notice for {book_id}: {vec_err}")
 
             # 5. Clean up associated planner tasks / decks
+            await self.db['tasks'].delete_many({"linked_book_id": book_id})
             await self.db['planner'].delete_many({"linked_book_id": book_id})
             logger.info(f"Book deleted successfully: {book_id}")
             return True
@@ -257,15 +280,79 @@ class MongoManager:
         except Exception as e:
             logger.error(f"Save Message Error: {e}")
             
-    async def save_chat_metadata(self, session_id: str, title: str):
+    async def save_chat_metadata(
+        self,
+        session_id: str,
+        title: str,
+        book_id: str = None,
+        book_title: str = None,
+        user_id: Optional[str] = None
+    ):
         if self.db is None: return
         try:
+            update_data = {
+                'id': session_id,
+                'title': title,
+                'timestamp': time.time()
+            }
+            if user_id:
+                update_data['user_id'] = user_id
+            if book_id:
+                update_data['book_id'] = book_id
+            if book_title:
+                update_data['book_title'] = book_title
+            if self.collection is not None:
+                try:
+                    cnt = await self.collection.count_documents({'session_id': session_id})
+                    update_data['message_count'] = cnt
+                except Exception: pass
+
             await self.db['chats'].update_one(
                 {'id': session_id},
-                {'$set': {'id': session_id, 'title': title, 'timestamp': time.time()}},
+                {'$set': update_data},
                 upsert=True
             )
-        except Exception: pass
+        except Exception as e:
+            logger.warning(f"Save Chat Metadata Error: {e}")
+
+    async def get_chat_sessions(self, limit: int = 50, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        if self.db is None: return []
+        try:
+            query: Dict[str, Any] = {'title': {'$exists': True, '$ne': ''}}
+            if user_id:
+                query['user_id'] = user_id
+            cursor = self.db['chats'].find(query).sort('timestamp', -1).limit(limit)
+            return await cursor.to_list(length=limit)
+        except Exception as e:
+            logger.error(f"Get Chat Sessions Error: {e}")
+            return []
+
+    async def get_session_message_count(self, session_id: str) -> int:
+        if self.collection is None: return 0
+        try:
+            return await self.collection.count_documents({'session_id': session_id})
+        except Exception:
+            return 0
+
+    async def delete_chat_session(self, session_id: str) -> bool:
+        if self.db is None: return False
+        try:
+            await self.db['chats'].delete_one({'id': session_id})
+            if self.collection is not None:
+                await self.collection.delete_many({'session_id': session_id})
+            return True
+        except Exception as e:
+            logger.error(f"Delete Chat Session Error: {e}")
+            return False
+
+    async def get_full_session_messages(self, session_id: str) -> List[Dict[str, Any]]:
+        if self.collection is None: return []
+        try:
+            cursor = self.collection.find({"session_id": session_id}).sort("timestamp", 1)
+            return await cursor.to_list(length=500)
+        except Exception as e:
+            logger.error(f"Full Session Error: {e}")
+            return []
 
     async def get_library_inventory_summary(self, limit: int = 10) -> str:
         """Returns dynamic string of real library books for TARS AI prompt context."""
@@ -288,50 +375,87 @@ class MongoManager:
     async def add_task(
         self,
         title: str,
-        subject: str,
-        due_date: str,
-        priority: str,
+        user_id: Optional[str] = None,
+        due_date: str = "",
+        priority: str = "medium",
+        subject: str = "",
         linked_book_id: str = None,
         linked_book_title: str = None
-    ) -> bool:
-        if self.db is None: return False
+    ) -> Optional[Dict[str, Any]]:
+        """Creates a planner task indexed by user_id and synchronized across UI."""
+        if self.db is None or not title: return None
         try:
             task = {
                 "id": str(uuid.uuid4()),
-                "title": title,
-                "subject": subject,
-                "due_date": due_date,
-                "priority": priority,
+                "user_id": str(user_id) if user_id else "default",
+                "title": title.strip(),
+                "subject": subject or "General",
+                "due_date": due_date or "No date",
+                "priority": priority or "medium",
+                "completed": False,
                 "status": "todo",
                 "linked_book_id": linked_book_id,
                 "linked_book_title": linked_book_title,
-                "created_at": time.time()
+                "created_at": datetime.utcnow()
             }
-            await self.db['planner'].insert_one(task)
-            return True
+            await self.db['tasks'].insert_one(task)
+            return task
         except Exception as e:
             logger.error(f"Add Task Error: {e}")
-            return False
+            return None
 
-    async def get_tasks(self) -> List[Dict[str, Any]]:
+    async def get_tasks(self, user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Retrieves tasks for a specific user, with fallback to all tasks or legacy planner."""
         if self.db is None: return []
         try:
-            cursor = self.db['planner'].find({}).sort("created_at", -1)
-            return await cursor.to_list(length=200)
-        except Exception: return []
+            query = {"user_id": user_id} if user_id else {}
+            cursor = self.db['tasks'].find(query).sort("created_at", -1)
+            tasks = await cursor.to_list(length=300)
+            if not tasks:
+                # Check legacy planner collection for backward compatibility
+                cursor2 = self.db['planner'].find({}).sort("created_at", -1)
+                tasks = await cursor2.to_list(length=300)
+            return tasks
+        except Exception as e:
+            logger.error(f"Get Tasks Error: {e}")
+            return []
 
-    async def update_task_status(self, task_id: str, new_status: str):
-        if self.db is None: return
+    async def toggle_task_status(self, task_id: str, completed: Optional[bool] = None) -> bool:
+        """Toggles or updates completion status on tasks."""
+        if self.db is None: return False
         try:
-            await self.db['planner'].update_one({"id": task_id}, {"$set": {"status": new_status}})
-        except Exception: pass
+            task = await self.db['tasks'].find_one({"id": task_id})
+            target_coll = 'tasks'
+            if not task:
+                task = await self.db['planner'].find_one({"id": task_id})
+                target_coll = 'planner'
+            if not task: return False
 
-    async def delete_task(self, task_id: str):
-        if self.db is None: return
+            new_val = not task.get('completed', False) if completed is None else completed
+            new_status = "done" if new_val else "todo"
+            await self.db[target_coll].update_one(
+                {"id": task_id},
+                {"$set": {"completed": new_val, "status": new_status}}
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Toggle Task Error: {e}")
+            return False
+
+    async def update_task_status(self, task_id: str, new_status: str) -> bool:
+        is_done = new_status.lower() in ("done", "completed", "true")
+        return await self.toggle_task_status(task_id, completed=is_done)
+
+    async def delete_task(self, task_id: str) -> bool:
+        if self.db is None: return False
         try:
+            await self.db['tasks'].delete_one({"id": task_id})
             await self.db['planner'].delete_one({"id": task_id})
             await self.delete_deck(task_id)
-        except Exception: pass
+            return True
+        except Exception as e:
+            logger.error(f"Delete Task Error: {e}")
+            return False
 
     async def save_deck(self, task_id: str, source_file: str, cards: list) -> bool:
         """Saves a flashcard deck linked to a planner task."""
@@ -366,42 +490,224 @@ class MongoManager:
         except Exception: pass
 
     # ==========================================
-    # 👤 USER & AUTH
+    # 📖 READING PROGRESS & METADATA
     # ==========================================
 
-    async def get_user_profile(self) -> Dict[str, Any]:
-        if self.db is None: return {}
+    async def save_reading_progress(
+        self,
+        user_id: str,
+        book_id: str,
+        current_page: int = 1,
+        total_pages: int = 1,
+        status: str = "reading"
+    ) -> bool:
+        """Saves persistent reading position, percentage and state for a user."""
+        if self.db is None or not user_id or not book_id: return False
         try:
-            profile = await self.db['users'].find_one({"type": "owner"})
-            if not profile:
-                profile = {
-                    "type": "owner",
-                    "name": "Library User",
-                    "role": "Student",
-                    "bio": "Exploring knowledge with Libre-Library.",
-                    "joined_at": time.time()
-                }
-            return profile
-        except Exception: return {}
-
-    async def update_user_profile(self, name: str, role: str, bio: str) -> bool:
-        if self.db is None: return False
-        try:
-            await self.db['users'].update_one(
-                {"type": "owner"},
-                {"$set": {"name": name, "role": role, "bio": bio}},
+            percent = round((current_page / max(total_pages, 1)) * 100, 1) if total_pages > 0 else 0
+            doc = {
+                "user_id": user_id,
+                "book_id": book_id,
+                "current_page": current_page,
+                "total_pages": total_pages,
+                "progress_percent": percent,
+                "status": status,
+                "last_read_at": time.time()
+            }
+            await self.db['reading_progress'].update_one(
+                {"user_id": user_id, "book_id": book_id},
+                {"$set": doc},
                 upsert=True
             )
             return True
-        except Exception: return False
+        except Exception as e:
+            logger.error(f"Save Reading Progress Error: {e}")
+            return False
 
-    async def get_library_stats(self) -> Dict[str, Any]:
-        if self.db is None: return {"books": 0, "tasks_done": 0}
+    async def get_reading_progress(self, user_id: str, book_id: str) -> Optional[Dict[str, Any]]:
+        if self.db is None or not user_id or not book_id: return None
+        try:
+            return await self.db['reading_progress'].find_one({"user_id": user_id, "book_id": book_id})
+        except Exception: return None
+
+    async def save_book_summary(self, book_id: str, summary_text: str) -> bool:
+        """Saves AI generated summary directly onto the book record."""
+        if self.db is None or not book_id: return False
+        try:
+            q = {"id": book_id}
+            if ObjectId.is_valid(book_id):
+                existing = await self.db['books'].find_one({"id": book_id})
+                if not existing:
+                    q = {"_id": ObjectId(book_id)}
+
+            await self.db['books'].update_one(
+                q,
+                {
+                    "$set": {"description": summary_text, "updated_at": time.time()},
+                    "$push": {"summaries": {"$each": [summary_text], "$slice": -5}}
+                }
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Save Book Summary Error: {e}")
+            return False
+
+    async def update_book_metadata(self, book_id: str, updates: Dict[str, Any]) -> bool:
+        """Updates title, authors, genres, or other metadata."""
+        if self.db is None or not book_id or not updates: return False
+        try:
+            q = {"id": book_id}
+            if ObjectId.is_valid(book_id):
+                existing = await self.db['books'].find_one({"id": book_id})
+                if not existing:
+                    q = {"_id": ObjectId(book_id)}
+
+            await self.db['books'].update_one(q, {"$set": updates})
+            return True
+        except Exception as e:
+            logger.error(f"Update Book Metadata Error: {e}")
+            return False
+
+    # ==========================================
+    # 👤 USER & AUTH
+    # ==========================================
+
+    async def get_user_profile(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Gets user profile strictly isolated by user ID."""
+        if self.db is None: return {}
+        try:
+            if user_id:
+                user = await self.db['users'].find_one({"id": user_id, "type": "account"})
+                if user:
+                    return {
+                        "id": user_id,
+                        "name": user.get("name") or user.get("username", "Library User"),
+                        "username": user.get("username", "user"),
+                        "email": user.get("email", ""),
+                        "role": user.get("role", "user"),
+                        "headline": user.get("headline", "Student / Researcher"),
+                        "bio": user.get("bio", "Exploring knowledge with Libre-Library."),
+                        "joined_at": user.get("created_at", time.time())
+                    }
+            return {
+                "name": "Library User",
+                "username": "user",
+                "email": "",
+                "role": "user",
+                "headline": "Student / Researcher",
+                "bio": "Exploring knowledge with Libre-Library.",
+                "joined_at": time.time()
+            }
+        except Exception: return {}
+
+    async def update_user_profile(self, user_id: Optional[str], name: str, bio: str, headline: Optional[str] = None) -> bool:
+        """
+        Updates profile strictly isolated to the specified user account.
+        SECURITY: Role permissions cannot be modified through profile updates.
+        """
+        if self.db is None or not user_id: return False
+        try:
+            updates = {
+                "name": name.strip(),
+                "bio": bio.strip()
+            }
+            if headline is not None:
+                updates["headline"] = headline.strip()
+
+            result = await self.db['users'].update_one(
+                {"id": user_id, "type": "account"},
+                {"$set": updates}
+            )
+            return result.modified_count > 0 or result.matched_count > 0
+        except Exception as e:
+            logger.error(f"Update User Profile Error: {e}")
+            return False
+
+    async def get_total_user_count(self) -> int:
+        """Returns total registered user accounts."""
+        if self.db is None: return 0
+        try:
+            return await self.db['users'].count_documents({"type": "account"})
+        except Exception:
+            return 0
+
+
+    async def get_library_stats(self, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """Calculates real-time library, study and task completion statistics."""
+        if self.db is None: return {"books": 0, "tasks_done": 0, "total_tasks": 0, "reading_count": 0}
         try:
             book_count = await self.db['books'].count_documents({})
-            done_tasks = await self.db['planner'].count_documents({"status": "done"})
-            return {"books": book_count, "tasks_done": done_tasks}
-        except Exception: return {"books": 0, "tasks_done": 0}
+            
+            task_filter = {"$or": [{"completed": True}, {"status": "done"}]}
+            total_filter = {}
+            if user_id:
+                task_filter["user_id"] = user_id
+                total_filter["user_id"] = user_id
+
+            done_tasks = await self.db['tasks'].count_documents(task_filter)
+            if done_tasks == 0 and not user_id:
+                done_tasks = await self.db['planner'].count_documents({"status": "done"})
+
+            total_tasks = await self.db['tasks'].count_documents(total_filter)
+            if total_tasks == 0 and not user_id:
+                total_tasks = await self.db['planner'].count_documents({})
+
+            reading_count = 0
+            if 'reading_progress' in await self.db.list_collection_names():
+                reading_q = {"user_id": user_id} if user_id else {}
+                reading_count = await self.db['reading_progress'].count_documents(reading_q)
+
+            return {
+                "books": book_count,
+                "tasks_done": done_tasks,
+                "total_tasks": total_tasks,
+                "reading_count": reading_count
+            }
+        except Exception as e:
+            logger.error(f"Stats Error: {e}")
+            return {"books": 0, "tasks_done": 0, "total_tasks": 0, "reading_count": 0}
+
+    async def update_user_role(self, user_id: str, new_role: str) -> bool:
+        """Promotes or demotes user role (admin/user)."""
+        if self.db is None: return False
+        try:
+            await self.db['users'].update_one({"id": user_id}, {"$set": {"role": new_role}})
+            return True
+        except Exception as e:
+            logger.error(f"Update User Role Error: {e}")
+            return False
+
+    async def delete_user_by_id(self, user_id: str) -> bool:
+        """Deletes user account and associated personal study data."""
+        if self.db is None: return False
+        try:
+            await self.db['users'].delete_one({"id": user_id})
+            await self.db['tasks'].delete_many({"user_id": user_id})
+            await self.db['reading_progress'].delete_many({"user_id": user_id})
+            return True
+        except Exception as e:
+            logger.error(f"Delete User Error: {e}")
+            return False
+
+    async def get_system_diagnostics(self) -> Dict[str, Any]:
+        """Provides holistic system diagnostic metrics for the Admin Console."""
+        if self.db is None: return {}
+        try:
+            user_count = await self.db['users'].count_documents({"type": "account"})
+            book_count = await self.db['books'].count_documents({})
+            task_count = await self.db['tasks'].count_documents({})
+            deck_count = await self.db['decks'].count_documents({})
+            chat_count = await self.db['chat_history'].count_documents({})
+            return {
+                "users": user_count,
+                "books": book_count,
+                "tasks": task_count,
+                "decks": deck_count,
+                "chat_messages": chat_count
+            }
+        except Exception as e:
+            logger.error(f"System Diagnostics Error: {e}")
+            return {}
 
     async def create_user(self, username: str, email: str, hashed_password: str, role: str = "user") -> Optional[Dict[str, Any]]:
         """Creates a new user account with normalized email, username, and password hash."""
@@ -522,8 +828,12 @@ class MongoManager:
 
             for clean_email, doc_list in by_email.items():
                 if len(doc_list) > 1:
-                    has_admin = any(d.get('role') == 'admin' for d in doc_list)
-                    doc_list.sort(key=lambda d: d.get('created_at', 0), reverse=True)
+                    def _safe_user_ts(d):
+                        c = d.get('created_at')
+                        if hasattr(c, 'timestamp'): return c.timestamp()
+                        try: return float(c or 0)
+                        except Exception: return 0.0
+                    doc_list.sort(key=_safe_user_ts, reverse=True)
                     keeper = doc_list[0]
                     duplicates = doc_list[1:]
 
@@ -550,6 +860,167 @@ class MongoManager:
             logger.info("User accounts normalized successfully.")
         except Exception as e:
             logger.warning(f"User normalization note: {e}")
+
+    # ==========================================
+    # ⚙️ SYSTEM SETTINGS & COLLECTIONS / SHELVES
+    # ==========================================
+
+    async def get_system_settings(self) -> Dict[str, Any]:
+        """Loads persistent system configuration (e.g. AI Provider)."""
+        if self.db is None: return {}
+        try:
+            doc = await self.db['system_settings'].find_one({"key": "global_config"})
+            return doc.get("settings", {}) if doc else {}
+        except Exception as e:
+            logger.error(f"Get System Settings Error: {e}")
+            return {}
+
+    async def save_system_settings(self, updates: Dict[str, Any]) -> bool:
+        """Saves persistent system configuration."""
+        if self.db is None: return False
+        try:
+            await self.db['system_settings'].update_one(
+                {"key": "global_config"},
+                {"$set": {"settings": updates, "updated_at": time.time()}},
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Save System Settings Error: {e}")
+            return False
+
+    async def update_book_shelves(self, book_id: str, shelves: List[str]) -> bool:
+        """Assigns custom user shelves/tags to a book."""
+        if self.db is None or not book_id: return False
+        try:
+            clean_shelves = [s.strip() for s in shelves if s and s.strip()]
+            return await self.update_book_metadata(book_id, {"shelves": clean_shelves})
+        except Exception as e:
+            logger.error(f"Update Shelves Error: {e}")
+            return False
+
+    async def toggle_book_favorite(self, book_id: str) -> bool:
+        """Toggles favorite status on a book."""
+        if self.db is None or not book_id: return False
+        try:
+            book = await self.get_book_by_id(book_id)
+            if not book: return False
+            curr = book.get("is_favorite", False)
+            return await self.update_book_metadata(book_id, {"is_favorite": not curr})
+        except Exception as e:
+            logger.error(f"Toggle Favorite Error: {e}")
+            return False
+
+    async def update_book_reading_status(self, book_id: str, status: str) -> bool:
+        """Updates reading status: 'to_read', 'reading', 'completed', 'none'."""
+        if self.db is None or not book_id: return False
+        try:
+            return await self.update_book_metadata(book_id, {"reading_status": status.lower()})
+        except Exception as e:
+            logger.error(f"Update Reading Status Error: {e}")
+            return False
+
+    async def get_all_shelves(self) -> List[str]:
+        """Returns distinct custom shelf names across all books."""
+        if self.db is None: return []
+        try:
+            shelves = await self.db['books'].distinct("shelves")
+            return sorted([s for s in shelves if s and isinstance(s, str)])
+        except Exception:
+            return []
+
+    # ==========================================
+    # 👤 EXTENDED USER PROFILE & READING HABITS
+    # ==========================================
+
+    async def get_user_reading_list(self, user_id: str, limit: int = 8) -> List[Dict[str, Any]]:
+        """Returns in-progress reading records enriched with book metadata."""
+        if self.db is None or not user_id: return []
+        try:
+            cursor = self.db['reading_progress'].find({"user_id": user_id}).sort("last_read_at", -1).limit(limit)
+            progress_items = await cursor.to_list(length=limit)
+            enriched = []
+            for item in progress_items:
+                b_id = item.get('book_id')
+                book = await self.get_book_by_id(b_id)
+                if book:
+                    enriched.append({
+                        "book_id": b_id,
+                        "title": book.get('title', 'Untitled'),
+                        "display_author": book.get('display_author') or 'Unknown Author',
+                        "cover_image": book.get('cover_image') or f"/static_books/{b_id}/cover.jpg",
+                        "file_type": book.get('file_type', 'E-BOOK'),
+                        "current_page": item.get('current_page', 1),
+                        "total_pages": item.get('total_pages', 1),
+                        "progress_percent": item.get('progress_percent', 0),
+                        "status": item.get('status', 'reading'),
+                        "last_read_at": item.get('last_read_at', time.time())
+                    })
+            return enriched
+        except Exception as e:
+            logger.error(f"Get User Reading List Error: {e}")
+            return []
+
+    async def get_user_favorites(self, limit: int = 8) -> List[Dict[str, Any]]:
+        """Returns books marked as favorites."""
+        if self.db is None: return []
+        try:
+            cursor = self.db['books'].find({"is_favorite": True}).sort("added_at", -1).limit(limit)
+            return await cursor.to_list(length=limit)
+        except Exception as e:
+            logger.error(f"Get Favorites Error: {e}")
+            return []
+
+    async def change_user_password(self, user_id: str, old_pwd: str, new_pwd: str) -> tuple:
+        """Verifies current password and updates password hash."""
+        if self.db is None or not user_id: return False, "Database unavailable"
+        if len(new_pwd.strip()) < 6: return False, "New password must be at least 6 characters"
+        try:
+            import bcrypt
+            user = await self.db['users'].find_one({"id": user_id})
+            if not user: return False, "User account not found"
+
+            stored_hash = user.get('hashed_password', '')
+            if not stored_hash: return False, "Account has no password configured"
+
+            # Check old password
+            if not bcrypt.checkpw(old_pwd.strip().encode('utf-8'), stored_hash.encode('utf-8')):
+                return False, "Incorrect current password"
+
+            # Hash new password
+            new_hash = bcrypt.hashpw(new_pwd.strip().encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            await self.db['users'].update_one(
+                {"id": user_id},
+                {"$set": {"hashed_password": new_hash, "updated_at": time.time()}}
+            )
+            return True, "Password successfully updated!"
+        except Exception as e:
+            logger.error(f"Change Password Error: {e}")
+            return False, f"Password change error: {e}"
+
+    async def update_user_preferences(self, user_id: str, prefs: Dict[str, Any]) -> bool:
+        """Updates user preferences (theme, reading goal, AI tone, avatar icon)."""
+        if self.db is None or not user_id: return False
+        try:
+            await self.db['users'].update_one(
+                {"id": user_id},
+                {"$set": {"preferences": prefs}}
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Update Preferences Error: {e}")
+            return False
+
+    async def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
+        """Loads user preferences."""
+        if self.db is None or not user_id: return {}
+        try:
+            user = await self.db['users'].find_one({"id": user_id})
+            if user:
+                return user.get("preferences", {})
+            return {}
+        except Exception:
+            return {}
 
 # Singleton instance
 mongo_db = MongoManager()

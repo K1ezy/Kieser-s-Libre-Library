@@ -15,14 +15,20 @@ SEARCH_URL = BASE_URL + "search/"  # Needs {query} appended
 BOOK_DETAIL_URL = BASE_URL + "book/" # Needs {id} appended
 
 # --- CLIENT ---
-# Use httpx.AsyncClient for asynchronous requests
-client = httpx.AsyncClient(timeout=10)
+_client: Optional[httpx.AsyncClient] = None
+
+def get_client() -> httpx.AsyncClient:
+    global _client
+    if _client is None or _client.is_closed:
+        _client = httpx.AsyncClient(timeout=10)
+    return _client
 
 
 async def fetch_api(url: str) -> Optional[Dict[str, Any]]:
     """Generic async function to fetch JSON data from a given API URL."""
     try:
-        response = await client.get(url)
+        http = get_client()
+        response = await http.get(url)
         response.raise_for_status() # Raises an HTTPStatusError for bad responses (4xx or 5xx)
         return response.json()
     except httpx.HTTPStatusError as e:
@@ -99,7 +105,8 @@ async def download_book_file(book_details: Dict[str, Any], save_path: Path) -> b
     
     try:
         # Use streaming download for potentially large files
-        async with client.stream("GET", download_url) as response:
+        http = get_client()
+        async with http.stream("GET", download_url) as response:
             response.raise_for_status()
             
             # Use aiofiles to write asynchronously/io-bound
@@ -122,4 +129,7 @@ async def download_book_file(book_details: Dict[str, Any], save_path: Path) -> b
 
 # Close the HTTPX client when the application shuts down
 async def shutdown_client():
-    await client.aclose()
+    global _client
+    if _client is not None and not _client.is_closed:
+        await _client.aclose()
+        _client = None
