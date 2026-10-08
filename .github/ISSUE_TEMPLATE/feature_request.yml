@@ -1,0 +1,52 @@
+name: "💡 Feature Request"
+description: "Suggest an idea or enhancement for Libre-Library"
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting an improvement! Please outline the proposed feature and why it would benefit the library.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement / Context
+      description: Is your feature request related to a problem or limitation? Please describe.
+      placeholder: I am frustrated when...
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution or UX
+      description: Describe what you want to happen and how it should look or function.
+      placeholder: A clear description of the desired behavior or UI changes...
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Approaches Considered
+      description: Describe any alternative solutions or features you considered.
+  - type: dropdown
+    id: subsystem
+    attributes:
+      label: Target Subsystem
+      description: Which part of the system is this feature primarily targeting?
+      options:
+        - UI / UX / Navigation (NiceGUI)
+        - Local AI & RAG Engine (TARS / Llama / ChromaDB)
+        - E-Reader / OPDS Catalog Server
+        - Study Planner & Flashcards
+        - Document Summarizer & Text Extraction
+        - Auth, User Management & Security
+        - Core Database & Book Ingestion
+    validations:
+      required: true
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and feature requests to confirm this isn't a duplicate.
+          required: true

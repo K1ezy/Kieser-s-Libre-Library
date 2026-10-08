@@ -1,0 +1,74 @@
+name: "🐛 Bug Report"
+description: "Report a reproducible defect or unexpected behavior in Libre-Library"
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue! Please provide as much detail as possible to help reproduce and resolve the problem.
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of the bug.
+      placeholder: Describe what happened...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Navigate to '...'
+        2. Click on '....'
+        3. Scroll down to '....'
+        4. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen.
+    validations:
+      required: true
+  - type: dropdown
+    id: environment-os
+    attributes:
+      label: Operating System
+      description: Which OS are you running Libre-Library on?
+      options:
+        - Windows 10 / 11
+        - Linux (Ubuntu / Debian / Arch / Fedora)
+        - macOS (Apple Silicon / Intel)
+        - Docker / Container
+    validations:
+      required: true
+  - type: dropdown
+    id: environment-python
+    attributes:
+      label: Python Version
+      description: Which Python runtime are you using?
+      options:
+        - Python 3.12
+        - Python 3.11
+        - Other (specify in logs)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs or Error Output
+      description: Paste any error messages or tracebacks from terminal or `libre_library.log`.
+      render: shell
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-Submission Checklist
+      options:
+        - label: I verified that this bug is reproducible on the latest `main` branch.
+          required: true
+        - label: I checked existing issues to ensure this is not a duplicate.
+          required: true

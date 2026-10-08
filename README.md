@@ -3,6 +3,7 @@
 <div align="center">
 
 ![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python&logoColor=white)
+![CI](https://github.com/K1ezy/Kieser-s-Libre-Library/actions/workflows/ci.yml/badge.svg)
 ![NiceGUI](https://img.shields.io/badge/NiceGUI-2.0+-5c6ac4?logo=vue.js&logoColor=white)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Motor%20Async-green?logo=mongodb&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector%20Store-orange?logo=databricks&logoColor=white)
@@ -13,7 +14,7 @@
 **Intelligent, AI-Powered Personal Digital Library, E-Reader & Study Companion**  
 *Private, Offline-First, and Zero Data Leakage.*
 
-[Features](#-key-features) • [Architecture](#-system-architecture) • [Directory Structure](#-folder--file-architecture) • [Quickstart](#-getting-started) • [OPDS Catalog](#-opds-12-e-reader-catalog-feed) • [Testing](#-automated-testing-suite) • [Changelog](#-changelog--quality-of-life-improvements)
+[Features](#-key-features) • [Architecture](#-system-architecture) • [Directory Structure](#-folder--file-architecture) • [Quickstart](#-getting-started) • [OPDS Catalog](#-opds-12-e-reader-catalog-feed) • [Testing](#-automated-testing-suite) • [Contributing](#-contributing) • [Changelog](#-changelog--quality-of-life-improvements)
 
 </div>
 
@@ -138,6 +139,10 @@ graph TD
 
 ```plaintext
 Libre-Library/
+├── .github/                         # GitHub workflows, issue & PR templates
+│   ├── workflows/ci.yml             # Automated testing matrix (Python 3.11/3.12 on Linux & Windows)
+│   ├── ISSUE_TEMPLATE/              # Structured bug report & feature request forms
+│   └── pull_request_template.md     # Standardized PR submission checklist
 ├── assets/                          # Application graphics, icons, and branding
 ├── components/                      # Reusable UI component modules
 │   ├── book_card.py                 # Responsive book display card with format chips
@@ -168,11 +173,12 @@ Libre-Library/
 ├── E-Books/                         # Ingest directory for incoming e-books
 ├── models/                          # Local GGUF quantized model weights
 ├── static/                          # Static web assets & EPUB.js reader engine
-├── tests/                           # Automated unit test suite
+├── tests/                           # Automated unit test suite (22/22 passing)
 │   ├── __init__.py                  # Test package definition
-│   ├── test_auth.py                 # Authentication & JWT security tests
-│   ├── test_database.py             # MongoDB schema & query normalization tests
-│   ├── test_rag.py                  # ChromaDB & RAG pipeline integration tests
+│   ├── test_auth.py                 # Authentication, JWT & bcrypt password tests
+│   ├── test_config.py               # Security key generation, paths & CORS origins
+│   ├── test_rag.py                  # ChromaDB query caching, chunking & scoped retrieval
+│   ├── test_security.py             # Path traversal guards & input sanitization
 │   └── test_text_extractor.py       # Multi-format document extraction tests
 ├── tools/                           # Standalone maintenance & administrative CLI tools
 │   ├── cleanup_bad_data.py          # Cleans corrupt/placeholder metadata records
@@ -187,6 +193,8 @@ Libre-Library/
 │   ├── organize_ebooks.py           # E-Books folder organizer & repair
 │   ├── pack_for_gemini.py           # Context packing utility for LLM analysis
 │   └── test_imports.py              # Dependency import validator
+├── CONTRIBUTING.md                  # Development environment, guidelines & PR workflow
+├── SECURITY.md                      # Security vulnerability reporting & architecture policy
 ├── ui/                              # User interface views and theme
 │   ├── pages/                       # Application route pages
 │   │   ├── admin.py                 # Admin console & OPDS catalog feed link
@@ -312,15 +320,17 @@ python -m unittest discover tests
 
 # Run specific test modules:
 python -m unittest tests.test_auth
-python -m unittest tests.test_database
+python -m unittest tests.test_config
 python -m unittest tests.test_rag
+python -m unittest tests.test_security
 python -m unittest tests.test_text_extractor
 ```
 
 ### Test Coverage Highlights
 - `tests/test_auth.py`: Password hashing, token generation, role verification, and expiration handling.
-- `tests/test_database.py`: Safe float timestamp normalization, user profile schema validation, and query operations.
+- `tests/test_config.py`: Dynamic secret key generation, persistent storage, and CORS origins validation.
 - `tests/test_rag.py`: ChromaDB initialization, query caching, text chunking, and lazy loading.
+- `tests/test_security.py`: Alphanumeric ID sanitization, path traversal blocking, and filesystem containment.
 - `tests/test_text_extractor.py`: Plain text, markdown, and multi-format document extraction.
 
 ---
@@ -373,6 +383,16 @@ python tools/gpu_test.py               # Validate CUDA / llama-cpp GPU offload
 - **Fast Flashcard Synthesis**: Optimized prompt chunking to generate complete flashcard decks in **10–25 seconds**.
 - **3D Card Flip**: Carousel cards with 3D perspective flip effects and touch support.
 - **Multi-Mode Summarizer**: 4 study guide modes with 1-click MongoDB document persistence.
+
+---
+
+## 🤝 Contributing & Community
+
+Contributions are welcome! Whether you are reporting a bug, proposing a new feature, or submitting code improvements:
+
+- Read our **[Contributing Guide](CONTRIBUTING.md)** for development setup, architecture conventions, and PR workflow.
+- Review our **[Security Policy](SECURITY.md)** for responsible disclosure and security principles.
+- Use our structured **[Issue Templates](.github/ISSUE_TEMPLATE/)** when submitting bugs or feature requests.
 
 ---
 

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/K1ezy/Kieser-s-Libre-Library/discussions
+    about: Ask questions, discuss ideas, or share community feedback.
+  - name: Security Vulnerability Reporting
+    url: https://github.com/K1ezy/Kieser-s-Libre-Library/security/policy
+    about: Privately report security concerns or potential vulnerabilities.
