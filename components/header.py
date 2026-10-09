@@ -78,15 +78,20 @@ def header(drawer_reference=None):
 
         # 2. CENTER: DESKTOP SEARCH INPUT
         with ui.row().classes('hidden md:flex flex-grow max-w-xl mx-4'):
-            search_input = ui.input(placeholder='Search books, authors, or topics...') \
-                .props('rounded outlined dense prepend-icon=search bg-color=slate-50') \
+            search_input = ui.input(placeholder='Search books, authors, or topics... (Press / to focus)') \
+                .props('id=global-header-search rounded outlined dense prepend-icon=search bg-color=slate-50') \
                 .classes('w-full transition-all focus-within:shadow-md focus-within:bg-white text-xs')
             search_input.on('keydown.enter', handle_search)
 
         ui.space()
 
-        # 3. RIGHT: MOBILE SEARCH & USER PROFILE
+        # 3. RIGHT: MOBILE SEARCH, KEYBOARD SHORTCUTS & USER PROFILE
         with ui.row().classes('items-center gap-1 sm:gap-2 shrink-0'):
+            ui.button(icon='keyboard', on_click=lambda: ui.run_javascript('window.LibreAccessibility && window.LibreAccessibility.showHelp()')) \
+                .props('flat round dense color=grey-7 size=md') \
+                .tooltip('Keyboard Shortcuts (?)') \
+                .classes('hidden sm:inline-flex')
+
             ui.button(icon='search', on_click=open_mobile_search) \
                 .props('flat round dense color=grey-7 size=md') \
                 .classes('md:hidden')

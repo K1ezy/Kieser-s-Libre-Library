@@ -20,37 +20,17 @@ from components.header import header
 logger = logging.getLogger("TARS_UI")
 
 # ==========================================
-# 📑 CONFIGURATION & PROMPT CONSTANTS
+# 📑 SERVICE INTEGRATION & HELPERS
 # ==========================================
 
-STYLE_PROMPTS = {
-    'Balanced': "Provide clear, structured, well-formatted answers with citations where applicable.",
-    'Concise': "Provide direct, ultra-concise responses with short bullet points. Avoid filler.",
-    'Academic': "Provide an in-depth academic analysis with historical/theoretical context, critical critique, and comprehensive citations.",
-    'Exam Prep': "Provide high-yield study notes, key terms with definitions, potential test/exam questions, and memory mnemonics."
-}
+from ui.pages.chat_service import (
+    chat_service,
+    STYLE_PROMPTS,
+    STARTER_PROMPTS_BOOK,
+    STARTER_PROMPTS_LIBRARY,
+    group_sessions_chronologically,
+)
 
-STARTER_PROMPTS_BOOK = [
-    ("💡 Executive Summary", "Give me a comprehensive overview and core takeaways of this document."),
-    ("🎯 Key Arguments", "What are the primary arguments, methodologies, and conclusions presented in this document?"),
-    ("🧠 Active Recall Quiz", "Quiz me with 3 challenging active recall questions based on this document."),
-    ("🔍 Explain Simply", "Explain the most important concepts from this document in clear, beginner-friendly terms.")
-]
-
-STARTER_PROMPTS_LIBRARY = [
-    ("📚 Library Inventory", "What books and documents do I currently have indexed in my library?"),
-    ("🔬 Cross-Book Synthesis", "Synthesize the central themes and connections across my indexed documents."),
-    ("📖 Study Recommendations", "Based on the topics in my collection, what should I study or focus on next?"),
-    ("🎓 Socratic Tutoring", "Turn on Teaching Mode and tutor me step-by-step on a core topic from my library.")
-]
-
-IDENTITY_KEYWORDS = {"who are you", "what are you", "identify", "your function", "introduce yourself"}
-GREETING_KEYWORDS = {"hello", "hi", "hey", "tars", "yo", "greetings", "good morning", "good afternoon", "good evening"}
-
-
-# ==========================================
-# 🛠️ SHARED HELPER FUNCTIONS
-# ==========================================
 
 def setup_message_actions(content: str, copy_btn, tts_btn):
     """Binds 1-click clipboard copy and text-to-speech audio playback."""
@@ -75,41 +55,6 @@ def setup_message_actions(content: str, copy_btn, tts_btn):
         }}
     """))
 
-
-def group_sessions_chronologically(sessions: list) -> dict:
-    """Groups sessions into temporal categories: Today, Yesterday, 7 Days, Month, Older."""
-    now = time.time()
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    yesterday_start = today_start - 86400
-    seven_days_start = today_start - (6 * 86400)
-    thirty_days_start = today_start - (29 * 86400)
-
-    groups = {
-        'Today': [],
-        'Yesterday': [],
-        'Previous 7 Days': [],
-        'This Month': [],
-        'Older': []
-    }
-
-    for s in sessions:
-        ts = s.get('timestamp', 0)
-        if ts >= today_start:
-            groups['Today'].append(s)
-        elif ts >= yesterday_start:
-            groups['Yesterday'].append(s)
-        elif ts >= seven_days_start:
-            groups['Previous 7 Days'].append(s)
-        elif ts >= thirty_days_start:
-            groups['This Month'].append(s)
-        else:
-            try:
-                m_key = datetime.fromtimestamp(ts).strftime("%B %Y")
-            except Exception:
-                m_key = "Older"
-            groups.setdefault(m_key, []).append(s)
-
-    return {k: v for k, v in groups.items() if v}
 
 
 # ==========================================
@@ -486,22 +431,7 @@ class ChatInterface:
                 ui.notify("No conversation to export.", type='warning')
                 return
 
-            title = self.focus_book_title or "General Library Knowledge"
-            date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-            lines = [
-                f"# Conversation with TARS AI",
-                f"- **Context / Focus:** {title}",
-                f"- **Date:** {date_str}",
-                f"- **Engine:** Local Offline RAG",
-                f"- **Session ID:** `{self.session_id}`",
-                "\n---\n"
-            ]
-            for m in messages:
-                role = "👤 User" if m.get('role') == 'user' else "🤖 TARS AI"
-                lines.append(f"### {role}\n\n{m.get('content', '').strip()}\n")
-
-            md_content = "\n".join(lines)
+            md_content = chat_service.export_chat_markdown(messages, self.focus_book_title, self.session_id)
             ui.download(md_content.encode('utf-8'), f"tars_chat_{self.session_id[:8]}.md")
             ui.run_javascript(f"navigator.clipboard.writeText({repr(md_content)});")
             ui.notify("Chat exported to Markdown & copied to clipboard!", type='positive')
@@ -744,73 +674,25 @@ class ChatInterface:
 
     def _should_skip_rag(self, text: str) -> bool:
         """Determines if query is a simple greeting or identity question where RAG should be skipped."""
-        clean_input = text.lower().translate(str.maketrans('', '', string.punctuation)).strip()
-        is_identity = any(k in clean_input for k in IDENTITY_KEYWORDS)
-        is_greeting = (
-            clean_input in GREETING_KEYWORDS or
-            (len(clean_input.split()) <= 3 and any(g in clean_input for g in GREETING_KEYWORDS))
-        )
-        return is_identity or is_greeting
+        return chat_service.should_skip_rag(text)
 
     async def _perform_rag_search(self, text: str, status_label) -> tuple[str, list]:
-        """Executes vector retrieval and formats context snippets and citations."""
-        rag_text = ""
-        citations = []
-        try:
-            filter_source = None
-            if self.focus_book_id:
-                book_doc = await mongo_db.get_book_details(self.focus_book_id)
-                if book_doc:
-                    local_p = book_doc.get('local_path')
-                    filter_source = Path(local_p).name if local_p else self.focus_book_id
-
-            focus_desc = f"'{self.focus_book_title}'" if self.focus_book_title else "knowledge base"
-            if status_label:
-                status_label.text = f"Searching {focus_desc}..."
-
-            raw_hits = await run.io_bound(tars_archive.search_with_metadata, text, 4, filter_source, self.focus_book_id)
-            if raw_hits:
-                rag_parts = []
-                for h in raw_hits:
-                    src = h.get('source', 'Library Document')
-                    p_val = h.get('page')
-                    page_str = f" [Page {p_val}]" if p_val else ""
-                    rag_parts.append(f"[Document: {src}{page_str}]\n{h.get('text', '')}")
-
-                    cit_key = f"{src}_{p_val}"
-                    if not any(c.get('key') == cit_key for c in citations):
-                        citations.append({
-                            "key": cit_key,
-                            "source": src,
-                            "title": h.get('title') or src,
-                            "page": p_val,
-                            "book_id": h.get('book_id')
-                        })
-                rag_text = "\n\n[RETRIEVED DOCUMENT CONTEXT]:\n" + "\n---\n".join(rag_parts)
-        except Exception as e:
-            logger.error(f"RAG Search Error: {e}")
-
-        return rag_text, citations
+        """Executes vector retrieval and formats context snippets and citations via ChatService."""
+        focus_desc = f"'{self.focus_book_title}'" if self.focus_book_title else "knowledge base"
+        if status_label:
+            status_label.text = f"Searching {focus_desc}..."
+        return await chat_service.perform_rag_search(text, self.focus_book_id, self.focus_book_title)
 
     def _build_system_persona(self, inventory: str, rag_text: str, is_review_mode: bool = False) -> str:
-        """Constructs system prompt combining library inventory, retrieved RAG context, and persona instructions."""
-        active_style_prompt = STYLE_PROMPTS.get(self.chat_style, STYLE_PROMPTS['Balanced'])
-        persona = (
-            "You are TARS, the Digital Librarian. You assist users with their personal digital library, study materials, and questions.\n"
-            f"RESPONSE STYLE INSTRUCTION: {active_style_prompt}\n\n"
-            "Use the provided LIBRARY INVENTORY to tell users what books they have, and the KNOWLEDGE BASE to answer questions with precision.\n"
-            "Always include source and page number citations when referencing document knowledge (e.g. '[Source: title, Page X]').\n\n"
-            f"1. **LIBRARY INVENTORY:**\n{inventory}\n"
-            f"2. **KNOWLEDGE BASE:**\n{rag_text}\n"
+        """Constructs system prompt combining library inventory, retrieved RAG context, and persona instructions via ChatService."""
+        return chat_service.build_system_persona(
+            chat_style=self.chat_style,
+            focus_book_title=self.focus_book_title,
+            teaching_mode=self.teaching_mode,
+            is_review_mode=is_review_mode,
+            inventory=inventory,
+            rag_text=rag_text
         )
-        if self.focus_book_title:
-            persona += f"\nFOCUS DOCUMENT: The user is specifically asking about '{self.focus_book_title}'. Focus your answers on this document."
-        if self.teaching_mode:
-            persona += "\nTEACHING MODE: Socratic teaching style. Guide the user with questions rather than immediate answers."
-        elif is_review_mode:
-            persona += "\nCODE REVIEW MODE: Review provided code for architecture, performance, security, and cleanliness."
-
-        return persona
 
     # ==========================================
     # ⚡ CORE GENERATION & STREAMING
@@ -834,8 +716,7 @@ class ChatInterface:
             "Maintain tone and formatting. Do not repeat the beginning."
         )
 
-        system_prompt = {"role": "system", "content": persona_text}
-        messages_payload = [system_prompt] + [{"role": m['role'], "content": m['content']} for m in history_context]
+        messages_payload = chat_service.build_messages_payload(persona_text, history_context)
 
         await asyncio.sleep(0.1)
         response_buffer = ""
@@ -926,8 +807,7 @@ class ChatInterface:
         inventory = await mongo_db.get_library_inventory_summary(limit=10)
         persona = self._build_system_persona(inventory, rag_text, is_review_mode)
 
-        valid_history = [{"role": m['role'], "content": m['content']} for m in history if m and 'role' in m and 'content' in m]
-        messages = [{"role": "system", "content": persona}] + valid_history
+        messages = chat_service.build_messages_payload(persona, history)
 
         # 5. Stream LLM Generation
         if status:

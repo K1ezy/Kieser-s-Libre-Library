@@ -306,10 +306,10 @@ class BookCollection:
                         self.hero_count_label = ui.label('Loading collection...').classes('text-slate-500 font-medium text-xs sm:text-sm')
 
                     with ui.row().classes('items-center gap-2 flex-grow sm:flex-grow-0 max-w-md w-full sm:w-auto'):
-                        ui.input(placeholder='Search Title or Author...',
+                        ui.input(placeholder='Search Title or Author... (Press /)',
                                  on_change=lambda e: (self.state.update({'search_term': e.value}), self.apply_filters_and_sort())) \
                             .bind_value(self.state, 'search_term') \
-                            .props('outlined rounded dense icon=search clearable bg-color=white') \
+                            .props('id=global-search-input outlined rounded dense icon=search clearable bg-color=white') \
                             .classes('flex-1 sm:w-72 text-sm')
 
                         ui.button('OPDS Feed', icon='rss_feed', on_click=lambda: ui.run_javascript("""

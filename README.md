@@ -8,7 +8,7 @@
 ![MongoDB](https://img.shields.io/badge/MongoDB-Motor%20Async-green?logo=mongodb&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector%20Store-orange?logo=databricks&logoColor=white)
 ![LLM](https://img.shields.io/badge/Local%20LLM-Llama%203.2%203B-purple?logo=meta&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-22%2F22%20Passing-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-41%2F41%20Passing-brightgreen?logo=pytest&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
 **Intelligent, AI-Powered Personal Digital Library, E-Reader & Study Companion**  
@@ -383,6 +383,22 @@ python tools/gpu_test.py               # Validate CUDA / llama-cpp GPU offload
 - **Fast Flashcard Synthesis**: Optimized prompt chunking to generate complete flashcard decks in **10–25 seconds**.
 - **3D Card Flip**: Carousel cards with 3D perspective flip effects and touch support.
 - **Multi-Mode Summarizer**: 4 study guide modes with 1-click MongoDB document persistence.
+
+### 6. 🖼️ Universal Book Cover Engine & Preview Lightbox
+- **Cross-Format Extraction**: High-fidelity front cover rendering for PDF (PyMuPDF), EPUB (metadata raster + SVG fallback), PPTX (slide 1 thumbnail), and TXT/DOCX (typographic cover generation with PIL).
+- **100% Cover Coverage**: Batch cover generation and synchronization tool (`tools/generate_all_covers.py`) ensuring no placeholder silhouettes.
+- **Cover Preview Modal**: 1-click high-resolution cover preview lightbox on document details pages with smooth fade/scale animations.
+
+### 7. ⌨️ Complete Keyboard Accessibility System
+- **Vim / Reader Smooth Scrolling**: Smooth viewport control with `j`/`k` (line step), `d`/`u` (half page), `Space`/`Shift+Space`, `gg` (top), and `G` (bottom).
+- **Two-Key Chord Navigation**: Instant navigation across routes with `g` chords (`g h` Home, `g b` Books, `g c` Chat, `g s` Summarizer, `g p` Planner, `g u` Profile).
+- **Universal Search & Shortcut Overlay**: Quick search focus via `/`, modal escape via `Escape`, and modal cheat sheet triggered via `?`.
+- **WCAG High-Contrast Focus Rings**: Custom accessibility focus indicators adhering to WCAG 2.1 AAA guidelines.
+
+### 8. 🏛️ Domain Repository Architecture & Service Layer Deconstruction
+- **God Object Elimination**: Dissected monolithic `MongoManager` (1,037 lines) into 5 focused domain repositories (`BookRepository`, `ChatRepository`, `PlannerRepository`, `ProgressRepository`, `UserRepository`), with a backwards-compatible coordinator facade.
+- **AI Domain Services**: Decoupled presentation from AI coordination by extracting `ChatService` (RAG orchestration, prompt building, intent parsing, markdown export) and `SummarizerService` (multi-stage chunking, study prompt engineering).
+- **Expanded Test Suite**: Added 19 comprehensive unit tests bringing the suite to **41/41 passing tests**.
 
 ---
 

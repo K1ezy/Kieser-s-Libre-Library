@@ -55,7 +55,7 @@ def book_card(
     
     if disk_cover.exists():
         cover_url = f"/static_books/{book_id}/cover.jpg"
-    elif book.get('cover_image') and not str(book.get('cover_image')).endswith('default_cover.png'):
+    elif book.get('cover_image') and not str(book.get('cover_image')).endswith(('default_cover.png', 'default_cover.svg')):
         cover_url = book.get('cover_image')
     else:
         cover_url = "/static/default_cover.svg"

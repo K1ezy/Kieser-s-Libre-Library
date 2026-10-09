@@ -80,32 +80,28 @@ class IngestionService:
             async with aiofiles.open(file_path, 'wb') as f:
                 await f.write(content)
 
-            # 3. Extract Embedded Local Metadata & Cover Art
+            # 3. Extract Embedded Local Metadata & Formats
             from core.utils.metadata_scraper import extract_local_file_metadata
+            from core.utils.cover_manager import cover_manager
+
             local_meta = await run.io_bound(extract_local_file_metadata, file_path)
-
-            cover_path = book_folder / "cover.jpg"
-            if not cover_path.exists() and ext == '.pdf':
-                def _render_pdf_cover(src_p: Path, dst_p: Path):
-                    try:
-                        import fitz
-                        doc = fitz.open(str(src_p))
-                        if len(doc) > 0:
-                            page = doc[0]
-                            pix = page.get_pixmap(dpi=150)
-                            pix.save(str(dst_p))
-                        doc.close()
-                    except Exception as err:
-                        logger.warning(f"PDF cover extraction notice: {err}")
-
-                await run.io_bound(_render_pdf_cover, file_path, cover_path)
-
-            cover_url = f"/static_books/{book_id}/cover.jpg" if cover_path.exists() else "/static/default_cover.svg"
-
-            # 4. Formats dictionary & display metadata
             clean_title = local_meta.get('title') or clean_filename.replace(ext, "").replace("_", " ").replace("-", " ").strip().title()
             authors = local_meta.get('authors') or ["Unknown"]
             display_author = authors[0] if authors else "Unknown"
+            file_type_str = ext.replace(".", "").upper()
+
+            # 4. Universal Cover Art Extraction & Optimization
+            cover_path = book_folder / "cover.jpg"
+            if not cover_path.exists():
+                await cover_manager.extract_cover_async(
+                    file_path=file_path,
+                    output_path=cover_path,
+                    title=clean_title,
+                    author=display_author,
+                    file_type=file_type_str
+                )
+
+            cover_url = f"/static_books/{book_id}/cover.jpg" if cover_path.exists() else "/static/default_cover.svg"
 
             # 5. Extract structured text & ingest with page awareness into ChromaDB
             facts_learned = await run.io_bound(

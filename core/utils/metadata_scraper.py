@@ -61,12 +61,14 @@ def extract_local_file_metadata(file_path: Path) -> Dict[str, Any]:
             # 6. Extract Cover Image if available
             cover_dest = file_path.parent / "cover.jpg"
             if not cover_dest.exists():
-                for item in book.get_items():
-                    if item.get_type() == ebooklib.ITEM_COVER or 'cover' in item.get_name().lower():
-                        if item.media_type and 'image' in item.media_type:
-                            with open(cover_dest, 'wb') as cf:
-                                cf.write(item.get_content())
-                            break
+                from core.utils.cover_manager import cover_manager
+                cover_manager.extract_or_generate_cover(
+                    file_path=file_path,
+                    output_path=cover_dest,
+                    title=meta.get('title') or '',
+                    author=(meta.get('authors') or [''])[0],
+                    file_type='EPUB'
+                )
 
         except Exception as e:
             logger.warning(f"Local EPUB metadata extraction notice: {e}")

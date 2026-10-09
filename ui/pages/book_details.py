@@ -40,7 +40,7 @@ class BookDetailsPage:
         disk_cover = settings.BASE_DIR / 'data' / 'books' / self.book_id / 'cover.jpg'
         if disk_cover.exists():
             cover_url = f"/static_books/{self.book_id}/cover.jpg"
-        elif self.book.get('cover_image') and not str(self.book.get('cover_image')).endswith('default_cover.png'):
+        elif self.book.get('cover_image') and not str(self.book.get('cover_image')).endswith(('default_cover.png', 'default_cover.svg')):
             cover_url = self.book.get('cover_image')
         else:
             cover_url = "/static/default_cover.svg"
@@ -50,8 +50,25 @@ class BookDetailsPage:
                 
                 # LEFT: Cover & Quick Actions
                 with ui.column().classes('w-full md:w-1/3 lg:w-1/4 items-center'):
-                    with ui.card().classes('p-0 rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl sm:shadow-2xl border border-slate-200 bg-white w-44 sm:w-52 md:w-64 aspect-[2/3]'):
-                        ui.image(cover_url).classes('w-full h-full object-cover')
+                    # Cover Lightbox Dialog for full preview
+                    with ui.dialog() as cover_dialog, ui.card().classes('p-4 sm:p-5 bg-white/95 backdrop-blur-md rounded-3xl max-w-lg w-full items-center shadow-2xl border border-slate-200'):
+                        with ui.row().classes('w-full justify-between items-center px-1 pb-3 border-b border-slate-100'):
+                            with ui.column().classes('gap-0 max-w-[80%]'):
+                                ui.label(title).classes('font-bold text-slate-800 text-sm sm:text-base truncate')
+                                ui.label('Front Page Cover Preview').classes('text-xs text-indigo-600 font-semibold')
+                            ui.button(icon='close', on_click=cover_dialog.close).props('flat round dense size=sm color=grey')
+                        with ui.element('div').classes('w-full max-h-[72vh] flex items-center justify-center overflow-hidden rounded-2xl my-3 bg-slate-50 border border-slate-100 shadow-inner'):
+                            ui.image(cover_url).classes('max-h-[70vh] object-contain rounded-xl shadow-md')
+                        with ui.row().classes('w-full justify-end pt-1'):
+                            ui.button('Close', on_click=cover_dialog.close).props('unelevated rounded size=sm color=indigo')
+
+                    with ui.card().classes('group relative p-0 rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl sm:shadow-2xl border border-slate-200 bg-white w-44 sm:w-52 md:w-64 aspect-[2/3] cursor-pointer hover:shadow-indigo-100 transition-all duration-300') \
+                        .on('click', cover_dialog.open):
+                        ui.image(cover_url).classes('w-full h-full object-cover transition-transform duration-500 group-hover:scale-105')
+                        with ui.element('div').classes('absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center gap-1.5 text-white backdrop-blur-[2px]'):
+                            ui.icon('zoom_in', size='2.2rem')
+                            ui.label('Preview Cover').classes('text-xs font-bold tracking-wider uppercase drop-shadow')
+                        ui.tooltip('Click to preview full-size cover')
                     
                     with ui.column().classes('w-full max-w-xs gap-2.5 sm:gap-3 mt-4 sm:mt-6'):
                         with ui.button(on_click=lambda: ui.navigate.to(f"/read/{self.book_id}")) \
