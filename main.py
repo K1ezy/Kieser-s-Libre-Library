@@ -11,6 +11,21 @@ from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 
+# Enable NiceGUI orjson serializer to transparently handle BSON ObjectId as strings
+try:
+    import nicegui.json.orjson_wrapper as nicegui_json
+    from bson import ObjectId
+    _orig_orjson_converter = nicegui_json._orjson_converter
+
+    def _safe_orjson_converter(obj):
+        if isinstance(obj, ObjectId):
+            return str(obj)
+        return _orig_orjson_converter(obj)
+
+    nicegui_json._orjson_converter = _safe_orjson_converter
+except Exception:
+    pass
+
 # Secure CORS policy: Restrict to configured origins, localhost, LAN, and ngrok tunnels
 app.add_middleware(
     CORSMiddleware,

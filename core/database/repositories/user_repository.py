@@ -180,7 +180,7 @@ class UserRepository(BaseRepository):
                 "type": "account"
             }
             await self.db['users'].insert_one(user)
-            return user
+            return self.clean_doc(user)
         except Exception as e:
             logger.error(f"Create User Error: {e}")
             return None
@@ -191,7 +191,8 @@ class UserRepository(BaseRepository):
         try:
             clean = email.strip()
             regex = {"$regex": f"^{re.escape(clean)}$", "$options": "i"}
-            return await self.db['users'].find_one({"email": regex, "type": "account"})
+            doc = await self.db['users'].find_one({"email": regex, "type": "account"})
+            return self.clean_doc(doc)
         except Exception as e:
             logger.error(f"Get User By Email Error: {e}")
             return None
@@ -205,13 +206,14 @@ class UserRepository(BaseRepository):
         try:
             clean = identifier.strip()
             regex = {"$regex": f"^{re.escape(clean)}$", "$options": "i"}
-            return await self.db['users'].find_one({
+            doc = await self.db['users'].find_one({
                 "$or": [
                     {"email": regex},
                     {"username": regex}
                 ],
                 "type": "account"
             })
+            return self.clean_doc(doc)
         except Exception as e:
             logger.error(f"Get User By Identifier Error: {e}")
             return None
@@ -231,7 +233,8 @@ class UserRepository(BaseRepository):
                 ],
                 "type": "account"
             })
-            return await cursor.to_list(length=10)
+            users = await cursor.to_list(length=10)
+            return self.clean_docs(users)
         except Exception as e:
             logger.error(f"Get Users By Identifier Error: {e}")
             return []
@@ -246,7 +249,8 @@ class UserRepository(BaseRepository):
         if self.db is None: return []
         try:
             cursor = self.db['users'].find({"type": "account"})
-            return await cursor.to_list(length=100)
+            users = await cursor.to_list(length=100)
+            return self.clean_docs(users)
         except Exception: return []
 
     async def normalize_existing_users(self):
