@@ -4,7 +4,8 @@ from core.auth.jwt_handler import (
     create_access_token,
     is_user_authenticated,
     set_user_session,
-    clear_user_session
+    clear_user_session,
+    get_current_user_info
 )
 import bcrypt
 import re
@@ -30,9 +31,26 @@ def create_password_toggle(input_field):
         toggle_icon.on('click', toggle)
 
 async def login_page():
-    # If already logged in, redirect directly to dashboard
+    # If already logged in, show active session with option to continue or switch
     if is_user_authenticated():
-        ui.navigate.to('/')
+        user_info = get_current_user_info()
+        user_name = user_info.get('username') or 'User'
+        with ui.row().classes('w-full min-h-[100dvh] h-[100dvh] m-0 p-0 items-center justify-center bg-slate-50'):
+            with ui.card().classes('w-full max-w-md p-6 sm:p-8 bg-white border border-slate-200 shadow-xl rounded-3xl text-center'):
+                ui.icon('verified_user', size='3.5em').classes('text-indigo-600 mx-auto mb-2')
+                ui.label('Active Session Found').classes('text-2xl font-black text-slate-900 mb-1')
+                ui.label(f'You are currently signed in as {user_name}.').classes('text-xs text-slate-500 mb-6')
+                
+                ui.button('Continue to Library', icon='arrow_forward', on_click=lambda: ui.navigate.to('/')) \
+                    .props('unelevated rounded-xl color=indigo size=md font-bold').classes('w-full mb-3')
+                
+                def switch_account():
+                    clear_user_session()
+                    ui.notify('Signed out. Please sign in or create an account.', type='info')
+                    ui.navigate.to('/login')
+                    
+                ui.button('Sign Out / Switch Account', icon='logout', on_click=switch_account) \
+                    .props('flat rounded-xl color=grey-7 size=sm font-bold').classes('w-full')
         return
 
     with ui.row().classes('w-full min-h-[100dvh] h-[100dvh] m-0 p-0 overflow-hidden'):
@@ -126,9 +144,26 @@ async def login_page():
 
 
 async def signup_page():
-    # If already logged in, redirect directly to dashboard
+    # If already logged in, show active session with option to continue or switch
     if is_user_authenticated():
-        ui.navigate.to('/')
+        user_info = get_current_user_info()
+        user_name = user_info.get('username') or 'User'
+        with ui.row().classes('w-full min-h-[100dvh] h-[100dvh] m-0 p-0 items-center justify-center bg-slate-50'):
+            with ui.card().classes('w-full max-w-md p-6 sm:p-8 bg-white border border-slate-200 shadow-xl rounded-3xl text-center'):
+                ui.icon('verified_user', size='3.5em').classes('text-indigo-600 mx-auto mb-2')
+                ui.label('Already Logged In').classes('text-2xl font-black text-slate-900 mb-1')
+                ui.label(f'You are currently signed in as {user_name}.').classes('text-xs text-slate-500 mb-6')
+                
+                ui.button('Continue to Library', icon='arrow_forward', on_click=lambda: ui.navigate.to('/')) \
+                    .props('unelevated rounded-xl color=indigo size=md font-bold').classes('w-full mb-3')
+                
+                def switch_account_signup():
+                    clear_user_session()
+                    ui.notify('Signed out. You can now register a new account.', type='info')
+                    ui.navigate.to('/signup')
+                    
+                ui.button('Create a Different Account', icon='person_add', on_click=switch_account_signup) \
+                    .props('flat rounded-xl color=grey-7 size=sm font-bold').classes('w-full')
         return
 
     with ui.row().classes('w-full min-h-[100dvh] h-[100dvh] m-0 p-0 overflow-hidden'):
@@ -170,6 +205,13 @@ async def signup_page():
                     ui.icon('lock_outline').classes('text-indigo-500 opacity-70')
                 create_password_toggle(pwd)
 
+                # Academic Role Selection (SRS Ch. 2 FR 7 RBAC)
+                role_select = ui.select(
+                    {'student': '🎓 Student Account', 'faculty': '👨‍🏫 Faculty Member'},
+                    value='student',
+                    label='Academic Affiliation'
+                ).props('rounded outlined dense bg-color=white').classes(INPUT_CLASSES)
+
                 # Confirm Password Field
                 confirm_pwd = ui.input(placeholder='Confirm Password', password=True) \
                     .classes('w-full mb-6') \
@@ -183,6 +225,7 @@ async def signup_page():
                     clean_email = (email.value or '').strip().lower()
                     clean_pwd = (pwd.value or '').strip()
                     clean_confirm = (confirm_pwd.value or '').strip()
+                    chosen_role = (role_select.value or 'student').strip().lower()
 
                     # Validations
                     if not clean_username or not clean_email or not clean_pwd or not clean_confirm:
@@ -216,7 +259,7 @@ async def signup_page():
 
                     hashed = bcrypt.hashpw(clean_pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
                     users = await mongo_db.get_all_users()
-                    role = "admin" if not users else "user"
+                    role = "admin" if not users else chosen_role
 
                     created = await mongo_db.create_user(clean_username, clean_email, hashed, role)
                     if not created:

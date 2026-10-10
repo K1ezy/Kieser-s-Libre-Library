@@ -47,6 +47,29 @@ class TestRAGPipeline(unittest.TestCase):
         call_kwargs = self.rag.collection.query.call_args.kwargs
         self.assertEqual(call_kwargs.get("where"), {"book_id": "specific_book_123"})
 
+    def test_search_with_metadata_matches_source_fallback_when_book_id_empty(self):
+        """When book_id query returns 0 hits but filter_source is provided, search tries source."""
+        self.rag.collection.count.return_value = 50
+        self.rag.collection.query.side_effect = [
+            {"documents": [[]], "metadatas": [[]], "distances": [[]]},
+            {
+                "documents": [["Crossroads chapter text"]],
+                "metadatas": [[{"source": "Witcher_Crossroadsofravens.epub", "page": 1}]],
+                "distances": [[0.35]]
+            }
+        ]
+
+        results = self.rag.search_with_metadata(
+            query="witcher",
+            filter_source="Witcher_Crossroadsofravens.epub",
+            book_id="ad8d5b9e",
+            fallback_to_library=False
+        )
+
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["text"], "Crossroads chapter text")
+        self.assertEqual(self.rag.collection.query.call_count, 2)
+
     def test_search_with_metadata_filters_high_distance(self):
         """Results with distance > max_distance should be filtered out."""
         self.rag.collection.count.return_value = 10

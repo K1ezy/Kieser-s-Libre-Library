@@ -110,8 +110,10 @@ def header(drawer_reference=None):
                             ui.label(user_role.upper()).classes('text-[9px] font-bold text-indigo-600 uppercase tracking-wider')
 
                     ui.menu_item('Account Profile', on_click=lambda: ui.navigate.to('/profile')).props('prepend-icon=person').classes('text-xs font-medium')
-                    if user_role == 'admin':
-                        ui.menu_item('Admin Console', on_click=lambda: ui.navigate.to('/admin')).props('prepend-icon=admin_panel_settings').classes('text-xs font-medium')
+                    ui.menu_item('Library Pass & QR', on_click=lambda: ui.navigate.to('/attendance')).props('prepend-icon=qr_code_scanner').classes('text-xs font-medium')
+                    ui.menu_item('Book Requisitions', on_click=lambda: ui.navigate.to('/requisitions')).props('prepend-icon=post_add').classes('text-xs font-medium')
+                    if user_role.lower() in ('admin', 'librarian'):
+                        ui.menu_item('Admin Console', on_click=lambda: ui.navigate.to('/admin')).props('prepend-icon=admin_panel_settings').classes('text-xs font-medium text-indigo-700 font-bold')
 
                     ui.separator().classes('my-1')
                     def sign_out():

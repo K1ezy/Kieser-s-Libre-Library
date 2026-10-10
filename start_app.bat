@@ -11,7 +11,12 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b
 )
 
-:: 2. Launch Libre-Library in a new window
+:: 2. Terminate stale processes holding port 8080 or ngrok tunnel
+echo [*] Cleaning stale port 8080 and existing ngrok tunnel...
+taskkill /F /IM ngrok.exe >nul 2>&1
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8080 ^| findstr LISTENING') do taskkill /F /PID %%a >nul 2>&1
+
+:: 3. Launch Libre-Library in a new window
 echo [1/2] Launching Libre-Library Web App on port 8080...
 start "Libre Library Server" cmd /k ".venv\Scripts\python.exe main.py"
 

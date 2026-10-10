@@ -157,3 +157,22 @@ async def reader_page(book_id: str):
     app.storage.client['page_path'] = '/read'
     reader = BookReader(book_id)
     reader.build_ui()
+
+    # Zeigarnik Effect: Automatically track active reading position
+    user_id = app.storage.user.get('user_id') or app.storage.user.get('token')
+    if user_id:
+        try:
+            from core.database.mongo_manager import mongo_db
+            await mongo_db.update_book_reading_status(book_id, 'reading')
+            existing_prog = await mongo_db.progress.get_reading_progress(user_id, book_id)
+            cur_p = existing_prog.get('current_page', 1) if existing_prog else 1
+            tot_p = existing_prog.get('total_pages', 1) if existing_prog else 1
+            await mongo_db.progress.save_reading_progress(
+                user_id=user_id,
+                book_id=book_id,
+                current_page=cur_p,
+                total_pages=tot_p,
+                status='reading'
+            )
+        except Exception:
+            pass

@@ -26,10 +26,15 @@ class BookRepository(BaseRepository):
             return 0
 
     async def get_recent_books(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """Returns the N most recently added books."""
+        """Returns the N most recently added books with lightweight projection."""
         if self.db is None: return []
         try:
-            cursor = self.db['books'].find().sort('added_at', -1).limit(limit)
+            proj = {
+                "_id": 0, "id": 1, "title": 1, "display_author": 1,
+                "authors": 1, "file_type": 1, "formats": 1, "cover_image": 1,
+                "added_at": 1, "created_at": 1
+            }
+            cursor = self.db['books'].find({}, proj).sort('added_at', -1).limit(limit)
             return await cursor.to_list(length=limit)
         except Exception as e:
             logger.error(f"Recent Books Error: {e}")
@@ -201,6 +206,8 @@ class BookRepository(BaseRepository):
 
     def format_added_date(self, added_at: Any) -> str:
         """Helper to format added_at cleanly regardless of timestamp type."""
+        if isinstance(added_at, datetime):
+            return added_at.strftime("%b %d, %Y")
         if isinstance(added_at, (int, float)):
             try: return datetime.fromtimestamp(added_at).strftime("%b %d, %Y")
             except Exception: return "Recently"
@@ -208,19 +215,31 @@ class BookRepository(BaseRepository):
             return added_at[:10]
         return "Recently"
 
-    async def get_library_inventory_summary(self, limit: int = 10) -> str:
-        """Returns dynamic string of real library books for TARS AI prompt context."""
-        books = await self.get_recent_books(limit=limit)
-        if not books:
+    async def get_library_inventory_summary(self, limit: int = 200, focus_book_id: Optional[str] = None) -> str:
+        """Returns comprehensive catalog summary of library books for TARS AI prompt context."""
+        if self.db is None:
             return "NO BOOKS CURRENTLY IN LIBRARY."
-        lines = ["CURRENT LIBRARY INVENTORY:"]
-        for b in books:
-            title = b.get('title', 'Untitled')
-            author = b.get('display_author') or b.get('authors', 'Unknown')
-            if isinstance(author, list) and author: author = str(author[0])
-            ftype = b.get('file_type', 'E-Book')
-            lines.append(f"- '{title}' by {author} ({ftype}) [Available]")
-        return "\n".join(lines)
+        try:
+            cursor = self.db['books'].find({}, {"id": 1, "title": 1, "display_author": 1, "authors": 1, "file_type": 1, "genres": 1})\
+                .sort("title", 1).limit(limit)
+            books = await cursor.to_list(length=limit)
+            if not books:
+                return "NO BOOKS CURRENTLY IN LIBRARY."
+
+            lines = ["CURRENT LIBRARY INVENTORY (AVAILABLE IN LOCAL DIGITAL ARCHIVE):"]
+            for b in books:
+                title = b.get('title', 'Untitled')
+                author = b.get('display_author') or b.get('authors', 'Unknown')
+                if isinstance(author, list) and author:
+                    author = author[0].get('name', str(author[0])) if isinstance(author[0], dict) else str(author[0])
+                ftype = (b.get('file_type') or 'E-Book').upper()
+                is_focused = (focus_book_id and str(b.get('id')) == str(focus_book_id))
+                prefix = "* [CURRENTLY FOCUSED] " if is_focused else "- "
+                lines.append(f"{prefix}'{title}' by {author} ({ftype}) [Available]")
+            return "\n".join(lines)
+        except Exception as e:
+            logger.error(f"Inventory summary error: {e}")
+            return "CURRENT LIBRARY INVENTORY UNAVAILABLE."
 
     async def update_book_shelves(self, book_id: str, shelves: List[str]) -> bool:
         """Assigns custom user shelves/tags to a book."""

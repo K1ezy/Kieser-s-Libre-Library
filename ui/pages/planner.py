@@ -44,8 +44,14 @@ class FlashcardCarousel(ui.element):
             return
 
         with self:
-            # --- PROGRESS INDICATOR (Restored to subtle style) ---
-            ui.label(f"Card {self.current_index + 1} of {len(self.cards)}").classes('text-sm font-bold text-gray-400 mb-6 tracking-wide')
+            # --- PROGRESS INDICATOR (Zeigarnik Effect: visual progress) ---
+            pct = round(((self.current_index + 1) / max(len(self.cards), 1)) * 100)
+            with ui.column().classes('items-center gap-1.5 mb-4 sm:mb-6 w-full max-w-xl'):
+                with ui.row().classes('w-full justify-between items-center text-xs font-bold text-slate-500 px-1'):
+                    ui.label(f"Card {self.current_index + 1} of {len(self.cards)}").classes('tracking-wide')
+                    ui.label(f"{pct}% Complete").classes('text-indigo-600 font-extrabold')
+                ui.linear_progress(value=(self.current_index + 1) / max(len(self.cards), 1))\
+                    .props('rounded color=indigo size=6px track-color=grey-3').classes('w-full shadow-xs')
             
             # --- CARD CONTAINER (THE SIZE FIXES) ---
             # 1. w-full max-w-xl: Controls width responsiveness
@@ -67,7 +73,7 @@ class FlashcardCarousel(ui.element):
                 with self.front:
                     ui.label("QUESTION").classes('text-xs font-bold tracking-widest text-indigo-500 mb-2 sm:mb-4')
                     ui.label(self.get_text('q')).classes('text-lg sm:text-2xl font-medium text-slate-800 overflow-y-auto max-h-full break-words')
-                    ui.label("Tap to reveal").classes('text-xs text-slate-400 mt-auto pt-2 sm:pt-4')
+                    ui.label("Tap to flip").classes('text-xs text-slate-400 mt-auto pt-2 sm:pt-4')
 
                 # --- BACK FACE ---
                 self.back = ui.column().classes(
@@ -80,14 +86,17 @@ class FlashcardCarousel(ui.element):
                     ui.label("ANSWER").classes('text-xs font-bold tracking-widest text-indigo-200 mb-2 sm:mb-4')
                     ui.label(self.get_text('a')).classes('text-base sm:text-xl font-medium text-white overflow-y-auto max-h-full break-words')
 
-            # --- CONTROLS ---
+            # --- CONTROLS (Fitts's Law touch targets) ---
             with ui.row().classes('mt-4 sm:mt-8 gap-3 sm:gap-6 items-center justify-center flex-wrap'):
-                ui.button(icon='arrow_back', on_click=self.prev_card).props('round flat color=grey size=md')
+                ui.button(icon='arrow_back', on_click=self.prev_card).props('round flat color=grey size=md') \
+                    .tooltip('Previous Card (Left Arrow)')
                 
                 # Main Flip Button
-                ui.button('Flip Card', on_click=self.flip).props('rounded outline color=indigo size=md').classes('px-5 sm:px-8 font-bold')
+                ui.button('Flip Card', icon='sync', on_click=self.flip).props('rounded outline color=indigo size=md') \
+                    .classes('px-5 sm:px-8 font-bold shadow-xs').tooltip('Flip Card (Spacebar)')
                 
-                ui.button(icon='arrow_forward', on_click=self.next_card).props('round flat color=grey size=md')
+                ui.button(icon='arrow_forward', on_click=self.next_card).props('round flat color=grey size=md') \
+                    .tooltip('Next Card (Right Arrow)')
 
         # Apply state
         self._apply_rotation()
@@ -355,9 +364,13 @@ class StudyPlannerPage:
                 ui.button('New Topic', icon='add', on_click=self.open_add_dialog).props('color=indigo unelevated rounded size=md').classes('font-bold shadow-sm')
 
             if not self.tasks:
-                with ui.column().classes('w-full items-center py-12 sm:py-16 text-center'):
-                    ui.icon('assignment', size='3.5em').classes('text-slate-300 mb-3')
-                    ui.label("No topics yet.").classes('text-slate-400 text-sm italic')
+                with ui.column().classes('w-full items-center py-16 sm:py-20 text-center bg-white border-2 border-dashed border-slate-200 rounded-3xl p-6 sm:p-8 shadow-xs'):
+                    with ui.element('div').classes('p-5 rounded-full bg-indigo-50 border border-indigo-100 mb-3'):
+                        ui.icon('school', size='3em').classes('text-indigo-600')
+                    ui.label("No Study Topics Created Yet").classes('text-slate-800 text-lg sm:text-xl font-bold mb-1')
+                    ui.label("Add your curriculum subjects or textbook chapters to generate automated 3D flashcards.").classes('text-slate-500 text-xs sm:text-sm max-w-sm mb-5')
+                    ui.button('Create First Study Topic', icon='add', on_click=self.open_add_dialog)\
+                        .props('unelevated rounded-xl color=indigo size=md font-bold').classes('shadow-md')
             
             with ui.grid().classes('w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6'):
                 for task in self.tasks: self.render_task_card(task)
@@ -392,7 +405,6 @@ class StudyPlannerPage:
         with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
             self.container = ui.column().classes('w-full')
 
-@ui.page('/planner')
 async def planner_page():
     app.storage.client['page_path'] = '/planner'
     page = StudyPlannerPage()

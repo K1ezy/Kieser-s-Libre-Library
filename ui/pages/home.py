@@ -74,6 +74,25 @@ async def home_page():
     except Exception:
         total_books, recent_books = 0, []
 
+    uid = app.storage.user.get('user_id') or app.storage.user.get('token')
+    active_reading_items = []
+    if uid:
+        try:
+            raw_history = await mongo_db.progress.get_reading_history(uid, limit=10)
+            for item in raw_history:
+                b_id = item.get('book_id')
+                if b_id:
+                    b_doc = await mongo_db.get_book_details(b_id)
+                    if b_doc:
+                        b_doc['progress_percent'] = item.get('progress_percent', 0)
+                        b_doc['current_page'] = item.get('current_page', 1)
+                        b_doc['total_pages'] = item.get('total_pages', 1)
+                        active_reading_items.append(b_doc)
+                if len(active_reading_items) >= 2:
+                    break
+        except Exception:
+            active_reading_items = []
+
     with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] md:pt-24 px-3 sm:px-4 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
         
         # Hero Welcome Banner
@@ -87,22 +106,64 @@ async def home_page():
                 ui.label(f"{get_greeting()}! Welcome to Libre-Library").classes('text-2xl sm:text-3xl md:text-5xl font-black text-white tracking-tight leading-tight')
                 ui.label('Your intelligent personal digital archive for learning, discovery, and research.').classes('text-xs sm:text-base md:text-lg text-indigo-100 font-medium')
 
-        # Statistics Grid
+        # Statistics Grid (Miller's Law chunking)
         is_tars_online = tars_engine.is_available
         tars_status = "Online" if is_tars_online else "Offline"
         tars_color = "emerald" if is_tars_online else "rose"
         tars_sub = "Llama 3.2 3B Active (Local)" if is_tars_online else "Model missing in models/"
 
-        with ui.grid().classes('w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6 mb-6 sm:mb-10'):
+        with ui.grid().classes('w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-6 mb-6 sm:mb-8'):
             stat_card('library_books', 'Library Size', total_books, 'indigo', 'Books indexed')
             stat_card('dns', 'System Status', 'Online', 'emerald', 'All engines active')
             stat_card('smart_toy', 'AI Assistant', f'TARS {tars_status}', tars_color, tars_sub)
 
-        # Quick Actions
+        # Zeigarnik Effect: Continue Reading Section for active reading tasks
+        if active_reading_items:
+            with ui.column().classes('w-full mb-6 sm:mb-8'):
+                with ui.row().classes('items-center gap-2 mb-3 px-1'):
+                    ui.icon('auto_stories', size='sm').classes('text-indigo-600')
+                    ui.label('CONTINUE READING').classes('text-[11px] sm:text-xs font-black text-indigo-700 uppercase tracking-widest')
+                
+                with ui.grid().classes('w-full grid-cols-1 md:grid-cols-2 gap-4'):
+                    for book_prog in active_reading_items:
+                        b_id = str(book_prog.get('id', ''))
+                        b_title = book_prog.get('title', 'Untitled')
+                        b_author = book_prog.get('display_author') or 'Unknown'
+                        b_pct = round(float(book_prog.get('progress_percent', 0)))
+                        b_cur = book_prog.get('current_page', 1)
+                        b_tot = book_prog.get('total_pages', 1)
+                        
+                        with ui.card().classes(
+                            'p-4 sm:p-5 bg-gradient-to-br from-white to-slate-50/80 border border-indigo-100 rounded-2xl shadow-sm '
+                            'hover:shadow-md hover:border-indigo-300 transition-all flex flex-col justify-between gap-3'
+                        ):
+                            with ui.row().classes('items-center justify-between gap-3 w-full'):
+                                with ui.column().classes('gap-1 flex-1 min-w-0'):
+                                    ui.label(b_title).classes('font-bold text-sm sm:text-base text-slate-900 truncate w-full')
+                                    ui.label(f"by {b_author}").classes('text-xs text-slate-500 truncate w-full')
+                                with ui.element('div').classes('px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold shrink-0'):
+                                    ui.label(f"{b_pct}%")
+
+                            # Linear Progress Bar
+                            with ui.element('div').classes('w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200/60'):
+                                ui.element('div').classes('bg-indigo-600 h-full rounded-full transition-all').style(f'width: {b_pct}%')
+
+                            with ui.row().classes('w-full justify-between items-center pt-1'):
+                                ui.label(f"Page {b_cur} of {b_tot}").classes('text-xs text-slate-500 font-medium')
+                                with ui.row().classes('gap-2 items-center'):
+                                    ui.button('Details', icon='info', on_click=lambda id=b_id: ui.navigate.to(f"/book/{id}"))\
+                                        .props('flat rounded dense size=sm color=grey-7').classes('text-xs font-bold')
+                                    ui.button('Resume Reading', icon='play_arrow', on_click=lambda id=b_id: ui.navigate.to(f"/read/{id}"))\
+                                        .props('unelevated rounded-xl size=sm color=indigo font-bold')\
+                                        .classes('shadow-xs')
+
+        # Quick Actions (Miller's Law 4 Pillars: AI, Study, Entrance Pass, Upload)
         ui.label('QUICK ACTIONS').classes('text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 sm:mb-4 px-1')
-        with ui.grid().classes('w-full grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6 mb-8 sm:mb-12'):
-            action_card("Ask TARS AI", "Chat with your private local AI librarian.", "smart_toy", "indigo", "/chat")
-            action_card("Ingest Material", "Upload PDF, EPUB, DOCX, or PPTX.", "cloud_upload", "purple", "/upload")
+        with ui.grid().classes('w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-8 sm:mb-12'):
+            action_card("Ask TARS AI", "Chat with intelligent AI librarian.", "smart_toy", "indigo", "/chat")
+            action_card("Study Planner", "Flashcards & spaced repetition decks.", "event_note", "purple", "/planner")
+            action_card("Library Pass & QR", "Digital entrance barcode & attendance.", "qr_code_scanner", "emerald", "/attendance")
+            action_card("Ingest Material", "Upload PDF, EPUB, DOCX, or PPTX.", "cloud_upload", "sky", "/upload")
 
         # Recent Books Section
         with ui.row().classes('w-full justify-between items-end mb-4 sm:mb-6 px-1'):

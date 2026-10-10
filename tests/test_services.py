@@ -62,6 +62,30 @@ class TestChatService(unittest.TestCase):
         self.assertIn("TEACHING MODE", persona)
         self.assertIn("Gravity formula", persona)
 
+    def test_build_system_persona_with_focus_book_meta(self):
+        """Verifies that book metadata and preview synopsis directly ground the LLM persona."""
+        meta = {
+            "title": "Witcher Crossroadsofravens",
+            "display_author": "Andrzej Sapkowski",
+            "description": "Geralt embarks on a dangerous journey through the Crossroads of Ravens.",
+            "file_type": "EPUB",
+            "shelves": ["Fantasy", "Favorites"],
+            "genres": ["Dark Fantasy", "Adventure"]
+        }
+        persona = chat_service.build_system_persona(
+            chat_style="Balanced",
+            focus_book_title="Witcher Crossroadsofravens",
+            inventory="* Witcher Crossroadsofravens (Andrzej Sapkowski) [EPUB]",
+            rag_text="",
+            focus_book_meta=meta
+        )
+        self.assertIn("CURRENTLY FOCUSED BOOK DETAILS", persona)
+        self.assertIn("Witcher Crossroadsofravens", persona)
+        self.assertIn("Andrzej Sapkowski", persona)
+        self.assertIn("Geralt embarks on a dangerous journey through the Crossroads of Ravens.", persona)
+        self.assertIn("YES, this document is currently saved and available in the library archive (EPUB format)", persona)
+        self.assertIn("Fantasy, Favorites", persona)
+
     def test_export_chat_markdown(self):
         """Verifies chat export outputs structured Markdown with metadata header."""
         messages = [
@@ -76,7 +100,7 @@ class TestChatService(unittest.TestCase):
         self.assertIn("### 🤖 TARS AI\n\nRelativity is a physical theory...", md)
 
 
-class TestSummarizerService(unittest.TestCase):
+class TestSummarizerService(unittest.IsolatedAsyncioTestCase):
     """Verifies SummarizerService document chunking and study prompt building."""
 
     def test_partition_document_text_short(self):
@@ -104,6 +128,22 @@ class TestSummarizerService(unittest.TestCase):
             self.assertEqual(messages[1]["role"], "user")
             self.assertIn("Sample Book", messages[1]["content"])
             self.assertIn("Sample Content", messages[1]["content"])
+
+    async def test_tars_engine_generate_response_delegation(self):
+        """Verifies tars_engine.generate_response calls create_completion."""
+        from unittest.mock import AsyncMock
+        from core.ai_engine.llm_engine import tars_engine
+        
+        with unittest.mock.patch.object(tars_engine, 'create_completion', new_callable=AsyncMock) as mock_comp:
+            mock_comp.return_value = "Generated Synopsis"
+            res = await tars_engine.generate_response("Test prompt", max_tokens=500)
+            self.assertEqual(res, "Generated Synopsis")
+            mock_comp.assert_awaited_once_with(
+                prompt="Test prompt",
+                max_tokens=500,
+                temperature=0.3,
+                stop=None
+            )
 
 
 if __name__ == '__main__':

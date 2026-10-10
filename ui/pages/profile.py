@@ -3,7 +3,18 @@ from core.database.mongo_manager import mongo_db
 from components.sidebar import sidebar
 from components.header import header
 from components.bottom_nav import bottom_nav
+from ui.pages.attendance import generate_qr_base64
 import asyncio
+
+PROGRAM_OPTIONS = ["BSCS", "BSIT", "BSED", "BEED", "BSBA", "BSHM", "Crim", "Nursing", "GENERAL"]
+
+ROLE_COLORS = {
+    "ADMIN": ("bg-purple-100 text-purple-800 border-purple-200", "security"),
+    "LIBRARIAN": ("bg-blue-100 text-blue-800 border-blue-200", "local_library"),
+    "FACULTY": ("bg-emerald-100 text-emerald-800 border-emerald-200", "school"),
+    "STUDENT": ("bg-indigo-100 text-indigo-800 border-indigo-200", "badge"),
+    "USER": ("bg-indigo-100 text-indigo-800 border-indigo-200", "badge"),
+}
 
 class UserProfile:
     def __init__(self):
@@ -13,6 +24,8 @@ class UserProfile:
         self.name_input = None
         self.headline_input = None
         self.bio_input = None
+        self.student_id_input = None
+        self.program_select = None
         self.container = None
 
     async def load_data(self):
@@ -29,14 +42,18 @@ class UserProfile:
             return ui.navigate.to('/login')
 
         if self.name_input and self.headline_input and self.bio_input:
+            sid_val = self.student_id_input.value if self.student_id_input else self.profile_data.get('student_id')
+            prog_val = self.program_select.value if self.program_select else self.profile_data.get('program')
             await mongo_db.update_user_profile(
                 user_id=user_id,
                 name=self.name_input.value,
                 bio=self.bio_input.value,
-                headline=self.headline_input.value
+                headline=self.headline_input.value,
+                student_id=sid_val,
+                program=prog_val
             )
             self.is_editing = False
-            ui.notify('Profile Updated', type='positive')
+            ui.notify('Profile & Student ID updated successfully!', type='positive')
             await self.load_data()
 
     def toggle_edit(self):
@@ -59,15 +76,28 @@ class UserProfile:
                     
                     # Info
                     with ui.column().classes('mb-1 sm:mb-2 flex-grow min-w-0 w-full sm:w-auto items-center sm:items-start'):
-                        account_role = self.profile_data.get('role', 'user').upper()
-                        role_badge_col = 'indigo' if account_role == 'ADMIN' else 'slate'
+                        raw_role = self.profile_data.get('role', 'student').upper()
+                        account_role = 'STUDENT' if raw_role == 'USER' else raw_role
+                        badge_style, badge_icon = ROLE_COLORS.get(account_role, ("bg-indigo-100 text-indigo-800 border-indigo-200", "badge"))
+                        user_sid = self.profile_data.get('student_id', '2024-001')
+                        user_prog = self.profile_data.get('program', 'BSCS')
+
                         if not self.is_editing:
                             with ui.row().classes('items-center gap-2 flex-wrap justify-center sm:justify-start'):
                                 ui.label(self.profile_data.get('name', 'Library User')).classes('text-2xl sm:text-3xl font-black text-slate-900 leading-tight')
-                                ui.label(account_role).classes(f'text-[10px] font-black text-{role_badge_col}-700 bg-{role_badge_col}-100 px-2.5 py-0.5 rounded-full uppercase tracking-wider')
-                            ui.label(self.profile_data.get('headline', 'Student / Researcher')).classes('text-xs sm:text-sm font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full w-max mt-1')
+                                with ui.element('div').classes(f'text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border flex items-center gap-1 {badge_style}'):
+                                    ui.icon(badge_icon, size='14px')
+                                    ui.label(account_role)
+
+                            with ui.row().classes('items-center gap-2 mt-1 flex-wrap justify-center sm:justify-start'):
+                                ui.label(f"ID: {user_sid}").classes('text-xs font-mono font-bold text-slate-700 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded')
+                                ui.label(user_prog).classes('text-xs font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded')
+                                ui.label(self.profile_data.get('headline', 'Student / Researcher')).classes('text-xs text-slate-500 font-medium')
                         else:
                             self.name_input = ui.input(value=self.profile_data.get('name', 'Library User'), label='Full Name').props('outlined dense rounded bg-color=white').classes('w-full text-sm')
+                            with ui.row().classes('w-full gap-2'):
+                                self.student_id_input = ui.input(value=user_sid, label='Student / Faculty ID Number').props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
+                                self.program_select = ui.select(PROGRAM_OPTIONS, value=user_prog, label='Program').props('outlined dense rounded bg-color=white options-dense').classes('w-36 text-sm')
                             self.headline_input = ui.input(value=self.profile_data.get('headline', 'Student / Researcher'), label='Title / Field of Study').props('outlined dense rounded bg-color=white').classes('w-full text-sm')
 
                     # Edit Action
@@ -78,8 +108,23 @@ class UserProfile:
                             ui.button('Cancel', on_click=self.toggle_edit).props('flat rounded color=red size=md')
                             ui.button('Save', icon='save', on_click=self.save_changes).props('unelevated rounded color=indigo size=md font-bold')
 
-
                 ui.separator().classes('my-4 sm:my-6 opacity-50')
+
+                # Digital Library Student Pass (Mini Card)
+                user_sid_clean = self.profile_data.get('student_id', '2024-001')
+                qr_code_b64 = generate_qr_base64(user_sid_clean)
+
+                with ui.row().classes('w-full p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-slate-50 to-indigo-50/40 border border-indigo-100 items-center justify-between gap-4 flex-wrap mb-4'):
+                    with ui.row().classes('items-center gap-4'):
+                        with ui.element('div').classes('p-2 bg-white rounded-xl border border-slate-200 shadow-sm shrink-0'):
+                            ui.image(qr_code_b64).classes('w-16 h-16 rounded-lg')
+                        with ui.column().classes('gap-0'):
+                            ui.label('OFFICIAL LIBRARY QR PASS').classes('text-[10px] font-black text-indigo-600 uppercase tracking-widest')
+                            ui.label(f"{self.profile_data.get('name', 'User')} • {user_sid_clean}").classes('text-sm font-bold text-slate-900')
+                            ui.label('Ready for contactless library door check-in').classes('text-xs text-slate-500')
+                    
+                    ui.button('Open Attendance Terminal', icon='qr_code_scanner', on_click=lambda: ui.navigate.to('/attendance')) \
+                        .props('unelevated rounded-xl color=indigo size=sm font-bold')
 
                 # Bio Section
                 ui.label('ABOUT ME').classes('text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5')

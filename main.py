@@ -26,6 +26,10 @@ try:
 except Exception:
     pass
 
+# High-Performance HTTP Compression: Gzip compresses HTML, JSON, CSS, and JS over mobile network
+from starlette.middleware.gzip import GZipMiddleware
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 # Secure CORS policy: Restrict to configured origins, localhost, LAN, and ngrok tunnels
 app.add_middleware(
     CORSMiddleware,
@@ -51,19 +55,22 @@ import ui.pages.chat as chat
 import ui.pages.book_details as book_details
 import ui.pages.book_collection as books_collection
 import ui.pages.profile as profile
+import ui.pages.attendance as attendance
+import ui.pages.requisitions as requisitions
+import ui.pages.analytics as analytics
 
 BASE_DIR = Path(__file__).resolve().parent
 
-# --- STATIC FILES ---
+# --- STATIC FILES (30-day client browser caching for zero-latency asset loads) ---
 ORGANIZED_BOOKS_DIR = BASE_DIR / 'data' / 'books'
 if not ORGANIZED_BOOKS_DIR.exists():
     ORGANIZED_BOOKS_DIR.mkdir(parents=True, exist_ok=True)
-app.add_static_files('/static_books', ORGANIZED_BOOKS_DIR)
+app.add_static_files('/static_books', ORGANIZED_BOOKS_DIR, max_cache_age=2592000)
 
 STATIC_DIR = BASE_DIR / 'static'
 if not STATIC_DIR.exists():
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
-app.add_static_files('/static', STATIC_DIR)
+app.add_static_files('/static', STATIC_DIR, max_cache_age=2592000)
 
 # --- AUTH GUARD HELPER ---
 def check_auth() -> bool:
@@ -155,11 +162,36 @@ async def summarizer_route():
     await summarizer.summarizer_page()
     FloatingChat()
 
+@ui.page('/attendance')
+async def attendance_route():
+    if not check_auth(): return
+    app.storage.client['page_path'] = '/attendance'
+    apply_theme()
+    await attendance.attendance_page()
+    FloatingChat()
+
+@ui.page('/requisitions')
+async def requisitions_route():
+    if not check_auth(): return
+    app.storage.client['page_path'] = '/requisitions'
+    apply_theme()
+    await requisitions.requisitions_page()
+    FloatingChat()
+
+@ui.page('/analytics')
+async def analytics_route():
+    if not check_auth(): return
+    app.storage.client['page_path'] = '/analytics'
+    apply_theme()
+    await analytics.analytics_page()
+    FloatingChat()
+
 @ui.page('/admin')
 async def admin_route():
     if not check_auth(): return
-    if app.storage.user.get('role') != 'admin':
-        ui.notify("Administrator access required.", type='warning')
+    user_role = app.storage.user.get('role', 'student').lower()
+    if user_role not in ['admin', 'librarian']:
+        ui.notify("Administrator or Librarian access required.", type='warning')
         return ui.navigate.to('/')
     app.storage.client['page_path'] = '/admin'
     apply_theme()
@@ -172,7 +204,26 @@ async def startup():
     await mongo_db.initialize()
     await tars_engine.ensure_db_settings_loaded()
 
+def _ensure_port_available(port: int = 8080):
+    """Releases port if occupied by a stale process on Windows to prevent Errno 10048."""
+    import socket, subprocess, os, time
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        if s.connect_ex(('127.0.0.1', port)) != 0:
+            return
+    try:
+        out = subprocess.check_output(f'netstat -ano -p tcp | findstr :{port}', shell=True, text=True)
+        for line in out.strip().splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and parts[3] == 'LISTENING':
+                target_pid = int(parts[4])
+                if target_pid != os.getpid() and target_pid != 0:
+                    subprocess.run(f'taskkill /F /PID {target_pid}', shell=True, capture_output=True)
+                    time.sleep(0.3)
+    except Exception:
+        pass
+
 if __name__ in {"__main__", "__mp_main__"}:
+    _ensure_port_available(8080)
     app.on_shutdown(shutdown_client) 
     ui.run(
         title="Libre Library",
@@ -180,6 +231,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         host="0.0.0.0",
         port=8080,
         storage_secret=settings.SECRET_KEY,
+        session_middleware_kwargs={"max_age": None},
         dark=False,
         reload=settings.RELOAD,
         uvicorn_reload_excludes=["data/*", "data/**", "chroma_db/*", "*.log"]

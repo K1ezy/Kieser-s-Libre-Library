@@ -83,7 +83,12 @@ class BookCollection:
                 except Exception:
                     self.user_favorites = set()
 
-            all_books = await mongo_db.get_all_books(limit=2000, sort_by='newest')
+            catalog_proj = {
+                "_id": 0, "id": 1, "title": 1, "display_author": 1, "authors": 1,
+                "file_type": 1, "formats": 1, "cover_image": 1, "custom_shelf": 1,
+                "added_at": 1, "created_at": 1, "is_favorite": 1
+            }
+            all_books = await mongo_db.get_all_books(limit=2000, sort_by='newest', projection=catalog_proj)
             self.books = all_books or []
 
             # Extract distinct shelves
@@ -131,9 +136,9 @@ class BookCollection:
 
         # Count per category
         fav_count = sum(1 for b in self.books if b.get('is_favorite') or b.get('id') in self.user_favorites)
-        reading_count = sum(1 for b in self.books if self.user_progress.get(b.get('id'), {}).get('status') == 'reading')
-        want_count = sum(1 for b in self.books if self.user_progress.get(b.get('id'), {}).get('status') == 'want_to_read')
-        done_count = sum(1 for b in self.books if self.user_progress.get(b.get('id'), {}).get('status') == 'completed')
+        reading_count = sum(1 for b in self.books if self.user_progress.get(b.get('id'), {}).get('status') in ('reading', 'currently_reading'))
+        want_count = sum(1 for b in self.books if self.user_progress.get(b.get('id'), {}).get('status') in ('want_to_read', 'to_read'))
+        done_count = sum(1 for b in self.books if self.user_progress.get(b.get('id'), {}).get('status') in ('completed', 'done'))
 
         tabs = [
             ('all', 'All Books', len(self.books), None),
@@ -171,8 +176,12 @@ class BookCollection:
         st = self.state['status_tab']
         if st == 'favorites':
             temp_list = [b for b in temp_list if b.get('is_favorite') or b.get('id') in self.user_favorites]
-        elif st in ('reading', 'want_to_read', 'completed'):
-            temp_list = [b for b in temp_list if self.user_progress.get(b.get('id'), {}).get('status') == st]
+        elif st == 'reading':
+            temp_list = [b for b in temp_list if self.user_progress.get(b.get('id'), {}).get('status') in ('reading', 'currently_reading')]
+        elif st == 'want_to_read':
+            temp_list = [b for b in temp_list if self.user_progress.get(b.get('id'), {}).get('status') in ('want_to_read', 'to_read')]
+        elif st == 'completed':
+            temp_list = [b for b in temp_list if self.user_progress.get(b.get('id'), {}).get('status') in ('completed', 'done')]
 
         # 2. Text Search
         query = self.state['search_term'].lower().strip()
@@ -246,10 +255,13 @@ class BookCollection:
                     )).props('flat color=indigo size=sm').classes('mt-2 font-bold')
                 return
 
-            is_admin = app.storage.user.get('role') == 'admin'
+            is_admin = app.storage.user.get('role') in ('admin', 'librarian')
             delete_cb = self.prompt_delete if is_admin else None
 
             for book in batch:
+                b_id = book.get('id')
+                if b_id and b_id in self.user_progress:
+                    book['progress_percent'] = self.user_progress[b_id].get('progress_percent')
                 book_card(book, action_target='book', on_delete=delete_cb)
 
         self.current_index = end
@@ -263,9 +275,9 @@ class BookCollection:
                 self.load_more_btn.text = 'Load More Books'
 
     def prompt_delete(self, book_id: str, title: str):
-        """Shows deletion confirmation dialog (admin restricted)."""
-        if app.storage.user.get('role') != 'admin':
-            ui.notify("Administrator privileges required to delete books.", type='warning')
+        """Shows deletion confirmation dialog (admin/librarian restricted)."""
+        if app.storage.user.get('role') not in ('admin', 'librarian'):
+            ui.notify("Administrator or Librarian privileges required to delete books.", type='warning')
             return
 
         with ui.dialog() as dialog, ui.card().classes('w-[calc(100vw-1.5rem)] max-w-md p-5 sm:p-6 rounded-2xl bg-white border border-slate-200 shadow-2xl'):

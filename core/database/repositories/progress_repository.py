@@ -1,6 +1,6 @@
 import time
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from bson import ObjectId
 
 from core.database.repositories.base_repository import BaseRepository
@@ -49,6 +49,16 @@ class ProgressRepository(BaseRepository):
         try:
             return await self.db['reading_progress'].find_one({"user_id": user_id, "book_id": book_id})
         except Exception: return None
+
+    async def get_reading_history(self, user_id: str, limit: int = 1000) -> List[Dict[str, Any]]:
+        """Returns reading progress records for a user."""
+        if self.db is None or not user_id: return []
+        try:
+            cursor = self.db['reading_progress'].find({"user_id": user_id}).sort("last_read_at", -1).limit(limit)
+            return await cursor.to_list(length=limit)
+        except Exception as e:
+            logger.error(f"Get Reading History Error: {e}")
+            return []
 
     async def save_book_summary(self, book_id: str, summary_text: str) -> bool:
         """Saves AI generated summary directly onto the book record."""

@@ -156,6 +156,23 @@ class IngestionHub:
                     with ui.column().classes('p-3 sm:p-4 w-full h-64 sm:h-80 overflow-y-auto custom-scrollbar font-mono') as self.log_container:
                         self.refresh_logs()
 
+            # Peak-End Rule: Next Actions Ribbon after uploading documents
+            with ui.card().classes('w-full p-4 sm:p-6 mt-6 sm:mt-8 bg-gradient-to-r from-indigo-50/70 via-white to-purple-50/50 border border-indigo-100 rounded-2xl sm:rounded-3xl shadow-xs'):
+                with ui.row().classes('w-full items-center justify-between gap-4 flex-wrap'):
+                    with ui.row().classes('items-center gap-3'):
+                        with ui.element('div').classes('p-2.5 rounded-xl bg-indigo-100 text-indigo-700 shadow-xs'):
+                            ui.icon('rocket_launch', size='22px')
+                        with ui.column().classes('gap-0'):
+                            ui.label('Documents Ready for Action').classes('font-bold text-slate-900 text-sm sm:text-base')
+                            ui.label('Jump directly into reading, AI chat, or generating flashcards for your uploads.').classes('text-xs text-slate-500')
+                    with ui.row().classes('items-center gap-2 flex-wrap'):
+                        ui.button('View Library Archive', icon='library_books', on_click=lambda: ui.navigate.to('/books'))\
+                            .props('unelevated rounded-xl color=indigo size=sm font-bold').classes('shadow-xs')
+                        ui.button('Chat with TARS', icon='smart_toy', on_click=lambda: ui.navigate.to('/chat'))\
+                            .props('outline rounded-xl color=indigo size=sm font-bold')
+                        ui.button('Study Planner', icon='school', on_click=lambda: ui.navigate.to('/planner'))\
+                            .props('outline rounded-xl color=purple size=sm font-bold')
+
 async def upload_page():
     app.storage.client['page_path'] = '/upload'
     hub = IngestionHub()

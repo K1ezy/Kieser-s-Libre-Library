@@ -10,6 +10,8 @@ from core.database.repositories import (
     PlannerRepository,
     ProgressRepository,
     UserRepository,
+    AttendanceRepository,
+    RequisitionRepository,
 )
 
 logger = logging.getLogger("TARS_DB")
@@ -24,6 +26,8 @@ class MongoManager:
       - planner: PlannerRepository (tasks, schedules, flashcard decks)
       - progress: ProgressRepository (reading position, book summaries, system settings)
       - users: UserRepository (accounts, authentication, profiles, diagnostics)
+      - attendance: AttendanceRepository (QR check-in/out, entrance logs, foot traffic)
+      - requisitions: RequisitionRepository (faculty curriculum book requests, tracking)
     """
 
     def __init__(self):
@@ -38,6 +42,8 @@ class MongoManager:
         self.planner = PlannerRepository()
         self.progress = ProgressRepository()
         self.users = UserRepository()
+        self.attendance = AttendanceRepository()
+        self.requisitions = RequisitionRepository()
 
     async def initialize(self):
         """Connects to MongoDB, configures optimized query indexes, and binds repositories."""
@@ -52,6 +58,8 @@ class MongoManager:
             self.planner.set_db(self.db)
             self.progress.set_db(self.db)
             self.users.set_db(self.db)
+            self.attendance.set_db(self.db)
+            self.requisitions.set_db(self.db)
 
             # Confirm connection
             await self.client.admin.command('ping')
@@ -76,6 +84,10 @@ class MongoManager:
                 await self.db['users'].create_index("email", unique=True, sparse=True)
                 await self.db['users'].create_index("username", sparse=True)
                 await self.db['decks'].create_index("task_id")
+                await self.db['attendance_logs'].create_index([("student_id", 1), ("date_str", 1)])
+                await self.db['attendance_logs'].create_index([("timestamp_in", -1)])
+                await self.db['faculty_requisitions'].create_index([("faculty_id", 1), ("created_at", -1)])
+                await self.db['faculty_requisitions'].create_index("status")
                 await self.users.normalize_existing_users()
                 asyncio.create_task(self._ensure_covers_background())
             except Exception as idx_err:
@@ -125,8 +137,11 @@ class MongoManager:
     def format_added_date(self, added_at: Any) -> str:
         return self.books.format_added_date(added_at)
 
-    async def get_library_inventory_summary(self, limit: int = 10) -> str:
-        return await self.books.get_library_inventory_summary(limit=limit)
+    def resolve_document_path(self, book_id: str, book_doc: Optional[dict] = None) -> Optional[str]:
+        return self.books.resolve_document_path(book_id, book_doc)
+
+    async def get_library_inventory_summary(self, limit: int = 200, focus_book_id: Optional[str] = None) -> str:
+        return await self.books.get_library_inventory_summary(limit=limit, focus_book_id=focus_book_id)
 
     async def update_book_shelves(self, book_id: str, shelves: List[str]) -> bool:
         return await self.books.update_book_shelves(book_id, shelves)
@@ -200,6 +215,9 @@ class MongoManager:
     async def get_reading_progress(self, user_id: str, book_id: str) -> Optional[Dict[str, Any]]:
         return await self.progress.get_reading_progress(user_id, book_id)
 
+    async def get_reading_history(self, user_id: str, limit: int = 1000) -> List[Dict[str, Any]]:
+        return await self.progress.get_reading_history(user_id, limit=limit)
+
     async def save_book_summary(self, book_id: str, summary_text: str) -> bool:
         return await self.progress.save_book_summary(book_id, summary_text)
 
@@ -215,8 +233,16 @@ class MongoManager:
     async def get_user_profile(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         return await self.users.get_user_profile(user_id)
 
-    async def update_user_profile(self, user_id: Optional[str], name: str, bio: str, headline: Optional[str] = None) -> bool:
-        return await self.users.update_user_profile(user_id, name, bio, headline)
+    async def update_user_profile(
+        self,
+        user_id: Optional[str],
+        name: str,
+        bio: str,
+        headline: Optional[str] = None,
+        student_id: Optional[str] = None,
+        program: Optional[str] = None
+    ) -> bool:
+        return await self.users.update_user_profile(user_id, name, bio, headline, student_id, program)
 
     async def get_total_user_count(self) -> int:
         return await self.users.get_total_user_count()
@@ -268,6 +294,91 @@ class MongoManager:
 
     async def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
         return await self.users.get_user_preferences(user_id)
+
+    # =========================================================================
+    # 🎫 ATTENDANCE DELEGATE METHODS (QR-Code Visitor Tracking)
+    # =========================================================================
+    async def record_attendance_scan(
+        self,
+        identifier: str,
+        name: str = "",
+        program: str = "",
+        purpose: str = "Study / Review",
+        user_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        return await self.attendance.record_scan(identifier, name, program, purpose, user_id)
+
+    async def get_today_attendance_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
+        return await self.attendance.get_today_logs(limit=limit)
+
+    async def get_filtered_attendance_logs(
+        self,
+        date_str: Optional[str] = None,
+        program: Optional[str] = None,
+        limit: int = 300
+    ) -> List[Dict[str, Any]]:
+        return await self.attendance.get_logs_filtered(date_str, program, limit=limit)
+
+    async def get_active_checked_in_count(self) -> int:
+        return await self.attendance.get_active_checked_in_count()
+
+    async def get_total_visitors_count(self) -> int:
+        return await self.attendance.get_total_visitors_count()
+
+    async def get_program_attendance_distribution(self, days: int = 30) -> Dict[str, int]:
+        return await self.attendance.get_program_distribution(days=days)
+
+    async def get_hourly_attendance_distribution(self, days: int = 7) -> Dict[int, int]:
+        return await self.attendance.get_hourly_distribution(days=days)
+
+    async def get_purpose_attendance_distribution(self) -> Dict[str, int]:
+        return await self.attendance.get_purpose_distribution()
+
+    # =========================================================================
+    # 📑 REQUISITION DELEGATE METHODS (Faculty Curriculum Requests)
+    # =========================================================================
+    async def create_requisition(
+        self,
+        faculty_id: str,
+        faculty_name: str,
+        email: str,
+        department: str,
+        book_title: str,
+        author: str,
+        course_code: str,
+        course_title: str,
+        edition_year: str = "",
+        isbn: str = "",
+        urgency: str = "Normal",
+        justification: str = ""
+    ) -> Dict[str, Any]:
+        return await self.requisitions.create_requisition(
+            faculty_id, faculty_name, email, department, book_title,
+            author, course_code, course_title, edition_year, isbn, urgency, justification
+        )
+
+    async def get_requisitions(
+        self,
+        faculty_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 150
+    ) -> List[Dict[str, Any]]:
+        return await self.requisitions.get_requisitions(faculty_id=faculty_id, status=status, limit=limit)
+
+    async def update_requisition_status(
+        self,
+        req_id: str,
+        new_status: str,
+        admin_notes: str = "",
+        catalog_book_id: Optional[str] = None
+    ) -> bool:
+        return await self.requisitions.update_status(req_id, new_status, admin_notes, catalog_book_id)
+
+    async def get_requisition_status_counts(self) -> Dict[str, int]:
+        return await self.requisitions.get_status_counts()
+
+    async def get_department_requisition_counts(self) -> Dict[str, int]:
+        return await self.requisitions.get_department_requisition_counts()
 
 # Global Singleton Instance
 mongo_db = MongoManager()

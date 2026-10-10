@@ -11,13 +11,13 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
         'bg-white border-r border-slate-200 flex flex-col z-50 w-72 max-w-[85vw] shadow-sm'
     ) as drawer:
 
-        # 1. LOGO AREA
-        with ui.row().classes('w-full h-16 sm:h-20 items-center justify-between px-5 border-b border-slate-200 flex-none'):
+        # 1. LOGO AREA (Only on mobile overlay; desktop top bar already shows brand header)
+        with ui.row().classes('w-full h-16 sm:h-20 items-center justify-between px-5 border-b border-slate-200 flex-none md:hidden'):
             with ui.row().classes('items-center gap-2.5'):
                 with ui.element('div').classes('p-2 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 shadow-sm'):
                     ui.icon('local_library', size='sm')
                 ui.label('Libre Library').classes('text-xl font-black text-slate-900 tracking-tight')
-            ui.button(icon='close', on_click=drawer.hide).props('flat round dense color=grey-7 size=md').classes('md:hidden')
+            ui.button(icon='close', on_click=drawer.hide).props('flat round dense color=grey-7 size=md')
 
         # 2. NAVIGATION LINKS
         with ui.column().classes('w-full p-4 gap-1 flex-grow overflow-y-auto no-scrollbar'):
@@ -46,8 +46,15 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
             nav_link('AI Summarizer', 'summarize', '/summarizer')
             nav_link('Ingest & Upload', 'cloud_upload', '/upload')
 
+            # CAMPUS SERVICES (SRS Chapter 1 & 2 Modules)
+            ui.label('CAMPUS SERVICES').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-4 mb-1 tracking-widest')
+            nav_link('Library Attendance & Pass', 'qr_code_scanner', '/attendance')
+            nav_link('Book Requisitions', 'post_add', '/requisitions')
+            nav_link('Program Analytics', 'insights', '/analytics')
+
             # ADMIN
-            if app.storage.user.get('role') == 'admin':
+            user_current_role = app.storage.user.get('role', 'student').lower()
+            if user_current_role in ['admin', 'librarian']:
                 ui.separator().classes('my-2 opacity-60')
                 ui.label('ADMINISTRATION').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mb-1 tracking-widest')
                 nav_link('Admin Console', 'admin_panel_settings', '/admin')

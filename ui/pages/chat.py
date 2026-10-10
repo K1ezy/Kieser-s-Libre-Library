@@ -11,6 +11,7 @@ import time
 import uuid
 import logging
 import string
+from typing import Optional, Dict, Any, List, Tuple
 
 # Responsive Layout Components
 from components.sidebar import sidebar
@@ -567,8 +568,8 @@ class ChatInterface:
         """Renders user message bubble with modern indigo gradient and rounded styling."""
         with self.log_container:
             with ui.row().classes('w-full justify-end mb-4'):
-                with ui.row().classes('items-start gap-2 max-w-[88%] sm:max-w-[78%] justify-end'):
-                    with ui.column().classes('p-3.5 sm:p-4 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-2xl rounded-tr-sm shadow-md'):
+                with ui.row().classes('items-start gap-2 max-w-[90%] sm:max-w-[78%] justify-end'):
+                    with ui.column().classes('p-3.5 sm:p-4 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-2xl rounded-tr-sm shadow-md max-w-full overflow-hidden'):
                         ui.label(text).classes('text-sm text-white break-words')
 
     def render_assistant_message(self, content: str = "", citations: list = None, in_progress: bool = False):
@@ -576,8 +577,8 @@ class ChatInterface:
         with self.log_container:
             with ui.row().classes('w-full justify-start mb-4'):
                 with ui.column().classes(
-                    'p-4 sm:p-5 bg-white border border-slate-200 '
-                    'rounded-2xl rounded-tl-sm shadow-sm max-w-[95%] sm:max-w-[85%] break-words w-full'
+                    'p-3.5 sm:p-5 bg-white border border-slate-200 '
+                    'rounded-2xl rounded-tl-sm shadow-sm max-w-[96%] sm:max-w-[85%] break-words w-full overflow-hidden'
                 ) as card:
                     # Assistant Header
                     with ui.row().classes('w-full justify-between items-center mb-2.5 pb-2 border-b border-slate-100'):
@@ -683,7 +684,13 @@ class ChatInterface:
             status_label.text = f"Searching {focus_desc}..."
         return await chat_service.perform_rag_search(text, self.focus_book_id, self.focus_book_title)
 
-    def _build_system_persona(self, inventory: str, rag_text: str, is_review_mode: bool = False) -> str:
+    def _build_system_persona(
+        self,
+        inventory: str,
+        rag_text: str,
+        is_review_mode: bool = False,
+        focus_book_meta: Optional[Dict[str, Any]] = None
+    ) -> str:
         """Constructs system prompt combining library inventory, retrieved RAG context, and persona instructions via ChatService."""
         return chat_service.build_system_persona(
             chat_style=self.chat_style,
@@ -691,7 +698,8 @@ class ChatInterface:
             teaching_mode=self.teaching_mode,
             is_review_mode=is_review_mode,
             inventory=inventory,
-            rag_text=rag_text
+            rag_text=rag_text,
+            focus_book_meta=focus_book_meta
         )
 
     # ==========================================
@@ -802,10 +810,26 @@ class ChatInterface:
                 status.text = "Responding..."
             await asyncio.sleep(0.1)
 
-        # 4. Compose Persona & History Context
+        # 4. Resolve focus book metadata from database (grounding on preview edits, AI synopses, and details)
+        focus_meta = None
+        if self.focus_book_id:
+            try:
+                focus_meta = await mongo_db.get_book_details(self.focus_book_id)
+            except Exception as e:
+                logger.warning(f"Failed to fetch focus book details for {self.focus_book_id}: {e}")
+        elif self.focus_book_title:
+            try:
+                candidates = await mongo_db.search_books(self.focus_book_title, limit=1)
+                if candidates:
+                    focus_meta = candidates[0]
+                    self.focus_book_id = str(focus_meta.get('_id') or focus_meta.get('id'))
+            except Exception as e:
+                logger.warning(f"Failed to resolve focus book title {self.focus_book_title}: {e}")
+
+        # Compose Persona & History Context
         history = await mongo_db.get_recent_history(self.session_id, limit=6)
-        inventory = await mongo_db.get_library_inventory_summary(limit=10)
-        persona = self._build_system_persona(inventory, rag_text, is_review_mode)
+        inventory = await mongo_db.get_library_inventory_summary(limit=200, focus_book_id=self.focus_book_id)
+        persona = self._build_system_persona(inventory, rag_text, is_review_mode, focus_book_meta=focus_meta)
 
         messages = chat_service.build_messages_payload(persona, history)
 
@@ -1015,7 +1039,7 @@ class ChatInterface:
 
     def _build_chat_log_area(self):
         """Constructs scrollable log viewport and anchor."""
-        with ui.column().classes('w-full flex-grow overflow-y-auto p-2.5 sm:p-4 md:p-6 no-scrollbar') as self.scroll_container:
+        with ui.column().classes('w-full flex-1 min-h-0 overflow-y-auto p-2.5 sm:p-4 md:p-6 no-scrollbar touch-pan-y overscroll-contain') as self.scroll_container:
             with ui.column().classes('w-full max-w-4xl mx-auto gap-3 sm:gap-4 pb-4') as self.log_container:
                 pass
             self.scroll_anchor = ui.element('div').classes('h-px w-full')

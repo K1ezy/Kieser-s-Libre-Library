@@ -11,11 +11,11 @@ GLOBAL_THEME_STYLES = '''
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
             color-scheme: light !important;
-            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
             --safe-area-top: env(safe-area-inset-top, 0px);
             --safe-area-bottom: env(safe-area-inset-bottom, 0px);
             --safe-area-left: env(safe-area-inset-left, 0px);
@@ -32,14 +32,31 @@ GLOBAL_THEME_STYLES = '''
             overflow-x: hidden;
             max-width: 100vw;
             width: 100%;
+            min-height: 100dvh;
             font-family: var(--font-family) !important;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
-            touch-action: manipulation;
-            overscroll-behavior-y: none;
+            touch-action: pan-y pinch-zoom;
+            overscroll-behavior-y: contain;
             -webkit-overflow-scrolling: touch;
             background-color: #f8fafc !important; /* Tailwind slate-50 */
             color: #0f172a !important;            /* Tailwind slate-900 */
+        }
+
+        /* Quasar & NiceGUI Root Layout Containers - Unfreeze Touch Momentum */
+        #q-app, .q-layout, .q-page-container {
+            min-height: 100dvh !important;
+            width: 100% !important;
+            overflow-x: hidden !important;
+            touch-action: pan-y pinch-zoom !important;
+            -webkit-overflow-scrolling: touch !important;
+        }
+
+        /* Native touch momentum for scrollable viewports */
+        .overflow-y-auto, [class*="overflow-y-auto"] {
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior-y: contain !important;
+            touch-action: pan-y !important;
         }
 
         /* Neutralize Quasar dark mode artifacts on body or child elements */
@@ -79,24 +96,57 @@ GLOBAL_THEME_STYLES = '''
             color: #94a3b8 !important;
         }
 
-        /* Quasar components light mode enforcement */
+        /* =========================================================================
+           STRICT Z-INDEX & QUASAR PORTAL HIERARCHY
+           Base Content: z-0 to z-10 | Header: z-30 | Bottom Nav: z-35
+           Drawers: z-45 | Dialogs: z-6000 | Menus/Selects: z-7000
+           Tooltips: z-8000 | System Notifications: z-9000
+           ========================================================================= */
         .q-header {
+            z-index: 30 !important;
             background-color: rgba(255, 255, 255, 0.95) !important;
             color: #0f172a !important;
             border-bottom: 1px solid #e2e8f0 !important;
         }
 
+        nav.fixed.bottom-0, [class*="fixed bottom-0"] {
+            z-index: 35 !important;
+        }
+
         .q-drawer {
+            z-index: 45 !important;
             background-color: #ffffff !important;
             color: #0f172a !important;
             border-right: 1px solid #e2e8f0 !important;
         }
 
-        .q-dialog .q-card,
-        .q-menu {
+        .q-dialog {
+            z-index: 6000 !important;
+        }
+
+        .q-dialog .q-card {
             background-color: #ffffff !important;
             color: #0f172a !important;
             border: 1px solid #e2e8f0 !important;
+            max-height: calc(100dvh - 2rem) !important;
+        }
+
+        /* Quasar Menus, Dropdown Popovers, and Select Options */
+        .q-menu, .q-select__menu, .q-virtual-scroll {
+            z-index: 7000 !important;
+            background-color: #ffffff !important;
+            color: #0f172a !important;
+            border: 1px solid #e2e8f0 !important;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04) !important;
+            border-radius: 16px !important;
+        }
+
+        .q-tooltip {
+            z-index: 8000 !important;
+        }
+
+        .q-notifications {
+            z-index: 9000 !important;
         }
 
         .q-field--outlined .q-field__control {
@@ -116,6 +166,42 @@ GLOBAL_THEME_STYLES = '''
             }
             .q-btn:active {
                 transform: scale(0.97);
+            }
+        }
+
+        /* =========================================================================
+           GPU LAYER PROMOTION & MOBILE PERFORMANCE OPTIMIZATIONS
+           ========================================================================= */
+        .q-header, nav.fixed.bottom-0, [class*="fixed bottom-0"] {
+            -webkit-transform: translateZ(0);
+            transform: translateZ(0);
+            will-change: transform;
+        }
+
+        /* Eliminate GPU blur rasterization thrashing on mobile viewports */
+        @media (max-width: 640px) {
+            .backdrop-blur-md, .backdrop-blur-sm, [class*="backdrop-blur"] {
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+            }
+            .q-header {
+                background-color: #ffffff !important;
+            }
+            nav.fixed.bottom-0, [class*="fixed bottom-0"] {
+                background-color: #ffffff !important;
+            }
+        }
+
+        /* Virtual card layout containment to boost scroll FPS */
+        .book-card-item {
+            content-visibility: auto;
+            contain-intrinsic-size: 160px 240px;
+        }
+
+        @media (max-width: 768px) {
+            .group:hover .group-hover\:scale-105,
+            .group:hover .group-hover\:scale-110 {
+                transform: none !important;
             }
         }
 

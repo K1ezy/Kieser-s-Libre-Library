@@ -31,6 +31,19 @@ def get_format_color(fmt: str) -> tuple:
         return ('text-indigo-700', 'bg-indigo-50 border-indigo-200')
     return ('text-slate-600', 'bg-slate-100 border-slate-200')
 
+# In-memory cache for disk cover existence to avoid synchronous disk stats on every render
+_COVER_CACHE: Dict[str, bool] = {}
+
+def has_disk_cover(book_id: str) -> bool:
+    if not book_id:
+        return False
+    if book_id in _COVER_CACHE:
+        return _COVER_CACHE[book_id]
+    books_data_dir = settings.BASE_DIR / 'data' / 'books'
+    exists = (books_data_dir / book_id / 'cover.jpg').exists()
+    _COVER_CACHE[book_id] = exists
+    return exists
+
 def book_card(
     book: Dict[str, Any],
     action_target: str = 'book',
@@ -49,11 +62,8 @@ def book_card(
     title = book.get('title', 'Untitled')
     author_display = book.get('display_author') or format_author(book.get('authors', []))
     
-    # Safe Cover Detection
-    books_data_dir = settings.BASE_DIR / 'data' / 'books'
-    disk_cover = books_data_dir / book_id / 'cover.jpg'
-    
-    if disk_cover.exists():
+    # Fast In-Memory Cover Detection (0 disk I/O per card)
+    if has_disk_cover(book_id):
         cover_url = f"/static_books/{book_id}/cover.jpg"
     elif book.get('cover_image') and not str(book.get('cover_image')).endswith(('default_cover.png', 'default_cover.svg')):
         cover_url = book.get('cover_image')
@@ -70,39 +80,51 @@ def book_card(
             file_type = formats_keys[0].upper()
     txt_col, bg_col = get_format_color(file_type)
 
-    # Card Wrapper with hover lift & shadow
-    with ui.element('div').classes('relative group w-full'):
+    # Card Wrapper with GPU layout containment
+    with ui.element('div').classes('relative group w-full book-card-item'):
         with ui.card().classes(
-            'w-full p-0 gap-0 border border-slate-200 shadow-sm '
-            'hover:shadow-xl hover:-translate-y-1 transition-all duration-300 '
+            'w-full p-0 gap-0 border border-slate-200 shadow-xs '
+            'sm:hover:shadow-lg sm:hover:-translate-y-1 sm:transition-transform '
             'rounded-2xl overflow-hidden bg-white cursor-pointer flex flex-col'
         ).on('click', lambda: ui.navigate.to(target_url)):
             
             # Cover Container (Fixed 2:3 aspect ratio adapted for mobile)
             with ui.element('div').classes('w-full h-44 xs:h-48 sm:h-52 md:h-56 relative overflow-hidden bg-slate-100 flex items-center justify-center'):
-                ui.image(cover_url).classes('w-full h-full object-cover transition-transform duration-500 group-hover:scale-105') \
+                ui.image(cover_url).classes('w-full h-full object-cover sm:group-hover:scale-105 sm:transition-transform') \
                     .props('loading=lazy')
                 
-                # Format Badge overlay
-                with ui.element('div').classes(f'absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-1.5 sm:px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black tracking-wider border shadow-sm backdrop-blur-md {txt_col} {bg_col}'):
+                # Format Badge overlay (zero backdrop-filter to prevent mobile GPU rasterizer lag)
+                with ui.element('div').classes(f'absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-1.5 sm:px-2 py-0.5 rounded-md text-[9px] sm:text-[10px] font-black tracking-wider border shadow-xs {txt_col} {bg_col}'):
                     ui.label(file_type)
                 
                 # Hover "Read" indicator overlay
-                with ui.row().classes('absolute inset-0 bg-indigo-900/40 backdrop-blur-[2px] opacity-0 group-hover:opacity-100 transition-opacity duration-300 items-center justify-center gap-2'):
+                with ui.row().classes('absolute inset-0 bg-indigo-900/40 opacity-0 sm:group-hover:opacity-100 sm:transition-opacity items-center justify-center gap-2 pointer-events-none'):
                     ui.button(
                         'Read' if action_target == 'read' else 'Details',
                         icon='menu_book' if action_target == 'read' else 'info'
                     ).props('rounded unelevated color=indigo size=sm text-color=white')
 
             # Content Info
-            with ui.column().classes('p-2.5 sm:p-3.5 gap-0.5 sm:gap-1 w-full flex-grow justify-between bg-white'):
+            progress_val = book.get('progress_percent')
+            if progress_val is None and isinstance(book.get('reading_progress'), dict):
+                progress_val = book['reading_progress'].get('progress_percent')
+
+            with ui.column().classes('p-2.5 sm:p-3.5 gap-1 w-full flex-grow justify-between bg-white'):
                 with ui.column().classes('gap-0.5 w-full'):
                     ui.label(title).classes('font-bold text-xs sm:text-sm text-slate-800 leading-snug line-clamp-2 min-h-[2rem] sm:min-h-[2.5rem]')
                     ui.label(author_display).classes('text-[11px] sm:text-xs text-slate-500 font-medium truncate w-full')
+                
+                # Zeigarnik Effect: Visual Progress Indicator for Active Reading
+                if progress_val is not None and float(progress_val) > 0:
+                    pct = min(100, max(0, round(float(progress_val))))
+                    with ui.row().classes('w-full items-center justify-between gap-1 mt-1 pt-1 border-t border-slate-100'):
+                        with ui.element('div').classes('flex-1 bg-slate-100 h-1.5 rounded-full overflow-hidden border border-slate-200/50'):
+                            ui.element('div').classes('bg-indigo-600 h-full rounded-full transition-all').style(f'width: {pct}%')
+                        ui.label(f"{pct}%").classes('text-[9px] font-extrabold text-indigo-600 shrink-0')
 
-        # Admin / Quick Delete Action Overlay
+        # Admin / Quick Delete Action Overlay (Fitts's Law: Accessible 36px touch target)
         if on_delete:
             with ui.button(icon='delete', on_click=lambda b_id=book_id, t=title: on_delete(b_id, t)) \
                     .props('flat round dense color=red size=sm') \
-                    .classes('absolute top-1.5 right-1.5 sm:top-2 sm:right-2 opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-all duration-200 bg-white/95 shadow-md z-20 hover:scale-110'):
+                    .classes('absolute top-1.5 right-1.5 sm:top-2 sm:right-2 min-w-[36px] min-h-[36px] flex items-center justify-center opacity-70 sm:opacity-0 sm:group-hover:opacity-100 transition-all duration-200 bg-white/95 shadow-md z-20 hover:scale-110'):
                 ui.tooltip('Delete Book')

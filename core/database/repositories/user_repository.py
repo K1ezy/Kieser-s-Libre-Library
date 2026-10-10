@@ -26,7 +26,9 @@ class UserRepository(BaseRepository):
                         "name": user.get("name") or user.get("username", "Library User"),
                         "username": user.get("username", "user"),
                         "email": user.get("email", ""),
-                        "role": user.get("role", "user"),
+                        "role": user.get("role", "student"),
+                        "student_id": user.get("student_id") or f"2024-{str(user_id)[:5].upper()}",
+                        "program": user.get("program") or "BSCS",
                         "headline": user.get("headline", "Student / Researcher"),
                         "bio": user.get("bio", "Exploring knowledge with Libre-Library."),
                         "joined_at": user.get("created_at", time.time())
@@ -35,14 +37,24 @@ class UserRepository(BaseRepository):
                 "name": "Library User",
                 "username": "user",
                 "email": "",
-                "role": "user",
+                "role": "student",
+                "student_id": "2024-00001",
+                "program": "BSCS",
                 "headline": "Student / Researcher",
                 "bio": "Exploring knowledge with Libre-Library.",
                 "joined_at": time.time()
             }
         except Exception: return {}
 
-    async def update_user_profile(self, user_id: Optional[str], name: str, bio: str, headline: Optional[str] = None) -> bool:
+    async def update_user_profile(
+        self,
+        user_id: Optional[str],
+        name: str,
+        bio: str,
+        headline: Optional[str] = None,
+        student_id: Optional[str] = None,
+        program: Optional[str] = None
+    ) -> bool:
         """
         Updates profile strictly isolated to the specified user account.
         SECURITY: Role permissions cannot be modified through profile updates.
@@ -55,6 +67,10 @@ class UserRepository(BaseRepository):
             }
             if headline is not None:
                 updates["headline"] = headline.strip()
+            if student_id is not None:
+                updates["student_id"] = student_id.strip()
+            if program is not None:
+                updates["program"] = program.strip().upper()
 
             result = await self.db['users'].update_one(
                 {"id": user_id, "type": "account"},

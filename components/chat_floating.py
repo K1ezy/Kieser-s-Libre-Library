@@ -19,11 +19,14 @@ class FloatingChat:
     def toggle(self):
         self.visible = not self.visible
         if self.visible:
+            if not self.dialog:
+                self._build_dialog()
             self.dialog.open()
             if self.log_container: 
                 ui.run_javascript(f'const el = document.getElementById("{self.log_container.id}"); if(el) el.scrollTop = el.scrollHeight;')
         else:
-            self.dialog.close()
+            if self.dialog:
+                self.dialog.close()
 
     async def send_message(self):
         if not self.text_input or not self.text_input.value: return
@@ -76,12 +79,13 @@ class FloatingChat:
     def _build_ui(self):
         ui.button(icon='smart_toy', on_click=self.toggle) \
             .props('fab color=indigo') \
-            .classes('fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-3.5 sm:bottom-6 sm:right-6 z-40 shadow-2xl hover:scale-105 active:scale-95 transition-transform')
-            
+            .classes('hidden md:inline-flex fixed bottom-6 right-6 z-40 shadow-2xl hover:scale-105 active:scale-95 transition-transform')
+
+    def _build_dialog(self):
         with ui.dialog() as self.dialog, ui.card().classes(
             'w-[calc(100vw-1.5rem)] max-w-sm h-[70dvh] max-h-[500px] p-0 flex flex-col fixed '
-            'bottom-[calc(4.5rem+env(safe-area-inset-bottom,0px))] right-3 sm:right-6 shadow-2xl rounded-3xl '
-            'border border-slate-200 overflow-hidden bg-white'
+            'bottom-6 right-3 sm:right-6 shadow-2xl rounded-3xl '
+            'border border-slate-200 overflow-hidden bg-white z-50'
         ):
             with ui.row().classes('w-full bg-gradient-to-r from-indigo-600 to-indigo-700 p-3.5 items-center justify-between text-white shrink-0'):
                 with ui.row().classes('items-center gap-2'):

@@ -289,31 +289,49 @@ class TarsArchive:
             if self.collection.count() == 0:
                 return []
 
-            where_clause = None
-            if book_id:
-                where_clause = {"book_id": str(book_id)}
-            elif filter_source:
-                where_clause = {"source": str(filter_source)}
-
             results = None
-            if where_clause:
+            has_scoped_hits = False
+
+            # Strategy 1: Targeted search by book_id if provided
+            if book_id:
                 try:
-                    results = self.collection.query(
+                    res = self.collection.query(
                         query_texts=[query],
                         n_results=top_k,
-                        where=where_clause
+                        where={"book_id": str(book_id)}
                     )
+                    if res and res.get('documents') and len(res['documents']) > 0 and len(res['documents'][0]) > 0:
+                        results = res
+                        has_scoped_hits = True
                 except Exception as query_err:
-                    logger.debug(f"Scoped query error: {query_err}")
+                    logger.debug(f"Scoped book_id query error: {query_err}")
 
-            has_scoped_hits = bool(
-                results and results.get('documents') and len(results['documents']) > 0 and len(results['documents'][0]) > 0
-            )
+            # Strategy 2: Targeted search by source filename / path if provided
+            if not has_scoped_hits and filter_source:
+                candidate_sources = [str(filter_source)]
+                src_name = Path(str(filter_source)).name
+                if src_name not in candidate_sources:
+                    candidate_sources.append(src_name)
+
+                for cand in candidate_sources:
+                    try:
+                        res = self.collection.query(
+                            query_texts=[query],
+                            n_results=top_k,
+                            where={"source": cand}
+                        )
+                        if res and res.get('documents') and len(res['documents']) > 0 and len(res['documents'][0]) > 0:
+                            results = res
+                            has_scoped_hits = True
+                            break
+                    except Exception as query_err:
+                        logger.debug(f"Scoped source query error: {query_err}")
 
             # Security/Accuracy: Prevent cross-document contamination
             # If a specific document was targeted and no hits were found, do NOT silently fall back to other books
-            if where_clause and not has_scoped_hits and not fallback_to_library:
-                logger.debug(f"Scoped search for {where_clause} yielded 0 hits. Suppressing general fallback.")
+            is_scoped = bool(book_id or filter_source)
+            if is_scoped and not has_scoped_hits and not fallback_to_library:
+                logger.debug(f"Scoped search for book_id={book_id}, source={filter_source} yielded 0 hits. Suppressing general fallback.")
                 return []
 
             if not has_scoped_hits:

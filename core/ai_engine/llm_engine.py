@@ -255,6 +255,21 @@ class TarsEngine:
 
                 return await asyncio.to_thread(_infer)
 
+    async def generate_response(
+        self,
+        prompt: str,
+        max_tokens: int = 1500,
+        temperature: float = 0.3,
+        stop: Optional[List[str]] = None
+    ) -> Optional[str]:
+        """Convenience method for direct prompt completion across all AI providers."""
+        return await self.create_completion(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=stop
+        )
+
     async def stream_response(self, messages: list) -> AsyncGenerator[str, None]:
         """Streams chat tokens asynchronously across Local, Ollama, and OpenAI providers."""
         await self.ensure_db_settings_loaded()
