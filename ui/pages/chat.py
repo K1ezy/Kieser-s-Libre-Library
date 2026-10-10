@@ -718,19 +718,20 @@ class ChatInterface:
         if status_label:
             status_label.text = "Continuing response..."
 
-        history_context = await mongo_db.get_recent_history(self.session_id, limit=6)
+        history_context = await mongo_db.get_recent_history(self.session_id, limit=4)
         persona_text = (
             "You are TARS, the Digital Librarian. CONTINUE your last response exactly where it left off. "
             "Maintain tone and formatting. Do not repeat the beginning."
         )
 
-        messages_payload = chat_service.build_messages_payload(persona_text, history_context)
+        messages_payload = chat_service.build_messages_payload(persona_text, history_context, max_turns=4)
 
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.05)
         response_buffer = ""
         try:
             first_token = True
-            async for token in tars_engine.stream_response(messages_payload):
+            last_render_time = time.time()
+            async for token in tars_engine.stream_response(messages_payload, max_tokens=600):
                 if self.abort_trigger:
                     response_buffer += " ... [STOPPED]"
                     message_content.content = response_buffer
@@ -740,7 +741,12 @@ class ChatInterface:
                         status_label.delete()
                     first_token = False
                 response_buffer += token
-                message_content.content = response_buffer
+                now = time.time()
+                if now - last_render_time >= 0.035 or token in ('\n', '. ', '? ', '! '):
+                    message_content.content = response_buffer
+                    last_render_time = now
+
+            message_content.content = response_buffer
 
             self.last_response_text = response_buffer
             await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
@@ -826,27 +832,45 @@ class ChatInterface:
             except Exception as e:
                 logger.warning(f"Failed to resolve focus book title {self.focus_book_title}: {e}")
 
-        # Compose Persona & History Context
-        history = await mongo_db.get_recent_history(self.session_id, limit=6)
-        inventory = await mongo_db.get_library_inventory_summary(limit=200, focus_book_id=self.focus_book_id)
+        # Compose Persona & History Context (Lean prompt engineering to eliminate CPU latency)
+        history = await mongo_db.get_recent_history(self.session_id, limit=4)
+
+        # Only load library inventory if user explicitly asks about the catalog or available books
+        inventory = ""
+        if not self.focus_book_id and not self.focus_book_title:
+            clean_q = text.lower()
+            inventory_keywords = (
+                "what book", "which book", "list book", "all book", "my book", 
+                "inventory", "catalog", "collection", "available book", "what do i have",
+                "books do i have", "recommend a book", "recommend book"
+            )
+            if any(k in clean_q for k in inventory_keywords):
+                inventory = await mongo_db.get_library_inventory_summary(limit=25)
+
         persona = self._build_system_persona(inventory, rag_text, is_review_mode, focus_book_meta=focus_meta)
+        messages = chat_service.build_messages_payload(persona, history, max_turns=4)
 
-        messages = chat_service.build_messages_payload(persona, history)
-
-        # 5. Stream LLM Generation
+        # 5. Stream LLM Generation with throttled rendering for smooth 30 FPS UI
         if status:
             status.text = "Writing response..."
         response_buffer = ""
         try:
             first = True
-            async for token in tars_engine.stream_response(messages):
+            last_render_time = time.time()
+            async for token in tars_engine.stream_response(messages, max_tokens=600):
                 if self.abort_trigger:
                     break
                 if first:
                     if status: status.delete()
                     first = False
                 response_buffer += token
-                message_content.content = response_buffer
+                now = time.time()
+                # Throttle DOM/WebSocket updates: flush every 35ms or on newline/sentence end
+                if now - last_render_time >= 0.035 or token in ('\n', '. ', '? ', '! '):
+                    message_content.content = response_buffer
+                    last_render_time = now
+
+            message_content.content = response_buffer  # Final guaranteed flush
 
             # Setup Copy & TTS actions
             setup_message_actions(response_buffer, copy_btn, tts_btn)

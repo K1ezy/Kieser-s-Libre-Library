@@ -215,27 +215,25 @@ class BookRepository(BaseRepository):
             return added_at[:10]
         return "Recently"
 
-    async def get_library_inventory_summary(self, limit: int = 200, focus_book_id: Optional[str] = None) -> str:
-        """Returns comprehensive catalog summary of library books for TARS AI prompt context."""
+    async def get_library_inventory_summary(self, limit: int = 30, focus_book_id: Optional[str] = None) -> str:
+        """Returns concise catalog summary of library books for TARS AI prompt context."""
         if self.db is None:
             return "NO BOOKS CURRENTLY IN LIBRARY."
         try:
-            cursor = self.db['books'].find({}, {"id": 1, "title": 1, "display_author": 1, "authors": 1, "file_type": 1, "genres": 1})\
+            cursor = self.db['books'].find({}, {"id": 1, "title": 1, "display_author": 1, "authors": 1, "file_type": 1})\
                 .sort("title", 1).limit(limit)
             books = await cursor.to_list(length=limit)
             if not books:
                 return "NO BOOKS CURRENTLY IN LIBRARY."
 
-            lines = ["CURRENT LIBRARY INVENTORY (AVAILABLE IN LOCAL DIGITAL ARCHIVE):"]
+            lines = ["AVAILABLE TITLES IN LIBRARY:"]
             for b in books:
                 title = b.get('title', 'Untitled')
                 author = b.get('display_author') or b.get('authors', 'Unknown')
                 if isinstance(author, list) and author:
                     author = author[0].get('name', str(author[0])) if isinstance(author[0], dict) else str(author[0])
                 ftype = (b.get('file_type') or 'E-Book').upper()
-                is_focused = (focus_book_id and str(b.get('id')) == str(focus_book_id))
-                prefix = "* [CURRENTLY FOCUSED] " if is_focused else "- "
-                lines.append(f"{prefix}'{title}' by {author} ({ftype}) [Available]")
+                lines.append(f"- '{title}' by {author} ({ftype})")
             return "\n".join(lines)
         except Exception as e:
             logger.error(f"Inventory summary error: {e}")

@@ -23,8 +23,8 @@ SUMMARY_MODES = {
     'qa': 'Q&A Active Recall Prep'
 }
 
-MAX_SINGLE_PASS_CHARS = 24000
-CHUNK_SAMPLE_SIZE = 4500
+MAX_SINGLE_PASS_CHARS = 10000
+CHUNK_SAMPLE_SIZE = 1600
 
 
 class SummarizerService:

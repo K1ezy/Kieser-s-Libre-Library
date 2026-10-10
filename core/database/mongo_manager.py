@@ -142,7 +142,7 @@ class MongoManager:
     def resolve_document_path(self, book_id: str, book_doc: Optional[dict] = None) -> Optional[str]:
         return self.books.resolve_document_path(book_id, book_doc)
 
-    async def get_library_inventory_summary(self, limit: int = 200, focus_book_id: Optional[str] = None) -> str:
+    async def get_library_inventory_summary(self, limit: int = 30, focus_book_id: Optional[str] = None) -> str:
         return await self.books.get_library_inventory_summary(limit=limit, focus_book_id=focus_book_id)
 
     async def update_book_shelves(self, book_id: str, shelves: List[str]) -> bool:

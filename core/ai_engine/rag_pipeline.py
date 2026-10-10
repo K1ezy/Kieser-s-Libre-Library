@@ -264,11 +264,11 @@ class TarsArchive:
     def search_with_metadata(
         self,
         query: str,
-        top_k: int = 4,
+        top_k: int = 3,
         filter_source: Optional[str] = None,
         book_id: Optional[str] = None,
         fallback_to_library: bool = False,
-        max_distance: Optional[float] = 1.35
+        max_distance: Optional[float] = 1.25
     ) -> List[dict]:
         """
         Queries ChromaDB vector database with source metadata, page numbers, and similarity distances.
@@ -354,8 +354,9 @@ class TarsArchive:
                 if max_distance is not None and dist is not None and dist > max_distance:
                     continue
                 m = meta if isinstance(meta, dict) else {}
+                cleaned_doc = doc[:700].strip() if len(doc) > 700 else doc.strip()
                 output.append({
-                    "text": doc,
+                    "text": cleaned_doc,
                     "source": m.get('source', 'Library Document'),
                     "book_id": m.get('book_id', ''),
                     "title": m.get('title', m.get('source', 'Document')),

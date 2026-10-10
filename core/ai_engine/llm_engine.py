@@ -11,9 +11,10 @@ from core.config import settings
 logger = logging.getLogger("TARS_LLM")
 
 # --- CONSTANTS ---
-FUNCTIONAL_CONTEXT_LIMIT = 7000 
-MAX_OUTPUT_TOKENS = 2048 
-MAX_RAG_CHARS = 24000
+FUNCTIONAL_CONTEXT_LIMIT = 4096 
+DEFAULT_CHAT_MAX_TOKENS = 600
+MAX_OUTPUT_TOKENS = 1024 
+MAX_RAG_CHARS = 4000
 
 class TarsEngine:
     """
@@ -34,13 +35,13 @@ class TarsEngine:
         self.llm = None
         self._load_lock = threading.Lock()
         self.lock = asyncio.Lock()
-        self.context_window = min(settings.CONTEXT_WINDOW, 16384)
+        self.context_window = min(settings.CONTEXT_WINDOW, 4096)
         self.model_path = settings.MODEL_DIR / settings.MODEL_FILENAME
         self._is_loaded = False
         self._db_loaded = False
         self._http_client: Optional[httpx.AsyncClient] = None
 
-        logger.info(f"TARS Engine initialized (Active Provider: {self.provider.upper()}).")
+        logger.info(f"TARS Engine initialized (Active Provider: {self.provider.upper()}, CTX: {self.context_window}).")
 
     def _get_http_client(self, timeout: float = 60.0) -> httpx.AsyncClient:
         """Returns or creates a persistent connection-pooled HTTP client for sub-50ms latency."""
@@ -117,22 +118,43 @@ class TarsEngine:
 
             try:
                 from llama_cpp import Llama
+                import os
                 logger.info(f"Loading Local TARS Engine: {settings.MODEL_FILENAME} (CTX: {self.context_window}, GPU_LAYERS: {settings.GPU_LAYERS})...")
                 gpu_layers = settings.GPU_LAYERS
-                
-                self.llm = Llama(
-                    model_path=str(self.model_path),
-                    n_ctx=self.context_window,
-                    n_gpu_layers=gpu_layers,
-                    n_threads=6,
-                    use_mmap=True,
-                    use_mlock=False,
-                    verbose=False,
-                    n_batch=512,
-                    chat_format="llama-3"
-                )
+                cpu_ct = os.cpu_count() or 6
+                # Optimal threads: 8 on modern multi-core CPUs, leaving headroom for UI & I/O
+                threads = min(8, max(4, cpu_ct - 2 if cpu_ct > 6 else cpu_ct))
+
+                try:
+                    self.llm = Llama(
+                        model_path=str(self.model_path),
+                        n_ctx=self.context_window,
+                        n_gpu_layers=gpu_layers,
+                        n_threads=threads,
+                        n_threads_batch=threads,
+                        flash_attn=True,
+                        use_mmap=True,
+                        use_mlock=False,
+                        verbose=False,
+                        n_batch=512,
+                        chat_format="llama-3"
+                    )
+                except Exception as fa_err:
+                    logger.debug(f"Flash attention init notice ({fa_err}). Falling back to standard attention.")
+                    self.llm = Llama(
+                        model_path=str(self.model_path),
+                        n_ctx=self.context_window,
+                        n_gpu_layers=gpu_layers,
+                        n_threads=threads,
+                        n_threads_batch=threads,
+                        use_mmap=True,
+                        use_mlock=False,
+                        verbose=False,
+                        n_batch=512,
+                        chat_format="llama-3"
+                    )
                 self._is_loaded = True
-                logger.info("Local TARS Engine Initialization: COMPLETE")
+                logger.info(f"Local TARS Engine Initialization: COMPLETE (Threads: {threads}, CTX: {self.context_window})")
                 return True
             except Exception as e:
                 logger.critical(f"TARS Engine FAILED to load model: {e}", exc_info=True)
@@ -278,9 +300,10 @@ class TarsEngine:
             stop=stop
         )
 
-    async def stream_response(self, messages: list) -> AsyncGenerator[str, None]:
-        """Streams chat tokens asynchronously across Local, Ollama, and OpenAI providers."""
+    async def stream_response(self, messages: list, max_tokens: Optional[int] = None) -> AsyncGenerator[str, None]:
+        """Streams chat tokens asynchronously across Local, Ollama, and OpenAI providers with fast token limits."""
         await self.ensure_db_settings_loaded()
+        effective_max_tokens = max_tokens or DEFAULT_CHAT_MAX_TOKENS
 
         # Clean / truncate context if overly huge
         system_message = messages[0]['content'] if messages else ""
@@ -302,8 +325,8 @@ class TarsEngine:
                     "messages": messages,
                     "stream": True,
                     "options": {
-                        "temperature": 0.3,
-                        "num_predict": MAX_OUTPUT_TOKENS
+                        "temperature": 0.2,
+                        "num_predict": effective_max_tokens
                     }
                 }
                 async with client.stream("POST", f"{self.ollama_url}/api/chat", json=payload) as response:
@@ -336,8 +359,8 @@ class TarsEngine:
                     "model": self.openai_model,
                     "messages": messages,
                     "stream": True,
-                    "temperature": 0.3,
-                    "max_tokens": MAX_OUTPUT_TOKENS
+                    "temperature": 0.2,
+                    "max_tokens": effective_max_tokens
                 }
                 async with client.stream("POST", f"{self.openai_url}/chat/completions", json=payload, headers=headers) as response:
                     if response.status_code != 200:
@@ -383,7 +406,7 @@ class TarsEngine:
                             messages=messages,
                             stream=True,
                             temperature=0.2,
-                            max_tokens=MAX_OUTPUT_TOKENS,
+                            max_tokens=effective_max_tokens,
                             stop=["<|eot_id|>", "<|end_of_text|>"]
                         )
                         for chunk in stream:

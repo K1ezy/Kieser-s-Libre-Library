@@ -590,7 +590,7 @@ class BookDetailsPage:
                 if not extracted_text or not extracted_text.strip():
                     extracted_text = f"Title: {title}. Author: {author_name}. File format: {file_type}."
 
-                excerpt = extracted_text[:12000]
+                excerpt = extracted_text[:3500]
                 prompt = (
                     f"You are an expert literary curator and researcher for Libre-Library. "
                     f"Write an engaging, clear, and comprehensive 2 to 3 paragraph synopsis "
@@ -599,7 +599,7 @@ class BookDetailsPage:
                     f"Format output in clean markdown paragraphs. Do not include metadata preambles, greetings, or conclusions."
                 )
 
-                generated = await tars_engine.generate_response(prompt)
+                generated = await tars_engine.generate_response(prompt, max_tokens=350)
                 clean_synopsis = generated.strip() if generated else ""
 
                 if clean_synopsis:

@@ -102,9 +102,16 @@ class SummarizerTool:
         buffer = f"## Summary: {title}\n\n"
 
         try:
-            async for token in tars_engine.stream_response(messages):
+            import time
+            last_render = time.time()
+            async for token in tars_engine.stream_response(messages, max_tokens=1000):
                 buffer += token
-                self.summary_output.content = buffer
+                now = time.time()
+                if now - last_render >= 0.035 or token in ('\n', '. ', '? ', '! '):
+                    self.summary_output.content = buffer
+                    last_render = now
+
+            self.summary_output.content = buffer
 
             self.current_summary_text = buffer
             if self.copy_btn:

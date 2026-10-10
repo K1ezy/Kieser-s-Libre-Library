@@ -107,16 +107,20 @@ class ChatService:
         rag_text: str = "",
         focus_book_meta: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Constructs system prompt combining library inventory, book preview metadata, retrieved RAG context, and persona instructions."""
+        """Constructs lean, high-speed system prompt without prompt bloat."""
         active_style_prompt = STYLE_PROMPTS.get(chat_style, STYLE_PROMPTS['Balanced'])
-        persona = (
-            "You are TARS, the Digital Librarian. You assist users with their personal digital library, study materials, and questions.\n"
-            f"RESPONSE STYLE INSTRUCTION: {active_style_prompt}\n\n"
-            "Use the provided LIBRARY INVENTORY to tell users what books they have, and the KNOWLEDGE BASE to answer questions with precision.\n"
-            "Always include source and page number citations when referencing document knowledge (e.g. '[Source: title, Page X]').\n\n"
-            f"1. **LIBRARY INVENTORY:**\n{inventory}\n"
-            f"2. **KNOWLEDGE BASE:**\n{rag_text}\n"
-        )
+        persona_lines = [
+            "You are TARS, the Digital Librarian. Assist users clearly, directly, and concisely.",
+            f"STYLE: {active_style_prompt}"
+        ]
+
+        # Only inject inventory if non-empty (i.e. user explicitly inquired about catalog)
+        if inventory and inventory.strip():
+            persona_lines.append(f"\n{inventory.strip()}")
+
+        if rag_text and rag_text.strip():
+            persona_lines.append(f"\n{rag_text.strip()}")
+            persona_lines.append("Cite sources/pages when referencing document knowledge (e.g. '[Source: title, Page X]').")
 
         if focus_book_meta:
             b_title = focus_book_meta.get('title') or focus_book_title or 'Untitled Document'
@@ -128,7 +132,7 @@ class ChatService:
             else:
                 b_author = str(authors_data or 'Unknown Author')
 
-            # Synopsis / Description resolution (from preview window)
+            # Synopsis resolution (compact to prevent prompt bloat)
             synopsis_text = ""
             summaries = focus_book_meta.get('summaries')
             if summaries and isinstance(summaries, list) and summaries[0]:
@@ -136,49 +140,31 @@ class ChatService:
             elif focus_book_meta.get('description'):
                 synopsis_text = str(focus_book_meta.get('description')).strip()
 
-            if not synopsis_text or synopsis_text == 'No synopsis available for this document.':
-                synopsis_text = "No detailed synopsis has been written yet in the catalog. Base your understanding on the document text."
+            if len(synopsis_text) > 400:
+                synopsis_text = synopsis_text[:400] + "..."
 
-            # Shelves & Genres
-            genres = focus_book_meta.get('genres', []) or focus_book_meta.get('subjects', []) or []
-            genres_str = ", ".join(str(g) for g in genres) if isinstance(genres, list) else str(genres)
+            file_type = (focus_book_meta.get('file_type') or 'E-Book').upper()
             shelves = focus_book_meta.get('shelves', []) or []
             shelves_str = ", ".join(str(s) for s in shelves) if isinstance(shelves, list) else str(shelves)
 
-            file_type = (focus_book_meta.get('file_type') or 'E-Book').upper()
-            page_count = focus_book_meta.get('page_count') or 'Standard Length'
-            publisher = focus_book_meta.get('publisher') or ''
-            pub_year = focus_book_meta.get('publication_year') or ''
-            pub_info = f"{publisher} ({pub_year})".strip() if (publisher or pub_year) else "N/A"
-
-            persona += (
+            persona_lines.append(
                 f"\n=== 🎯 CURRENTLY FOCUSED BOOK DETAILS (FROM LIBRARY CATALOG & PREVIEW) ===\n"
                 f"- **Title:** {b_title}\n"
                 f"- **Author(s):** {b_author}\n"
                 f"- **Library Availability:** YES, this document is currently saved and available in the library archive ({file_type} format).\n"
-                f"- **Format:** {file_type}\n"
-                f"- **Page Count:** {page_count}\n"
                 f"- **Shelf / Category:** {shelves_str or 'General Collection'}\n"
-                f"- **Tags / Genres:** {genres_str or 'General'}\n"
-                f"- **Publisher / Year:** {pub_info}\n"
-                f"- **Document Synopsis & Overview (from Book Preview):**\n"
-                f"{synopsis_text}\n"
-                f"=========================================================================\n"
-                f"GROUNDING RULES FOR FOCUSED DOCUMENT:\n"
-                f"1. The user is asking about '{b_title}'.\n"
-                f"2. When asked what this book is about, its summary, plot, or key themes, DIRECTLY use the Document Synopsis above and any retrieved snippets.\n"
-                f"3. When asked about availability in the library, CONFIRM that it IS in the library ({file_type} format).\n"
-                f"4. Never say you cannot find information on this book or that it does not exist in your knowledge base.\n"
+                f"- **Overview:** {synopsis_text or 'Ground answers on the document evidence.'}\n"
+                f"Answer user inquiries about this document directly and accurately."
             )
         elif focus_book_title:
-            persona += f"\nFOCUS DOCUMENT: The user is specifically asking about '{focus_book_title}'. This document is in the user's library. Focus your answers on this document.\n"
+            persona_lines.append(f"\nFOCUS DOCUMENT: The user is asking about '{focus_book_title}'. Focus your answers on this document.")
 
         if teaching_mode:
-            persona += "\nTEACHING MODE: Socratic teaching style. Guide the user with questions rather than immediate answers."
+            persona_lines.append("\nTEACHING MODE: Socratic teaching style. Guide the user with questions rather than immediate answers.")
         elif is_review_mode:
-            persona += "\nCODE REVIEW MODE: Review provided code for architecture, performance, security, and cleanliness."
+            persona_lines.append("\nCODE REVIEW MODE: Review provided code for architecture, performance, security, and cleanliness.")
 
-        return persona
+        return "\n".join(persona_lines)
 
     @staticmethod
     async def perform_rag_search(
@@ -188,7 +174,7 @@ class ChatService:
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Executes vector retrieval and formats context snippets and citations.
-        Returns (rag_text, citations).
+        Optimized with compact chunk sizes and strict relevance filtering for sub-second retrieval.
         """
         rag_text = ""
         citations: List[Dict[str, Any]] = []
@@ -206,14 +192,15 @@ class ChatService:
                     else:
                         filter_source = focus_book_id
 
-            raw_hits = await run.io_bound(tars_archive.search_with_metadata, text, 4, filter_source, focus_book_id)
+            raw_hits = await run.io_bound(tars_archive.search_with_metadata, text, 3, filter_source, focus_book_id)
             if raw_hits:
                 rag_parts = []
                 for h in raw_hits:
                     src = h.get('source', 'Library Document')
                     p_val = h.get('page')
                     page_str = f" [Page {p_val}]" if p_val else ""
-                    rag_parts.append(f"[Document: {src}{page_str}]\n{h.get('text', '')}")
+                    chunk_text = h.get('text', '')[:650].strip()
+                    rag_parts.append(f"[{src}{page_str}]:\n{chunk_text}")
 
                     cit_key = f"{src}_{p_val}"
                     if not any(c.get('key') == cit_key for c in citations):
@@ -224,17 +211,17 @@ class ChatService:
                             "page": p_val,
                             "book_id": h.get('book_id') or focus_book_id
                         })
-                rag_text = "\n\n[RETRIEVED DOCUMENT CONTEXT]:\n" + "\n---\n".join(rag_parts)
+                rag_text = "\n[DOCUMENT EVIDENCE]:\n" + "\n---\n".join(rag_parts)
             elif focus_book_id and book_doc:
-                # Fallback to direct text excerpt from disk if vector search had 0 hits
+                # Fast fallback to direct text excerpt from disk capped to 1500 chars (prevents prompt freeze)
                 resolved_p = mongo_db.resolve_document_path(focus_book_id, book_doc)
                 if resolved_p and Path(resolved_p).exists():
                     try:
                         from core.utils.text_extractor import extract_text_from_file
                         file_text = await run.io_bound(extract_text_from_file, resolved_p)
                         if file_text and file_text.strip():
-                            excerpt = file_text[:6000].strip()
-                            rag_text = f"\n\n[DOCUMENT CONTENT EXCERPT (FROM LIBRARY ARCHIVE FILE)]:\n{excerpt}\n"
+                            excerpt = file_text[:1500].strip()
+                            rag_text = f"\n[DOCUMENT EXCERPT]:\n{excerpt}\n"
                             citations.append({
                                 "key": f"{Path(resolved_p).name}_excerpt",
                                 "source": Path(resolved_p).name,
@@ -250,13 +237,19 @@ class ChatService:
         return rag_text, citations
 
     @staticmethod
-    def build_messages_payload(system_persona: str, history: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-        """Constructs and validates the message payload for LLM streaming."""
-        valid_history = [
-            {"role": m['role'], "content": m['content']}
-            for m in (history or [])
-            if m and 'role' in m and 'content' in m
-        ]
+    def build_messages_payload(system_persona: str, history: List[Dict[str, Any]], max_turns: int = 4) -> List[Dict[str, str]]:
+        """Constructs and validates compact message payload for LLM streaming with token-efficient history pruning."""
+        recent = (history or [])[-max_turns:]
+        valid_history = []
+        for m in recent:
+            if not m or 'role' not in m or 'content' not in m:
+                continue
+            role = m['role']
+            content = m['content'].strip()
+            # Trim long previous assistant outputs to prevent compounding prompt lag
+            if role == 'assistant' and len(content) > 400:
+                content = content[:380] + " ... [trimmed]"
+            valid_history.append({"role": role, "content": content})
         return [{"role": "system", "content": system_persona}] + valid_history
 
     @staticmethod
