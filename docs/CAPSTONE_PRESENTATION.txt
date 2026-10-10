@@ -1,0 +1,317 @@
+================================================================================
+🎓 LIBRE-LIBRARY: CAPSTONE DEFENSE PRESENTATION DECK
+CS 413: Software Engineering 2 • NEMSU Tandag Campus
+Format: Official 10-Slide Academic Defense Deck & Spoken Script
+Allocated Defense Time: 15 Minutes Total (Presentation + System Demonstration)
+Language: English throughout
+================================================================================
+
+--------------------------------------------------------------------------------
+⏱️ MASTER DEFENSE AGENDA & TIME BUDGET (15 MINUTES TOTAL)
+--------------------------------------------------------------------------------
+Part I: Introduction & Chapter 1
+  Slides 01 to 06 (Problem, Objectives, RAD, Scope)
+  Lead Presenters: Kenneth Pañares & Josepito Quezada
+  Target Time: 4:00 (Cumulative: 4:00)
+
+Part II: Chapter 2 Analysis & Specs
+  Slides 07 to 09 (Existing Flaws, Alternatives, FR & NFR)
+  Lead Presenter: Emmanuel Amista
+  Target Time: 3:30 (Cumulative: 7:30)
+
+Part III: Live System Demonstration
+  Slide 10 & Live Platform Walkthrough
+  Lead Presenter: Kieser Loren & Research Team
+  Target Time: 6:30 (Cumulative: 14:00)
+
+Part IV: Panel Transition & Q&A Handover
+  Conclusion & Panel Questions
+  Lead Presenter: All Team Members
+  Target Time: 1:00 (Cumulative: 15:00 Total)
+
+--------------------------------------------------------------------------------
+👥 GROUP MEMBER ROLE ALLOCATION MATRIX
+--------------------------------------------------------------------------------
+1. Kenneth Pañares: Frontend Experience & HCI Lead
+   - Presentation Slides: Slides 01, 02, 03
+   - System Demonstration: Doorway QR Attendance & Student Navigation
+
+2. Josepito Quezada: Quality Assurance & Database Systems Lead
+   - Presentation Slides: Slides 04, 05, 06
+   - System Demonstration: Database Integrity & System Benchmarks
+
+3. Emmanuel Amista: Systems Architecture & Backend Lead
+   - Presentation Slides: Slides 07, 08, 09
+   - System Demonstration: Faculty Requisitions & Accreditation Analytics
+
+4. Kieser Loren: AI Engineering & Vector Pipeline Lead
+   - Presentation Slides: Slide 10
+   - System Demonstration: TARS Socratic AI, Ingestion & 3D Flashcards
+
+================================================================================
+SLIDE 1: TITLE, INSTITUTIONAL CONTEXT & RESEARCH TEAM
+================================================================================
+
+PROJECT TITLE:
+Libre-Library: Intelligent Digital Library Management, E-Learning Archive & AI Research Workstation
+
+ACADEMIC INSTITUTION:
+North Eastern Mindanao State University (NEMSU) — Tandag Campus
+College of Arts and Sciences • Department of Computer Studies
+Curricular Course: CS 413: Software Engineering 2 (BSCS-4C)
+
+RESEARCH & DEVELOPMENT TEAM:
+- Kenneth Pañares — Frontend Experience & HCI Integration Lead
+- Josepito Quezada — Quality Assurance & Database Systems Lead
+- Emmanuel Amista — Systems Architecture & Backend Lead
+- Kieser Loren — AI Engineering & Vector Pipeline Lead
+
+PROJECT ADVISER:
+Dr. Cherly B. Sardovia
+
+--------------------------------------------------------------------------------
+🎙️ PRESENTER SCRIPT (Kenneth Pañares — Target: 0:45)
+"Good day, respected members of the panel, our distinguished faculty, and our adviser, Dr. Cherly B. Sardovia. We are the BSCS-4C capstone team, and today we proudly present Libre-Library—an intelligent, self-hosted digital library management system, institutional e-learning archive, and offline AI research workstation engineered specifically for NEMSU Tandag Campus. During this 15-minute defense, we will guide you through our Chapter 1 foundational study, our Chapter 2 system requirements analysis, and an end-to-end live demonstration of the working system. Every member of our group has a designated engineering role, and we are excited to show you how Libre-Library modernizes university library operations while safeguarding student privacy."
+
+================================================================================
+SLIDE 2: CHAPTER 1 — BACKGROUND OF THE STUDY
+================================================================================
+
+KEY POINTS:
+1. The Modern Academic Library:
+   University libraries have evolved beyond physical book warehouses into dynamic digital hubs supporting collaborative research, remote study, and accreditation readiness.
+
+2. The Reality at NEMSU Tandag Campus:
+   Physical foot-traffic is heavy during class transitions, but entrance tracking remains manual. Course textbooks, thesis manuscripts, and instructional slide decks exist across disconnected flash drives and personal cloud drives.
+
+3. The Emerging AI Challenge & Data Sovereignty:
+   Commercial generative AI services (ChatGPT, Claude) require sending student thesis drafts to foreign cloud servers. This creates severe intellectual property risks and conflicts with the Philippine Data Privacy Act of 2012 (RA 10173).
+
+4. The Core Motivation:
+   To build an on-premise, internet-resilient platform that fuses automated physical library logistics with private, locally hosted AI assistance.
+
+--------------------------------------------------------------------------------
+🎙️ PRESENTER SCRIPT (Kenneth Pañares — Target: 0:50)
+"To provide context for our study: university libraries in regional state universities face a unique dual challenge. On one hand, physical student traffic is dense, yet daily entrance tracking still relies on manual paper ledgers. On the other hand, academic materials are fragmented across physical shelves, flash drives, and random cloud links with no central reading tracking. Furthermore, with the rise of generative AI, students frequently upload unpublished research and thesis manuscripts to commercial cloud models. This compromises university intellectual property and exposes student data to third-party cloud servers outside Philippine jurisdiction. Libre-Library was conceived to solve this exact problem: establishing a unified, self-hosted campus archive powered by 100% on-premise artificial intelligence that functions seamlessly even during internet disruptions."
+
+================================================================================
+SLIDE 3: CHAPTER 1 — STATEMENT OF THE PROBLEM
+================================================================================
+
+FIVE CRITICAL OPERATIONAL BOTTLENECKS:
+1. Entrance Logbook Bottleneck:
+   Manual paper logs cause congestion at 8 AM and 1 PM; zero automated dwell-time analytics.
+
+2. Fragmented Learning Assets:
+   PDF, EPUB, DOCX, and PPTX files are scattered across personal drives without centralized cataloging or reading checkpoints.
+
+3. Cloud AI Privacy Violations:
+   Third-party cloud LLMs expose student research data to external servers and fail completely during internet outages.
+
+4. Opaque Book Requisitions:
+   Faculty submit textbook purchase memos on paper with zero visibility into administrative procurement stages.
+
+5. Manual Accreditation Audits:
+   Library staff spend days manually auditing paper ledgers for CHED and AACCUP visits.
+
+--------------------------------------------------------------------------------
+🎙️ PRESENTER SCRIPT (Kenneth Pañares — Target: 0:50)
+"Our investigation at NEMSU Tandag Campus uncovered five core operational bottlenecks. First, doorway congestion: students crowd library entrances signing paper logbooks, resulting in lost records and zero dwell-time tracking. Second, learning material fragmentation: students lose track of reading progress across disparate formats like PDFs, slides, and Word documents. Third, privacy and reliability risks: commercial cloud AI tools violate data sovereignty under RA 10173 and stop working entirely when campus internet fluctuates. Fourth, an opaque textbook requisition process: faculty submit paper purchase requests without knowing whether books are approved or purchased. And fifth, accreditation overhead: compiling utilization statistics for CHED and AACCUP evaluation audits requires days of manual ledger counting. These five pain points define the problem space that our project directly resolves."
+
+================================================================================
+SLIDE 4: CHAPTER 1 — OBJECTIVES OF THE PROJECT
+================================================================================
+
+GENERAL OBJECTIVE:
+To design, develop, implement, and evaluate Libre-Library, an intelligent, self-hosted, offline-resilient digital library management system and AI research workstation for NEMSU Tandag Campus.
+
+SPECIFIC OBJECTIVES & DELIVERABLES:
+1. Multi-Format Ingestion: Support PDF, EPUB, DOCX, PPTX, and TXT with persistent page progress tracking.
+2. On-Premise Socratic AI: Integrate local Llama 3.2 3B RAG pipeline with ChromaDB vector search and page citations.
+3. High-Speed QR Attendance: Sub-second camera scanner (< 0.2s) with automated check-in/out toggle and dwell logs.
+4. Faculty Book Requisitions: Syllabus-aligned book request portal with a 5-stage procurement lifecycle stepper.
+5. Accreditation Analytics: College foot-traffic heatmaps and automated LLM-synthesized narrative reports for CHED/AACCUP.
+6. Cognitive Usability & Verification: Adherence to 10 HCI cognitive laws and 59/59 passing automated unit tests.
+
+--------------------------------------------------------------------------------
+🎙️ PRESENTER SCRIPT (Josepito Quezada — Target: 0:50)
+"Thank you, Kenneth. Respected panel, to systematically address these issues, we formulated one general objective and six specific, measurable deliverables. Our general objective is to design, implement, and evaluate Libre-Library as an offline-capable, self-hosted academic workstation for NEMSU Tandag Campus. Specifically, we set six goals: First, build an automated ingestion engine supporting PDF, EPUB, Word, PowerPoint, and Text files with persistent reading progress. Second, integrate an offline Socratic AI companion using local Llama 3.2 3B with vector-backed page citations. Third, engineer a contactless QR attendance scanner achieving sub-second entrance throughput. Fourth, create a faculty curriculum book requisition portal with a 5-stage procurement lifecycle stepper. Fifth, generate real-time accreditation analytics and automated CHED report narratives. And sixth, evaluate system performance through 59 automated test suites and 10 HCI cognitive usability laws."
+
+================================================================================
+SLIDE 5: CHAPTER 1 — METHODOLOGY OF THE PROJECT
+================================================================================
+
+SYSTEM ANALYSIS & DESIGN METHODOLOGY:
+Rapid Application Development (RAD) Lifecycle:
+1. Requirements Planning: Joint stakeholder analysis with NEMSU librarians, faculty, and students.
+2. User Design & Prototyping: Iterative interface prototyping adhering to 10 HCI usability laws and NiceGUI reactive components.
+3. Construction: Modular coding across 4 architectural tiers, integrating MongoDB Motor, ChromaDB, and local Llama 3.2.
+4. Cutover & Verification: Automated test execution (59/59 test suite), load benchmarking, and user acceptance testing.
+
+4-TIER RAD ARCHITECTURE:
+- Tier 1: Presentation Layer (NiceGUI / Vue 3 / Quasar / Tailwind CSS)
+- Tier 2: AI & Cognitive Engine (Local Llama 3.2 3B, ChromaDB Embeddings, RAG)
+- Tier 3: Core Services & Security (JWT HS256, Bcrypt, Ingestion, Requisitions)
+- Tier 4: Persistence Layer (MongoDB Motor Async & File System Storage)
+
+--------------------------------------------------------------------------------
+🎙️ PRESENTER SCRIPT (Josepito Quezada — Target: 0:50)
+"For our system analysis and design methodology, we adopted the Rapid Application Development—or RAD—framework. RAD was selected because its four iterative phases—Requirements Planning, User Design Prototyping, Construction, and Cutover—enabled us to rapidly build functional prototypes and refine them based on actual library workflows. Architecturally, we structured the software into four distinct tiers: A reactive Presentation Tier powered by NiceGUI and Vue 3; An AI Cognitive Tier hosting local Llama 3.2 3B and ChromaDB vector search; A Core Services Tier managing role-based access control and business logic; And an asynchronous Persistence Tier backed by MongoDB Motor. This separation guarantees modularity, sub-second response times, and effortless future extensibility."
+
+================================================================================
+SLIDE 6: CHAPTER 1 — SCOPE AND LIMITATIONS OF THE PROJECT
+================================================================================
+
+PROJECT SCOPE:
+- Target Users: NEMSU Tandag Campus students, faculty, library staff, and administrators (4-Tier RBAC).
+- File Formats: Ingestion, automated cover rendering, and reading for PDF, EPUB, DOCX, PPTX, and TXT.
+- On-Premise AI: 100% offline document Q&A, page citation chips, 4 summarization modes, and 3D flashcards.
+- Attendance Logistics: Real-time camera QR scanning, barcode support, purpose tagging, and CSV export.
+- Curricular Portal: Faculty book acquisition tracking with 5-stage procurement lifecycle stepper.
+- Accreditation Analytics: Hourly foot-traffic charts and automated LLM-generated accreditation narratives.
+
+SYSTEM LIMITATIONS:
+- Hardware-Bound AI Inference: Local LLM requires at least 8 GB RAM; inference speed is governed by host CPU/GPU specs.
+- Local Campus Network: Deployed over NEMSU LAN; off-campus access requires secure VPN or reverse proxy.
+- Digital Text Layer Dependency: Ingestion processes text-based documents; scanned image PDFs require OCR pre-processing.
+- Logistics Scope: Attendance automates digital gate logs; it does not control physical motorized turnstiles.
+
+--------------------------------------------------------------------------------
+🎙️ PRESENTER SCRIPT (Josepito Quezada — Target: 0:45)
+"To ensure academic rigor, we clearly defined our project scope and operational limitations. Within our scope: Libre-Library serves four user roles across NEMSU Tandag Campus. It natively parses and renders five academic document formats, conducts local vector-backed AI research, tracks doorway attendance in real time, and synthesizes accreditation analytics. Regarding limitations: first, our AI engine operates entirely offline without paid cloud APIs, which means inference throughput is governed by host hardware resources. Second, the platform is optimized for deployment on the local campus intranet. Third, document parsing relies on digital text streams; scanned physical books without an OCR layer must be pre-digitized. And fourth, our attendance module manages digital visitor verification and logging, rather than controlling physical motorized turnstile barriers."
+
+================================================================================
+SLIDE 7: CHAPTER 2 — PROBLEMS OF THE EXISTING SYSTEM (SUMMARIZED)
+================================================================================
+
+EXISTING SYSTEM DEFICIENCIES SUMMARY:
+1. Entrance Gate:
+   Physical paper logbooks at the entrance door lead to severe morning bottlenecks, lost pages, illegible signatures, and zero dwell-time data.
+
+2. Document Discovery:
+   Disconnected USB flash drives and random cloud links cause lost reading milestones, zero progress tracking, and disorganized departmental archives.
+
+3. AI Academic Use:
+   Unmonitored use of external cloud AI (ChatGPT) risks IP leakage of unpublished student theses, privacy violations (RA 10173), and failures during internet downtime.
+
+4. Book Procurement:
+   Paper acquisition memos routed across offices cause lost purchase requests, lack of status visibility, and budget misallocation.
+
+5. Accreditation Auditing:
+   Manual ledger tallying for CHED & AACCUP results in labor-intensive preparation, human calculation error, and delayed reporting.
+
+--------------------------------------------------------------------------------
+🎙️ PRESENTER SCRIPT (Emmanuel Amista — Target: 0:50)
+"Moving into Chapter 2, my name is Emmanuel Amista, and I will discuss our systems analysis. When analyzing the existing library environment, we observed that legacy practices directly hinder academic efficiency. At the entrance, physical logbooks create long student queues during peak morning hours. Pages tear, handwriting is illegible, and librarians have no way of knowing how long students remain in the library. Academic materials are scattered across flash drives and cloud folders, leaving students without a consistent way to resume reading. In research, students turn to external cloud AI, inadvertently exposing confidential research data and thesis drafts to overseas cloud databases. In acquisition, faculty book requests are lost in administrative paper routing. And during accreditation season, staff spend countless hours manually tallying paper logbooks. These summarized findings proved that incremental patches were insufficient—a modern, unified software solution was mandatory."
+
+================================================================================
+SLIDE 8: CHAPTER 2 — ALTERNATIVE OPTIONS TO ADDRESS PROBLEMS
+================================================================================
+
+COMPARATIVE EVALUATION MATRIX:
+- Option A: Status Quo (Paper / Manual System)
+  Cost: Zero software cost
+  Drawbacks: High labor, severe doorway bottlenecks, zero search/AI, vulnerable to physical loss.
+  Verdict: REJECTED.
+
+- Option B: Commercial Cloud SaaS (Follett Destiny, Ex Libris Alma)
+  Cost: Prohibitive annual licensing fees
+  Drawbacks: Total reliance on high-speed internet, student data stored on foreign servers.
+  Verdict: REJECTED.
+
+- Option C: Generic Open-Source ILS (Koha, Evergreen)
+  Cost: Free & open source
+  Drawbacks: Lacks in-browser readers for DOCX/PPTX/EPUB, no QR entrance tracking, zero native local AI.
+  Verdict: INSUFFICIENT.
+
+- Option D: Libre-Library (Proposed System)
+  Cost: 100% Free & open source
+  Benefits: 100% offline resilient, on-premise local Llama 3.2 AI, sub-second QR attendance, 5-stage requisition stepper, automated CHED narratives.
+  Verdict: ADOPTED.
+
+--------------------------------------------------------------------------------
+🎙️ PRESENTER SCRIPT (Emmanuel Amista — Target: 0:50)
+"Before developing Libre-Library, we critically analyzed four technical options. Option A was retaining the manual paper system. While zero cost, it is labor-heavy, error-prone, and cannot support digital learning. Option B was procuring commercial cloud library SaaS like Follett Destiny or Ex Libris Alma. Although feature-rich, they demand expensive annual foreign licensing fees, rely heavily on high-speed internet, and store student data on overseas servers. Option C was implementing generic open-source integrated library software such as Koha. While competent for physical barcode lending, Koha lacks modern in-browser multi-format document readers, has no built-in QR entrance tracking, and offers zero local artificial intelligence capabilities. Therefore, we adopted Option D: building Libre-Library. It provides 100% offline resilience, complete data privacy compliance under RA 10173, zero subscription overhead, built-in QR attendance, and native on-premise AI tailored to our university."
+
+================================================================================
+SLIDE 9: CHAPTER 2 — SYSTEM REQUIREMENTS FOR THE NEW SYSTEM
+================================================================================
+
+FUNCTIONAL REQUIREMENTS (FR):
+- FR 1: Document Ingestion & Universal Reader (PDF, EPUB, DOCX, PPTX, TXT with progress tracking).
+- FR 2: OPDS 1.2 Catalog Feed for external mobile e-readers.
+- FR 3: QR Attendance System (< 0.2s camera scan, auto check-in/out, dwell tracking, CSV export).
+- FR 4: Faculty Book Requisition Portal (5-stage procurement lifecycle stepper).
+- FR 5: Accreditation Analytics (College heatmaps, hourly charts, LLM-generated CHED narratives).
+- FR 6: Socratic AI Companion (Local Llama 3.2 3B RAG, page citations, 4-mode summarizer, 3D flashcards).
+- FR 7: Role-Based Access Control (4 tiers: student, faculty, librarian, admin with JWT & Bcrypt).
+
+NON-FUNCTIONAL REQUIREMENTS (NFR):
+- NFR 1 (Performance): Sub-second QR scan (< 0.2s), LRU-cached document parsing (< 0.1ms), DB queries (< 1ms).
+- NFR 2 (Security): 100% offline local inference (RA 10173 compliant), Bcrypt cost 12 hashing, JWT route guards.
+- NFR 3 (Reliability): Thread-safe async queues, bounded connection pooling, graceful offline LLM fallback.
+- NFR 4 (Cognitive Usability): Built on 10 HCI cognitive laws (Fitts's, Miller's, Zeigarnik effect).
+- NFR 5 (Verification): 59/59 automated tests passing in 13.7 seconds.
+
+--------------------------------------------------------------------------------
+🎙️ PRESENTER SCRIPT (Emmanuel Amista — Target: 0:50)
+"On Slide 9, we formalize our system requirements into seven Functional Requirements and five Non-Functional Requirements. Functionally, Libre-Library guarantees end-to-end ingestion across five file formats, an OPDS e-reader catalog feed, a contactless QR doorway attendance station, a 5-stage faculty procurement stepper, real-time accreditation analytics, local Socratic AI research assistance, and 4-tier role-based access control. Non-functionally, our architecture excels across performance, security, and usability. Our QR scanner processes student badges in under 0.2 seconds. Document queries resolve in under 0.1 milliseconds thanks to thread-safe LRU caching. User data is protected through salted Bcrypt hashing and local offline model execution in strict compliance with RA 10173. Furthermore, the entire system is validated by 59 automated test cases passing in under 14 seconds. With our requirements established, I now turn over the floor to Kieser Loren and our team for the live system demonstration."
+
+================================================================================
+SLIDE 10: SYSTEM DEMONSTRATION & LIVE DEFENSE WALKTHROUGH
+================================================================================
+
+STRUCTURED 6:30 LIVE DEMONSTRATION WORKFLOW:
+1. Contactless QR Gate Attendance Station (Kenneth Pañares):
+   - Real-time camera scan of student QR pass
+   - Automated toggle check-in and check-out
+   - Dynamic dwell-time calculation and visit purpose tagging
+
+2. Multi-Format Ingestion & Universal Reader (Emmanuel Amista):
+   - Live upload of academic documents
+   - Automated PyMuPDF cover extraction
+   - Reading progress persistence (Zeigarnik effect)
+
+3. TARS Socratic AI & Pedagogical Tools (Kieser Loren):
+   - Local Llama 3.2 3B RAG query with page citation chips
+   - Socratic dialogue mode
+   - 4-mode document summarization and 3D perspective flip flashcards
+
+4. Requisition Stepper & Accreditation Analytics (Josepito Quezada):
+   - Faculty coursebook submission through 5-stage procurement stepper
+   - Real-time college heatmaps and hourly attendance charts
+   - One-click AI CHED and AACCUP narrative report generation
+
+--------------------------------------------------------------------------------
+🎙️ PRESENTER SCRIPT (Kieser Loren — Demonstration Lead — Target: 6:30 Total Demo)
+"Thank you, Emmanuel. Respected members of the panel, we will now transition directly into our live system demonstration.
+
+[Step 1: Doorway QR Station — Kenneth]
+We begin at the library entrance. Kenneth is scanning a generated student QR badge using our high-speed camera scanner. Notice how the scan registers in under 0.2 seconds, automatically detects whether it is a Check-In or Check-Out, calculates dwell time, and logs the student's visit purpose.
+
+[Step 2: Universal Ingestion & Reader — Emmanuel]
+Next, Emmanuel navigates to the ingestion portal. He uploads an academic document. In the background, PyMuPDF extracts high-resolution cover art, extracts text chunks, and vectors them into ChromaDB. As he opens the book, the system tracks his exact page position, fulfilling the Zeigarnik effect on the user dashboard.
+
+[Step 3: TARS On-Premise AI & Study Tools — Kieser]
+Now, we demonstrate TARS, our local AI research assistant. I will ask TARS a technical question scoped directly to our ingested textbook. Running 100% locally on quantized Llama 3.2 3B weights with zero internet connection, TARS streams the response and provides clickable citation chips linking to the exact page passage. Additionally, we showcase our 4-mode summarizer and 3D flip study flashcards synthesized in seconds.
+
+[Step 4: Requisitions & Accreditation Analytics — Josepito]
+Finally, Josepito demonstrates administrative operations: a faculty member submits a syllabus coursebook request, and the librarian advances it through our 5-stage procurement stepper. Over on the Analytics dashboard, real-time college heatmaps and hourly foot-traffic charts render dynamically, and with one click, TARS synthesizes an automated narrative report ready for CHED and AACCUP auditors.
+
+Respected panel, Libre-Library is complete, tested, and ready for deployment. We now welcome your questions and feedback. Thank you very much!"
+
+================================================================================
+DEFENSE PANEL Q&A QUICK REFERENCE GUIDE
+================================================================================
+Q1: "Why use local Llama 3.2 instead of ChatGPT or Claude?"
+Answer: "Local execution guarantees 100% data sovereignty under RA 10173, eliminates recurring API costs, and works during campus internet outages."
+
+Q2: "What happens if the local AI server hardware is low-spec?"
+Answer: "We utilize 8-bit quantized GGUF weights running via llama-cpp-python with graceful CPU fallback, consuming under 4GB RAM."
+
+Q3: "How does the system prevent student attendance fraud?"
+Answer: "QR codes encode cryptographic student IDs verified against MongoDB records with timestamped check-in/out state logic."
+
+Q4: "How does the system handle concurrent users?"
+Answer: "Our backend utilizes asynchronous Python with Motor (async MongoDB driver) and in-memory LRU caches resolving queries in < 0.1ms."
+================================================================================
