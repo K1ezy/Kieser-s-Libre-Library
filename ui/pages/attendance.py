@@ -37,7 +37,7 @@ def generate_qr_base64(payload_text: str) -> str:
         qr.make(fit=True)
         img = qr.make_image(fill_color="#0f172a", back_color="#ffffff")
         buffer = io.BytesIO()
-        img.save(buffer)
+        img.save(buffer, format="PNG")
         b64_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
         return f"data:image/png;base64,{b64_str}"
     except Exception:

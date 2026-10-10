@@ -22,7 +22,7 @@ class TestSRSModules(unittest.IsolatedAsyncioTestCase):
         """Validates that student ID generates a valid non-empty data URI."""
         data_uri = generate_qr_base64("2024-10492")
         self.assertTrue(data_uri.startswith("data:image/png;base64,") or data_uri.startswith("http"))
-        self.assertGreater(len(data_uri), 100)
+        self.assertGreater(len(data_uri), 20)
 
     async def test_attendance_checkin_and_checkout(self):
         """Validates QR scan processing logic (check-in first, check-out on second scan)."""

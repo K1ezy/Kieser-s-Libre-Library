@@ -1,19 +1,40 @@
 import os
 import logging
+import threading
+from collections import OrderedDict
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Tuple
 
 logger = logging.getLogger("TEXT_EXTRACTOR")
+
+# Thread-safe in-memory LRU cache for extracted text and document structure
+# Key: (resolved_filepath, mtime, size)
+_TEXT_CACHE: "OrderedDict[Tuple[str, float, int], str]" = OrderedDict()
+_STRUCTURE_CACHE: "OrderedDict[Tuple[str, float, int], List[dict]]" = OrderedDict()
+_CACHE_LOCK = threading.Lock()
+_MAX_CACHE_SIZE = 32
 
 def extract_text_from_file(filepath: str) -> str:
     """
     High-performance native text extractor for documents.
     Supports: PDF, EPUB, DOCX, PPTX, TXT, MD.
-    Does not require heavy or unstable 'unstructured' dependencies.
+    Thread-safe in-memory LRU caching accelerates repeated RAG/LLM passes.
     """
     path = Path(filepath)
-    if not path.exists() or path.stat().st_size == 0:
+    if not path.exists():
         return ""
+
+    try:
+        stat_res = path.stat()
+        if stat_res.st_size == 0:
+            return ""
+        cache_key = (str(path.resolve()), stat_res.st_mtime, stat_res.st_size)
+        with _CACHE_LOCK:
+            if cache_key in _TEXT_CACHE:
+                _TEXT_CACHE.move_to_end(cache_key)
+                return _TEXT_CACHE[cache_key]
+    except Exception:
+        cache_key = None
 
     ext = path.suffix.lower()
     text = ""
@@ -24,13 +45,15 @@ def extract_text_from_file(filepath: str) -> str:
             try:
                 import fitz  # PyMuPDF: C-accelerated high performance PDF engine
                 doc = fitz.open(str(path))
-                for i, page in enumerate(doc):
-                    t = page.get_text()
-                    if t and t.strip():
-                        extracted_pages.append(f"[Page {i+1}]\n{t.strip()}")
-                doc.close()
+                try:
+                    for i, page in enumerate(doc):
+                        t = page.get_text()
+                        if t and t.strip():
+                            extracted_pages.append(f"[Page {i+1}]\n{t.strip()}")
+                finally:
+                    doc.close()
             except Exception as fitz_err:
-                logger.debug(f"PyMuPDF unavailable or error ({fitz_err}), falling back to pypdf.")
+                logger.debug(f"PyMuPDF fallback to pypdf ({fitz_err}).")
                 from pypdf import PdfReader
                 reader = PdfReader(str(path))
                 for i, page in enumerate(reader.pages):
@@ -100,8 +123,15 @@ def extract_text_from_file(filepath: str) -> str:
 
     # Clean text: remove null bytes and strip excess whitespace
     if text:
-        text = text.replace('\x00', '')
-    return text.strip()
+        text = text.replace('\x00', '').strip()
+
+    if cache_key and text:
+        with _CACHE_LOCK:
+            _TEXT_CACHE[cache_key] = text
+            if len(_TEXT_CACHE) > _MAX_CACHE_SIZE:
+                _TEXT_CACHE.popitem(last=False)
+
+    return text
 
 
 def extract_document_structure(filepath: str) -> list:
@@ -111,8 +141,20 @@ def extract_document_structure(filepath: str) -> list:
     Returns: List of dicts [{"page": int, "type": str, "text": str}]
     """
     path = Path(filepath)
-    if not path.exists() or path.stat().st_size == 0:
+    if not path.exists():
         return []
+
+    try:
+        stat_res = path.stat()
+        if stat_res.st_size == 0:
+            return []
+        cache_key = (str(path.resolve()), stat_res.st_mtime, stat_res.st_size)
+        with _CACHE_LOCK:
+            if cache_key in _STRUCTURE_CACHE:
+                _STRUCTURE_CACHE.move_to_end(cache_key)
+                return [dict(s) for s in _STRUCTURE_CACHE[cache_key]]
+    except Exception:
+        cache_key = None
 
     ext = path.suffix.lower()
     sections = []
@@ -122,13 +164,15 @@ def extract_document_structure(filepath: str) -> list:
             try:
                 import fitz  # PyMuPDF: C-accelerated structure parsing
                 doc = fitz.open(str(path))
-                for i, page in enumerate(doc):
-                    t = page.get_text()
-                    if t and t.strip():
-                        clean = t.replace('\x00', '').strip()
-                        if clean:
-                            sections.append({"page": i + 1, "type": "page", "text": clean})
-                doc.close()
+                try:
+                    for i, page in enumerate(doc):
+                        t = page.get_text()
+                        if t and t.strip():
+                            clean = t.replace('\x00', '').strip()
+                            if clean:
+                                sections.append({"page": i + 1, "type": "page", "text": clean})
+                finally:
+                    doc.close()
             except Exception as fitz_err:
                 logger.debug(f"PyMuPDF structured extraction fallback to pypdf: {fitz_err}")
                 from pypdf import PdfReader
@@ -217,5 +261,11 @@ def extract_document_structure(filepath: str) -> list:
         full = extract_text_from_file(filepath)
         if full:
             sections.append({"page": 1, "type": "document", "text": full})
+
+    if cache_key and sections:
+        with _CACHE_LOCK:
+            _STRUCTURE_CACHE[cache_key] = sections
+            if len(_STRUCTURE_CACHE) > _MAX_CACHE_SIZE:
+                _STRUCTURE_CACHE.popitem(last=False)
 
     return sections

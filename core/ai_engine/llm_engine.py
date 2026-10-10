@@ -38,8 +38,16 @@ class TarsEngine:
         self.model_path = settings.MODEL_DIR / settings.MODEL_FILENAME
         self._is_loaded = False
         self._db_loaded = False
+        self._http_client: Optional[httpx.AsyncClient] = None
 
         logger.info(f"TARS Engine initialized (Active Provider: {self.provider.upper()}).")
+
+    def _get_http_client(self, timeout: float = 60.0) -> httpx.AsyncClient:
+        """Returns or creates a persistent connection-pooled HTTP client for sub-50ms latency."""
+        if self._http_client is None or self._http_client.is_closed:
+            limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
+            self._http_client = httpx.AsyncClient(timeout=timeout, limits=limits)
+        return self._http_client
 
     async def ensure_db_settings_loaded(self):
         """Loads persistent admin provider configurations from MongoDB on first use."""
@@ -189,23 +197,23 @@ class TarsEngine:
         # 1. Ollama Provider
         if self.provider == 'ollama':
             try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    payload = {
-                        "model": self.ollama_model,
-                        "prompt": prompt,
-                        "stream": False,
-                        "options": {
-                            "temperature": temperature,
-                            "num_predict": max_tokens,
-                            "stop": stop or ["TEXT:", "Example:", "---"]
-                        }
+                client = self._get_http_client(timeout=60.0)
+                payload = {
+                    "model": self.ollama_model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": temperature,
+                        "num_predict": max_tokens,
+                        "stop": stop or ["TEXT:", "Example:", "---"]
                     }
-                    resp = await client.post(f"{self.ollama_url}/api/generate", json=payload)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        return data.get("response", "").strip()
-                    logger.error(f"Ollama generation failed ({resp.status_code}): {resp.text}")
-                    return None
+                }
+                resp = await client.post(f"{self.ollama_url}/api/generate", json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data.get("response", "").strip()
+                logger.error(f"Ollama generation failed ({resp.status_code}): {resp.text}")
+                return None
             except Exception as e:
                 logger.error(f"Ollama create_completion error: {e}")
                 return None
@@ -215,20 +223,20 @@ class TarsEngine:
             try:
                 headers = {"Authorization": f"Bearer {self.openai_key}"} if self.openai_key else {}
                 headers["Content-Type"] = "application/json"
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    payload = {
-                        "model": self.openai_model,
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": max_tokens,
-                        "temperature": temperature,
-                        "stop": stop or ["TEXT:", "Example:", "---"]
-                    }
-                    resp = await client.post(f"{self.openai_url}/chat/completions", json=payload, headers=headers)
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        return data["choices"][0]["message"]["content"].strip()
-                    logger.error(f"OpenAI completion failed ({resp.status_code}): {resp.text}")
-                    return None
+                client = self._get_http_client(timeout=60.0)
+                payload = {
+                    "model": self.openai_model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": max_tokens,
+                    "temperature": temperature,
+                    "stop": stop or ["TEXT:", "Example:", "---"]
+                }
+                resp = await client.post(f"{self.openai_url}/chat/completions", json=payload, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    return data["choices"][0]["message"]["content"].strip()
+                logger.error(f"OpenAI completion failed ({resp.status_code}): {resp.text}")
+                return None
             except Exception as e:
                 logger.error(f"OpenAI create_completion error: {e}")
                 return None
@@ -288,30 +296,30 @@ class TarsEngine:
         if self.provider == 'ollama':
             try:
                 # Convert messages format to Ollama chat
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    payload = {
-                        "model": self.ollama_model,
-                        "messages": messages,
-                        "stream": True,
-                        "options": {
-                            "temperature": 0.3,
-                            "num_predict": MAX_OUTPUT_TOKENS
-                        }
+                client = self._get_http_client(timeout=120.0)
+                payload = {
+                    "model": self.ollama_model,
+                    "messages": messages,
+                    "stream": True,
+                    "options": {
+                        "temperature": 0.3,
+                        "num_predict": MAX_OUTPUT_TOKENS
                     }
-                    async with client.stream("POST", f"{self.ollama_url}/api/chat", json=payload) as response:
-                        if response.status_code != 200:
-                            yield f"[OLLAMA ERROR: Status {response.status_code}]"
-                            return
-                        async for line in response.aiter_lines():
-                            if line and line.strip():
-                                try:
-                                    chunk_data = json.loads(line)
-                                    msg = chunk_data.get("message", {})
-                                    content = msg.get("content", "")
-                                    if content:
-                                        yield content
-                                except Exception:
-                                    pass
+                }
+                async with client.stream("POST", f"{self.ollama_url}/api/chat", json=payload) as response:
+                    if response.status_code != 200:
+                        yield f"[OLLAMA ERROR: Status {response.status_code}]"
+                        return
+                    async for line in response.aiter_lines():
+                        if line and line.strip():
+                            try:
+                                chunk_data = json.loads(line)
+                                msg = chunk_data.get("message", {})
+                                content = msg.get("content", "")
+                                if content:
+                                    yield content
+                            except Exception:
+                                pass
                 return
             except Exception as e:
                 logger.error(f"Ollama streaming failure: {e}")
@@ -323,32 +331,32 @@ class TarsEngine:
             try:
                 headers = {"Authorization": f"Bearer {self.openai_key}"} if self.openai_key else {}
                 headers["Content-Type"] = "application/json"
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    payload = {
-                        "model": self.openai_model,
-                        "messages": messages,
-                        "stream": True,
-                        "temperature": 0.3,
-                        "max_tokens": MAX_OUTPUT_TOKENS
-                    }
-                    async with client.stream("POST", f"{self.openai_url}/chat/completions", json=payload, headers=headers) as response:
-                        if response.status_code != 200:
-                            body = await response.aread()
-                            yield f"[API ERROR: Status {response.status_code} - {body.decode('utf-8', 'ignore')}]"
-                            return
-                        async for line in response.aiter_lines():
-                            if line.startswith("data: ") and not line.startswith("data: [DONE]"):
-                                raw_json = line[6:].strip()
-                                try:
-                                    data = json.loads(raw_json)
-                                    choices = data.get("choices", [])
-                                    if choices:
-                                        delta = choices[0].get("delta", {})
-                                        content = delta.get("content", "")
-                                        if content:
-                                            yield content
-                                except Exception:
-                                    pass
+                client = self._get_http_client(timeout=120.0)
+                payload = {
+                    "model": self.openai_model,
+                    "messages": messages,
+                    "stream": True,
+                    "temperature": 0.3,
+                    "max_tokens": MAX_OUTPUT_TOKENS
+                }
+                async with client.stream("POST", f"{self.openai_url}/chat/completions", json=payload, headers=headers) as response:
+                    if response.status_code != 200:
+                        body = await response.aread()
+                        yield f"[API ERROR: Status {response.status_code} - {body.decode('utf-8', 'ignore')}]"
+                        return
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: ") and not line.startswith("data: [DONE]"):
+                            raw_json = line[6:].strip()
+                            try:
+                                data = json.loads(raw_json)
+                                choices = data.get("choices", [])
+                                if choices:
+                                    delta = choices[0].get("delta", {})
+                                    content = delta.get("content", "")
+                                    if content:
+                                        yield content
+                            except Exception:
+                                pass
                 return
             except Exception as e:
                 logger.error(f"OpenAI streaming failure: {e}")
@@ -366,7 +374,7 @@ class TarsEngine:
 
             async with self.lock:
                 loop = asyncio.get_running_loop()
-                token_queue = asyncio.Queue(maxsize=128)
+                token_queue = asyncio.Queue(maxsize=0)
                 stop_event = threading.Event()
 
                 def _producer():
