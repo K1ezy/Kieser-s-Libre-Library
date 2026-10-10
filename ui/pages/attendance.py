@@ -25,6 +25,7 @@ PROGRAM_OPTIONS = [
 
 def generate_qr_base64(payload_text: str) -> str:
     """Generates a high-contrast base64 PNG QR code data URI."""
+    clean_text = str(payload_text or "LIBRE-PASS").strip() or "LIBRE-PASS"
     try:
         import qrcode
         qr = qrcode.QRCode(
@@ -33,7 +34,7 @@ def generate_qr_base64(payload_text: str) -> str:
             box_size=10,
             border=2,
         )
-        qr.add_data(payload_text)
+        qr.add_data(clean_text)
         qr.make(fit=True)
         img = qr.make_image(fill_color="#0f172a", back_color="#ffffff")
         buffer = io.BytesIO()
@@ -42,7 +43,7 @@ def generate_qr_base64(payload_text: str) -> str:
         return f"data:image/png;base64,{b64_str}"
     except Exception:
         # Fallback SVG data URI if qrcode library has any issue
-        return f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={payload_text}"
+        return f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={clean_text}"
 
 
 async def attendance_page():
@@ -151,9 +152,8 @@ async def attendance_page():
 
                             # Camera Stream / HTML5 QR Scanner Viewport
                             with ui.element('div').classes('w-full rounded-2xl overflow-hidden bg-slate-900 border border-slate-300 relative flex flex-col items-center justify-center min-h-[260px] sm:min-h-[300px] shadow-inner'):
-                                # HTML5 QR Code Mount Div
-                                ui.html('''
-                                <div id="reader" style="width: 100%; max-width: 480px; min-height: 240px; margin: auto;"></div>
+                                # Load html5-qrcode library & scanner runner via ui.add_body_html
+                                ui.add_body_html('''
                                 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
                                 <script>
                                 window.libreScannerRunning = false;
@@ -179,7 +179,9 @@ async def attendance_page():
                                         });
                                 };
                                 </script>
-                                ''', tag='div').classes('w-full')
+                                ''')
+                                # HTML5 QR Code Mount Div
+                                ui.html('<div id="reader" style="width: 100%; max-width: 480px; min-height: 240px; margin: auto;"></div>', sanitize=False, tag='div').classes('w-full')
 
                             with ui.row().classes('w-full justify-between items-center gap-2 mt-3 flex-wrap'):
                                 ui.button('Activate Camera Scanner', icon='videocam', on_click=lambda: ui.run_javascript('window.startLibreScanner();')) \
@@ -407,9 +409,6 @@ async def attendance_page():
                         ui.label('Scan this QR code at the library entrance door scanner for automatic contactless check-in/out.').classes('text-xs text-slate-500 mb-4 px-4 leading-relaxed')
 
                         with ui.row().classes('w-full justify-center gap-3'):
-                            ui.button('Self Check-In / Out Now', icon='how_to_reg', on_click=lambda: handle_self_checkin()) \
-                                .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-md')
-
                             async def handle_self_checkin():
                                 res = await mongo_db.record_attendance_scan(
                                     identifier=student_id,
@@ -423,3 +422,6 @@ async def attendance_page():
                                     await refresh_stats()
                                 else:
                                     ui.notify(res.get('error'), type='negative')
+
+                            ui.button('Self Check-In / Out Now', icon='how_to_reg', on_click=handle_self_checkin) \
+                                .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-md')
