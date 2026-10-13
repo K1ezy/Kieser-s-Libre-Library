@@ -13,8 +13,8 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
     is_librarian = user_role in ['admin', 'librarian']
     is_faculty = user_role in ['admin', 'librarian', 'faculty']
 
-    with ui.left_drawer(value=False, fixed=True).props('show-if-above').classes(
-        'bg-white border-r border-slate-200 flex flex-col z-50 w-72 max-w-[85vw] shadow-sm'
+    with ui.left_drawer(value=False, fixed=True).props('bordered overlay show-if-above').classes(
+        'bg-white border-r border-slate-200 flex flex-col w-72 max-w-[85vw] shadow-md'
     ) as drawer:
 
         # 1. LOGO AREA (Mobile overlay; desktop top bar already shows brand header)
@@ -32,13 +32,17 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
 
             def nav_link(text: str, icon: str, target: str, badge_text: str = None):
                 is_active = (current_path == target) or (target != '/' and str(current_path).startswith(target))
-                base_classes = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-all duration-200 no-underline group cursor-pointer'
+                base_classes = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-all duration-200 no-underline group cursor-pointer select-none'
                 if is_active:
                     color_classes = 'bg-indigo-50 text-indigo-700 font-bold shadow-sm border border-indigo-100/60'
                 else:
                     color_classes = 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-medium'
 
-                with ui.link(target=target).classes(f'{base_classes} {color_classes}').on('click', lambda: drawer.hide()):
+                def on_navigate():
+                    drawer.hide()
+                    ui.navigate.to(target)
+
+                with ui.element('div').classes(f'{base_classes} {color_classes}').on('click', on_navigate):
                     with ui.row().classes('items-center gap-3 min-w-0'):
                         ui.icon(icon).classes('text-xl group-hover:scale-105 transition-transform')
                         ui.label(text).classes('text-sm truncate')

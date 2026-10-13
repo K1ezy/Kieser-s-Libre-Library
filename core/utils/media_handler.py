@@ -1,6 +1,7 @@
 import time
+import asyncio
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Any
 import logging
 
 logger = logging.getLogger("MEDIA_HANDLER")
@@ -96,4 +97,34 @@ def save_user_media(user_id: str, file_bytes: bytes, file_name: str, media_type:
     else:
         success, res = save_user_cover(user_id, file_name, file_bytes)
         return (True, "Cover saved successfully", res) if success else (False, res, None)
+
+
+async def extract_upload_file(e: Any) -> Tuple[str, bytes]:
+    """
+    Robustly extracts the filename and binary byte payload from a NiceGUI UploadEventArguments object
+    across both NiceGUI 1.x (content) and NiceGUI 2.x+ (file: FileUpload) APIs.
+    """
+    # 1. Resolve file-like or FileUpload object
+    file_obj = getattr(e, 'file', None)
+    if file_obj is None and hasattr(e, 'files') and e.files:
+        file_obj = e.files[0]
+    if file_obj is None:
+        file_obj = getattr(e, 'content', None)
+
+    # 2. Resolve filename
+    file_name = getattr(e, 'name', None) or getattr(file_obj, 'name', 'uploaded_image.png')
+
+    # 3. Read binary bytes safely
+    raw_bytes = b''
+    if file_obj is not None:
+        if hasattr(file_obj, 'read'):
+            res = file_obj.read()
+            raw_bytes = await res if asyncio.iscoroutine(res) else res
+        elif hasattr(file_obj, 'getvalue'):
+            raw_bytes = file_obj.getvalue()
+        elif isinstance(file_obj, (bytes, bytearray)):
+            raw_bytes = bytes(file_obj)
+
+    return file_name, raw_bytes
+
 

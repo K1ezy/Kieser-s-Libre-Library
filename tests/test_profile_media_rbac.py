@@ -5,13 +5,14 @@ from core.utils.media_handler import (
     save_user_avatar,
     save_user_cover,
     save_user_media,
+    extract_upload_file,
     MAX_AVATAR_SIZE,
     MAX_COVER_SIZE
 )
 from core.database.repositories.user_repository import UserRepository
 
 
-class TestMediaHandler(unittest.TestCase):
+class TestMediaHandler(unittest.IsolatedAsyncioTestCase):
     """Tests file size, extension, and mime-type validation for avatar and cover uploads."""
 
     def test_validate_image_success(self):
@@ -51,6 +52,26 @@ class TestMediaHandler(unittest.TestCase):
         self.assertTrue(success)
         self.assertIsNotNone(url)
         self.assertIn("/static/uploads/covers/", url)
+
+    async def test_extract_upload_file_nicegui_v2_upload_event(self):
+        from types import SimpleNamespace
+        # NiceGUI 2.x UploadEventArguments: has .file (FileUpload), does NOT have .content
+        mock_file = SimpleNamespace(name="my_avatar.png", read=AsyncMock(return_value=b"binary-avatar-data"))
+        mock_event = SimpleNamespace(file=mock_file)
+
+        name, data = await extract_upload_file(mock_event)
+        self.assertEqual(name, "my_avatar.png")
+        self.assertEqual(data, b"binary-avatar-data")
+
+    async def test_extract_upload_file_legacy_content_attribute(self):
+        from types import SimpleNamespace
+        # Legacy event: has .content, does NOT have .file
+        mock_content = SimpleNamespace(read=MagicMock(return_value=b"legacy-content-bytes"))
+        mock_event = SimpleNamespace(name="legacy.jpg", content=mock_content)
+
+        name, data = await extract_upload_file(mock_event)
+        self.assertEqual(name, "legacy.jpg")
+        self.assertEqual(data, b"legacy-content-bytes")
 
 
 class TestRBACIdentifierSystem(unittest.IsolatedAsyncioTestCase):

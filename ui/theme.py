@@ -112,11 +112,24 @@ GLOBAL_THEME_STYLES = '''
             z-index: 35 !important;
         }
 
+        /* Quasar Left & Right Drawers & Overlay Backdrop */
         .q-drawer {
-            z-index: 45 !important;
             background-color: #ffffff !important;
             color: #0f172a !important;
             border-right: 1px solid #e2e8f0 !important;
+        }
+
+        .q-drawer__backdrop {
+            z-index: 2990 !important;
+            background-color: rgba(15, 23, 42, 0.45) !important;
+            backdrop-filter: blur(2px) !important;
+            -webkit-backdrop-filter: blur(2px) !important;
+            transition: opacity 0.2s ease, background-color 0.2s ease !important;
+        }
+
+        .q-drawer--on-top,
+        .q-drawer.q-drawer--on-top {
+            z-index: 3000 !important;
         }
 
         .q-dialog {
@@ -581,17 +594,36 @@ GLOBAL_THEME_STYLES = '''
         /* =========================================================================
            MOBILE RESPONSIVENESS & ADAPTIVE VIEWPORT ENGINE
            ========================================================================= */
-        /* 1. Fluid Book Catalog Grid: Exactly 2 fluid columns on 340-500px phones,
-           1 column on <340px, scaling cleanly to 3-6 columns on larger screens */
+        /* 1. Fluid Book Catalog Grid: Exactly 2 clean proportional columns on mobile phones,
+           scaling seamlessly to 3-6 columns on tablets and desktops */
         .fluid-book-grid {
             display: grid !important;
-            grid-template-columns: repeat(auto-fill, minmax(clamp(130px, 44vw, 195px), 1fr)) !important;
-            gap: clamp(10px, 2.5vw, 20px) !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 0.75rem !important;
             width: 100% !important;
         }
-        @media (max-width: 340px) {
+        @media (min-width: 640px) {
             .fluid-book-grid {
-                grid-template-columns: 1fr !important;
+                grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+                gap: 1rem !important;
+            }
+        }
+        @media (min-width: 768px) {
+            .fluid-book-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+                gap: 1rem !important;
+            }
+        }
+        @media (min-width: 1024px) {
+            .fluid-book-grid {
+                grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+                gap: 1.25rem !important;
+            }
+        }
+        @media (min-width: 1280px) {
+            .fluid-book-grid {
+                grid-template-columns: repeat(6, minmax(0, 1fr)) !important;
+                gap: 1.25rem !important;
             }
         }
 

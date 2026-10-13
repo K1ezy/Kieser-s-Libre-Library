@@ -1,6 +1,6 @@
 from nicegui import ui, app
 from core.database.mongo_manager import mongo_db
-from core.utils.media_handler import save_user_media
+from core.utils.media_handler import save_user_media, extract_upload_file
 from components.sidebar import sidebar
 from components.header import header
 from ui.pages.attendance import generate_qr_base64
@@ -152,9 +152,11 @@ class UserProfile:
 
             async def handle_avatar_upload(e):
                 try:
-                    c = e.content
-                    raw_bytes = await c.read() if asyncio.iscoroutinefunction(getattr(c, 'read', None)) else c.read()
-                    success, msg, url = save_user_media(user_id, raw_bytes, e.name, "avatar")
+                    file_name, raw_bytes = await extract_upload_file(e)
+                    if not raw_bytes:
+                        ui.notify('No file data received. Please select an image.', type='warning')
+                        return
+                    success, msg, url = save_user_media(user_id, raw_bytes, file_name, "avatar")
                     if not success:
                         ui.notify(msg, type='negative')
                         return
@@ -202,9 +204,11 @@ class UserProfile:
 
             async def handle_cover_upload(e):
                 try:
-                    c = e.content
-                    raw_bytes = await c.read() if asyncio.iscoroutinefunction(getattr(c, 'read', None)) else c.read()
-                    success, msg, url = save_user_media(user_id, raw_bytes, e.name, "cover")
+                    file_name, raw_bytes = await extract_upload_file(e)
+                    if not raw_bytes:
+                        ui.notify('No file data received. Please select an image.', type='warning')
+                        return
+                    success, msg, url = save_user_media(user_id, raw_bytes, file_name, "cover")
                     if not success:
                         ui.notify(msg, type='negative')
                         return
