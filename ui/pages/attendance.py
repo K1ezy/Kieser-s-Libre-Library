@@ -1,49 +1,22 @@
-import io
-import time
-import base64
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from nicegui import ui, app, run
+from nicegui import ui, app
 
 from components.sidebar import sidebar
 from components.header import header
 from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import get_current_user_role
+from components.attendance import (
+    generate_qr_base64,
+    render_digital_pass_card,
+    PURPOSE_OPTIONS,
+    render_scanner_station,
+    render_live_doorway_feed,
+    PROGRAM_OPTIONS,
+    render_visitor_logs_table,
+)
 
-PURPOSE_OPTIONS = [
-    "📚 Study / Review",
-    "🔬 Research / Thesis",
-    "📖 Book Borrow / Return",
-    "💻 E-Library / Digital OPAC",
-    "👥 Group Discussion"
-]
-
-PROGRAM_OPTIONS = [
-    "All", "BSCS", "BSIT", "BSED", "BEED", "BSBA", "BSHM", "Crim", "Nursing", "GENERAL"
-]
-
-
-def generate_qr_base64(payload_text: str) -> str:
-    """Generates a high-contrast base64 PNG QR code data URI."""
-    clean_text = str(payload_text or "LIBRE-PASS").strip() or "LIBRE-PASS"
-    try:
-        import qrcode
-        qr = qrcode.QRCode(
-            version=1,
-            error_correction=qrcode.constants.ERROR_CORRECT_M,
-            box_size=10,
-            border=2,
-        )
-        qr.add_data(clean_text)
-        qr.make(fit=True)
-        img = qr.make_image(fill_color="#0f172a", back_color="#ffffff")
-        buffer = io.BytesIO()
-        img.save(buffer)
-        b64_str = base64.b64encode(buffer.getvalue()).decode('utf-8')
-        return f"data:image/png;base64,{b64_str}"
-    except Exception:
-        # Fallback SVG data URI if qrcode library has any issue
-        return f"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data={clean_text}"
+__all__ = ['generate_qr_base64', 'attendance_page', 'PURPOSE_OPTIONS', 'PROGRAM_OPTIONS']
 
 
 async def attendance_page():
@@ -111,7 +84,7 @@ async def attendance_page():
 
         await refresh_stats()
 
-        # TAB NAVIGATION
+        # Tab Navigation
         with ui.tabs().classes('w-full bg-slate-100/80 p-1 rounded-2xl mb-6 text-slate-600') as tabs:
             tab_scanner = ui.tab('scanner', label='Entrance Fast Scanner', icon='qr_code_scanner')
             tab_logs = ui.tab('logs', label='Daily Visitor Logs', icon='receipt_long')
@@ -120,143 +93,57 @@ async def attendance_page():
         initial_tab = tab_pass if user_role == 'student' else tab_scanner
         with ui.tab_panels(tabs, value=initial_tab).classes('w-full bg-transparent p-0'):
 
-            # =================================================================
-            # TAB 1: FAST ENTRANCE SCANNER TERMINAL
-            # =================================================================
+            # TAB 1: Fast Entrance Scanner
             with ui.tab_panel(tab_scanner).classes('p-0'):
                 with ui.grid().classes('w-full grid-cols-1 lg:grid-cols-12 gap-6'):
-
-                    # Left: Scanner & Entry Station (7 cols)
                     with ui.column().classes('lg:col-span-7 gap-5'):
-                        with ui.card().classes('w-full p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm'):
-                            ui.label('ENTRANCE DOOR SCANNER').classes('text-xs font-black text-indigo-600 uppercase tracking-wider mb-2')
-                            ui.label('Hold student QR code or NEMSU ID barcode in front of the camera').classes('text-sm text-slate-600 mb-4')
+                        feedback_banner_holder = {}
 
-                            # Purpose Selection Chips
-                            ui.label('Purpose of Visit:').classes('text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5')
-                            with ui.row().classes('gap-2 mb-4 flex-wrap'):
-                                chip_elements = {}
-                                for p in PURPOSE_OPTIONS:
-                                    def select_purpose(chosen=p):
-                                        active_purpose['val'] = chosen
-                                        for opt, btn in chip_elements.items():
-                                            if opt == chosen:
-                                                btn.props('unelevated color=indigo')
-                                            else:
-                                                btn.props('flat color=grey-7')
+                        async def handle_scan(val: str, purpose: str, year_level: str):
+                            res = await mongo_db.record_attendance_scan(
+                                identifier=val,
+                                purpose=purpose,
+                                name=user_name if val == student_id else "",
+                                program=user_program if val == student_id else "",
+                                year_level=year_level
+                            )
+                            if 'banner' in feedback_banner_holder and feedback_banner_holder['banner']:
+                                feedback_banner_holder['banner'].clear()
 
-                                    btn_el = ui.button(p, on_click=select_purpose).props(
-                                        'rounded-xl size=sm font-bold ' + ('unelevated color=indigo' if p == active_purpose['val'] else 'flat color=grey-7')
-                                    )
-                                    chip_elements[p] = btn_el
+                            if res.get('success'):
+                                act = res.get('action')
+                                entry = res.get('entry') or {}
+                                msg = res.get('message', 'Attendance logged.')
+                                ui.notify(msg, type='positive' if act == 'checkin' else 'info', duration=4000)
 
-                            # Camera Stream / HTML5 QR Scanner Viewport
-                            with ui.element('div').classes('w-full rounded-2xl overflow-hidden bg-slate-900 border border-slate-300 relative flex flex-col items-center justify-center min-h-[260px] sm:min-h-[300px] shadow-inner'):
-                                # Load html5-qrcode library & scanner runner via ui.add_body_html
-                                ui.add_body_html('''
-                                <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-                                <script>
-                                window.libreScannerRunning = false;
-                                window.startLibreScanner = function() {
-                                    if (window.libreScannerRunning) return;
-                                    const html5QrCode = new Html5Qrcode("reader");
-                                    const qrCodeSuccessCallback = (decodedText, decodedResult) => {
-                                        const inputEl = document.querySelector('#attendance-manual-input input');
-                                        if (inputEl) {
-                                            inputEl.value = decodedText;
-                                            inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-                                            const submitBtn = document.querySelector('#attendance-submit-btn');
-                                            if (submitBtn) submitBtn.click();
-                                        }
-                                    };
-                                    const config = { fps: 10, qrbox: { width: 220, height: 220 } };
-                                    html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
-                                        .then(() => { window.libreScannerRunning = true; })
-                                        .catch(err => {
-                                            console.warn("Camera start notice:", err);
-                                            const r = document.getElementById("reader");
-                                            if (r) r.innerHTML = '<div class="text-slate-300 text-xs p-4 text-center">Camera stream offline or permission not granted. Use the manual/barcode input below.</div>';
-                                        });
-                                };
-                                </script>
-                                ''')
-                                # HTML5 QR Code Mount Div
-                                ui.html('<div id="reader" style="width: 100%; max-width: 480px; min-height: 240px; margin: auto;"></div>', sanitize=False, tag='div').classes('w-full')
+                                if 'banner' in feedback_banner_holder and feedback_banner_holder['banner']:
+                                    with feedback_banner_holder['banner']:
+                                        is_checkin = act == 'checkin'
+                                        banner_bg = 'bg-emerald-50 border-emerald-200 text-emerald-900' if is_checkin else 'bg-blue-50 border-blue-200 text-blue-900'
+                                        banner_icon = 'verified' if is_checkin else 'waving_hand'
+                                        with ui.card().classes(f'w-full p-3.5 rounded-2xl border mb-3 flex flex-row items-center justify-between gap-3 {banner_bg} shadow-sm animate-fade-in'):
+                                            with ui.row().classes('items-center gap-3 min-w-0 flex-1'):
+                                                ui.icon(banner_icon, size='24px').classes('text-emerald-600' if is_checkin else 'text-blue-600')
+                                                with ui.column().classes('gap-0 min-w-0 flex-1'):
+                                                    ui.label(entry.get('name', val)).classes('text-sm font-black truncate')
+                                                    ui.label(f"{entry.get('program', 'BSCS')} ({entry.get('year_level', '1st Year')}) • {entry.get('purpose', 'Study')} • {entry.get('time_in_str', '')}").classes('text-xs opacity-80')
+                                            with ui.element('div').classes('px-2.5 py-1 rounded-xl text-xs font-black uppercase bg-white/80 shadow-xs shrink-0'):
+                                                ui.label("CHECKED IN" if is_checkin else f"OUT ({res.get('duration_minutes', 0)}m)")
 
-                            with ui.row().classes('w-full justify-between items-center gap-2 mt-3 flex-wrap'):
-                                ui.button('Activate Camera Scanner', icon='videocam', on_click=lambda: ui.run_javascript('window.startLibreScanner();')) \
-                                    .props('unelevated rounded-xl color=indigo size=sm font-bold min-height=40px')
-                                ui.label('⚡ Response Time: < 0.2s').classes('text-xs font-mono text-emerald-600 font-bold')
+                                await refresh_stats()
+                                await refresh_doorway_stream()
+                                await refresh_table_data()
+                            else:
+                                ui.notify(res.get('error', 'Check-in failed'), type='negative')
 
-                            ui.separator().classes('my-4')
+                        render_scanner_station(
+                            student_id=student_id,
+                            active_purpose=active_purpose,
+                            on_scan=handle_scan,
+                            feedback_banner_holder=feedback_banner_holder,
+                        )
 
-                            # Peak-End Rule: Dynamic Live Status Confirmation Banner Card
-                            feedback_banner = ui.element('div').classes('w-full')
-
-                            # Manual ID Input / Barcode Scanner Gun Field
-                            with ui.row().classes('w-full items-center justify-between mb-1 flex-wrap gap-1'):
-                                ui.label('Rapid ID / Barcode Input:').classes('text-xs font-bold text-slate-500 uppercase tracking-wider')
-                                # Tesler's Law: 1-click self-test chip for presenter convenience
-                                with ui.row().classes('items-center gap-1 cursor-pointer hover:opacity-80').on('click', lambda: set_self_input()):
-                                    ui.icon('flash_on', size='14px').classes('text-amber-500')
-                                    ui.label(f'Fill My ID: {student_id}').classes('text-[11px] font-bold text-indigo-600')
-
-                            with ui.row().classes('w-full items-center gap-2 flex-wrap sm:flex-nowrap'):
-                                manual_input = ui.input(placeholder='Scan barcode gun or type Student ID (e.g. 2024-001)...') \
-                                    .classes('flex-1 text-base min-h-[44px]').props('id="attendance-manual-input" rounded outlined dense autofocus')
-                                year_select = ui.select(["1st Year", "2nd Year", "3rd Year", "4th Year", "Graduate"], value="1st Year") \
-                                    .classes('w-full sm:w-28 sm:shrink-0').props('rounded outlined dense options-dense')
-
-                                def set_self_input():
-                                    manual_input.value = student_id
-
-                                async def handle_manual_scan():
-                                    val = manual_input.value.strip()
-                                    if not val:
-                                        ui.notify('Please enter or scan a Student ID', type='warning')
-                                        return
-                                    res = await mongo_db.record_attendance_scan(
-                                        identifier=val,
-                                        purpose=active_purpose['val'],
-                                        name=user_name if val == student_id else "",
-                                        program=user_program if val == student_id else "",
-                                        year_level=year_select.value
-                                    )
-                                    manual_input.value = ""
-                                    feedback_banner.clear()
-
-                                    if res.get('success'):
-                                        act = res.get('action')
-                                        entry = res.get('entry') or {}
-                                        msg = res.get('message', 'Attendance logged.')
-                                        ui.notify(msg, type='positive' if act == 'checkin' else 'info', duration=4000)
-
-                                        # Peak-End Rule: Visual Delight Banner
-                                        with feedback_banner:
-                                            is_checkin = act == 'checkin'
-                                            banner_bg = 'bg-emerald-50 border-emerald-200 text-emerald-900' if is_checkin else 'bg-blue-50 border-blue-200 text-blue-900'
-                                            banner_icon = 'verified' if is_checkin else 'waving_hand'
-                                            with ui.card().classes(f'w-full p-3.5 rounded-2xl border mb-3 flex flex-row items-center justify-between gap-3 {banner_bg} shadow-sm animate-fade-in'):
-                                                with ui.row().classes('items-center gap-3 min-w-0 flex-1'):
-                                                    ui.icon(banner_icon, size='24px').classes('text-emerald-600' if is_checkin else 'text-blue-600')
-                                                    with ui.column().classes('gap-0 min-w-0 flex-1'):
-                                                        ui.label(entry.get('name', val)).classes('text-sm font-black truncate')
-                                                        ui.label(f"{entry.get('program', 'BSCS')} ({entry.get('year_level', '1st Year')}) • {entry.get('purpose', 'Study')} • {entry.get('time_in_str', '')}").classes('text-xs opacity-80')
-                                                with ui.element('div').classes('px-2.5 py-1 rounded-xl text-xs font-black uppercase bg-white/80 shadow-xs shrink-0'):
-                                                    ui.label("CHECKED IN" if is_checkin else f"OUT ({res.get('duration_minutes', 0)}m)")
-
-                                        await refresh_stats()
-                                        await refresh_live_feed()
-                                        await refresh_table()
-                                    else:
-                                        ui.notify(res.get('error', 'Check-in failed'), type='negative')
-
-                                manual_input.on('keydown.enter', handle_manual_scan)
-                                ui.button('Check In / Out', icon='login', on_click=handle_manual_scan) \
-                                    .props('id="attendance-submit-btn" unelevated rounded-xl color=slate-900 text-color=white size=md font-bold') \
-                                    .classes('w-full sm:w-auto min-h-[44px] px-5 shrink-0 shadow-sm hover:brightness-110 active:scale-95 transition-all')
-
-                    # Right: Live Entrance Doorway Feed (5 cols)
+                    # Right: Live Doorway Feed
                     with ui.column().classes('lg:col-span-5 gap-4'):
                         with ui.card().classes('w-full p-5 rounded-3xl bg-white border border-slate-200 shadow-sm'):
                             with ui.row().classes('w-full items-center justify-between mb-3'):
@@ -267,37 +154,13 @@ async def attendance_page():
 
                             live_feed_container = ui.column().classes('w-full gap-2.5 max-h-[460px] overflow-y-auto')
 
-                            async def refresh_live_feed():
-                                live_feed_container.clear()
+                            async def refresh_doorway_stream():
                                 recent_logs = await mongo_db.get_today_attendance_logs(limit=10)
-                                with live_feed_container:
-                                    if not recent_logs:
-                                        ui.label('No visitor check-ins recorded yet today.').classes('text-xs text-slate-400 italic text-center py-6 w-full')
-                                        return
-                                    for r in recent_logs:
-                                        is_in = r.get('status') == 'Checked In'
-                                        status_bg = 'bg-emerald-50 text-emerald-700 border-emerald-200' if is_in else 'bg-slate-100 text-slate-700 border-slate-200'
-                                        with ui.row().classes('w-full p-3 rounded-2xl border border-slate-100 hover:border-slate-200 bg-slate-50/60 items-center justify-between gap-2'):
-                                            with ui.row().classes('items-center gap-3 min-w-0 flex-1'):
-                                                ui.avatar(icon='person', color='indigo-100', text_color='indigo-800', size='34px') \
-                                                    .classes('shrink-0 border border-indigo-200')
-                                                with ui.column().classes('gap-0 min-w-0 flex-1'):
-                                                    ui.label(r.get('name', 'Student')).classes('text-xs font-bold text-slate-900 truncate')
-                                                    with ui.row().classes('items-center gap-1.5 flex-wrap'):
-                                                        ui.label(r.get('program', 'BSCS')).classes('text-[10px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded')
-                                                        ui.label(f"ID: {r.get('student_id')}").classes('text-[10px] text-slate-400 font-mono')
-                                                    ui.label(r.get('purpose', 'Study')).classes('text-[10px] text-slate-500 italic truncate')
+                                render_live_doorway_feed(live_feed_container, recent_logs)
 
-                                            with ui.column().classes('items-end shrink-0 gap-1'):
-                                                with ui.element('div').classes(f'px-2 py-0.5 rounded-full text-[10px] font-black uppercase border {status_bg}'):
-                                                    ui.label(r.get('status'))
-                                                ui.label(r.get('time_in_str', '')).classes('text-[10px] font-mono text-slate-400')
+                            await refresh_doorway_stream()
 
-                            await refresh_live_feed()
-
-            # =================================================================
-            # TAB 2: DAILY VISITOR LOG SUMMARY (Chapter 2 Section 2.2 Report / FM-LIBS-009)
-            # =================================================================
+            # TAB 2: Daily Visitor Log Summary (FM-LIBS-009)
             with ui.tab_panel(tab_logs).classes('p-0'):
                 with ui.card().classes('w-full p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm'):
                     with ui.row().classes('w-full items-center justify-between gap-3 mb-4 flex-wrap'):
@@ -307,166 +170,42 @@ async def attendance_page():
                                 ui.element('span').classes('text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-009'
                             ui.label('Formal institutional visitor log record replacing pen-and-paper entrance sheets (NEMSU Tandag Campus)').classes('text-xs text-slate-500')
 
-                        # Filters Bar
                         with ui.row().classes('items-center gap-2 flex-wrap'):
-                            prog_select = ui.select(PROGRAM_OPTIONS, value='All', label='Program') \
-                                .props('dense rounded outlined options-dense').classes('w-28 text-xs')
-                            date_input = ui.input(value=filter_state['date'], label='Date (YYYY-MM-DD)') \
-                                .props('dense rounded outlined').classes('w-36 text-xs')
+                            prog_select = ui.select(PROGRAM_OPTIONS, value='All', label='Program').props('dense rounded outlined options-dense').classes('w-28 text-xs')
+                            date_input = ui.input(value=filter_state['date'], label='Date (YYYY-MM-DD)').props('dense rounded outlined').classes('w-36 text-xs')
 
                     table_container = ui.element('div').classes('w-full overflow-x-auto')
 
-                    async def refresh_table():
-                        table_container.clear()
+                    async def refresh_table_data():
                         chosen_date = date_input.value.strip() or None
                         chosen_prog = prog_select.value if prog_select.value != 'All' else None
                         logs = await mongo_db.get_filtered_attendance_logs(chosen_date, chosen_prog, limit=200)
+                        render_visitor_logs_table(table_container, logs, date_input.value, prog_select.value)
 
-                        rows = []
-                        for l in logs:
-                            rows.append({
-                                'id': l.get('id'),
-                                'date': l.get('date_str'),
-                                'time_in': l.get('time_in_str', '-'),
-                                'time_out': l.get('time_out_str', '-'),
-                                'student_id': l.get('student_id', '-'),
-                                'name': l.get('name', 'Visitor'),
-                                'year_level': l.get('year_level', '1st Year'),
-                                'program': l.get('program', 'GENERAL'),
-                                'purpose': l.get('purpose', 'Study'),
-                                'purpose_attained': l.get('purpose_attained', 'Yes'),
-                                'duration': f"{l.get('duration_minutes', 0)} mins" if l.get('status') == 'Checked Out' else 'Active',
-                                'status': l.get('status', 'Checked In')
-                            })
+                    prog_select.on('update:model-value', refresh_table_data)
+                    date_input.on('keydown.enter', refresh_table_data)
+                    await refresh_table_data()
 
-                        columns = [
-                            {'name': 'time_in', 'label': 'Time-In', 'field': 'time_in', 'align': 'left', 'sortable': True},
-                            {'name': 'time_out', 'label': 'Time-Out', 'field': 'time_out', 'align': 'left', 'sortable': True},
-                            {'name': 'student_id', 'label': 'Student ID', 'field': 'student_id', 'align': 'left', 'sortable': True},
-                            {'name': 'name', 'label': 'Student Name', 'field': 'name', 'align': 'left', 'sortable': True},
-                            {'name': 'year_level', 'label': 'Year', 'field': 'year_level', 'align': 'center'},
-                            {'name': 'program', 'label': 'Major / Program', 'field': 'program', 'align': 'center', 'sortable': True},
-                            {'name': 'purpose', 'label': 'Purpose of Visit', 'field': 'purpose', 'align': 'left'},
-                            {'name': 'purpose_attained', 'label': 'Attained', 'field': 'purpose_attained', 'align': 'center'},
-                            {'name': 'duration', 'label': 'Duration', 'field': 'duration', 'align': 'center'},
-                            {'name': 'status', 'label': 'Status', 'field': 'status', 'align': 'center', 'sortable': True},
-                        ]
-
-                        with table_container:
-                            if not rows:
-                                ui.label('No visitor logs found matching the filter criteria.').classes('text-xs text-slate-400 italic p-6 text-center w-full')
-                            else:
-                                # 1. Desktop High-Density Table (>=768px)
-                                with ui.element('div').classes('hidden md:block w-full overflow-x-auto'):
-                                    ui.table(columns=columns, rows=rows, row_key='id').classes('w-full mobile-card-table').props('flat bordered')
-
-                                # 2. Mobile Touch-Optimized Cards (<768px)
-                                with ui.element('div').classes('block md:hidden w-full flex flex-col gap-3'):
-                                    for r in rows:
-                                        is_in = r.get('status') == 'Checked In'
-                                        status_bg = 'bg-emerald-50 text-emerald-700 border-emerald-200' if is_in else 'bg-slate-100 text-slate-700 border-slate-200'
-                                        status_icon = 'login' if is_in else 'logout'
-
-                                        with ui.card().classes('w-full p-4 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-indigo-200 transition-all'):
-                                            with ui.row().classes('w-full items-start justify-between gap-2 mb-2'):
-                                                with ui.row().classes('items-center gap-2.5 min-w-0 flex-1'):
-                                                    ui.avatar(icon='person', color='indigo-50', text_color='indigo-700', size='36px') \
-                                                        .classes('border border-indigo-100 shrink-0 font-bold')
-                                                    with ui.column().classes('gap-0 min-w-0 flex-1'):
-                                                        ui.label(r.get('name', 'Student')).classes('text-sm font-black text-slate-900 truncate')
-                                                        with ui.row().classes('items-center gap-1.5 flex-wrap'):
-                                                            ui.label(r.get('program', 'GENERAL')).classes('text-[10px] font-black text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-200')
-                                                            ui.label(r.get('year_level', '')).classes('text-[10px] text-slate-500 font-medium')
-                                                with ui.element('div').classes(f'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border shrink-0 flex items-center gap-1 {status_bg}'):
-                                                    ui.icon(status_icon, size='12px')
-                                                    ui.label(r.get('status'))
-
-                                            with ui.row().classes('w-full items-center justify-between text-[11px] text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100 mb-2 flex-wrap gap-1'):
-                                                with ui.row().classes('items-center gap-1'):
-                                                    ui.icon('badge', size='14px').classes('text-slate-400')
-                                                    ui.label(f"ID: {r.get('student_id')}").classes('font-mono font-bold text-slate-700')
-                                                with ui.row().classes('items-center gap-1'):
-                                                    ui.icon('flag', size='14px').classes('text-slate-400')
-                                                    ui.label(r.get('purpose', 'Study')).classes('italic text-slate-700 truncate max-w-[150px]')
-
-                                            with ui.row().classes('w-full items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-100'):
-                                                with ui.row().classes('items-center gap-2'):
-                                                    ui.label(f"In: {r.get('time_in')}").classes('font-mono font-medium text-slate-600')
-                                                    if r.get('time_out') != '-':
-                                                        ui.label(f"Out: {r.get('time_out')}").classes('font-mono font-medium text-slate-500')
-                                                ui.label(r.get('duration')).classes('font-bold text-indigo-600')
-
-                        # Export CSV helper (FM-LIBS-009 Format)
-                        with ui.row().classes('w-full justify-between items-center mt-4 flex-wrap gap-2'):
-                            ui.label('Institutional Reference: FM-LIBS-009 (College of Arts & Sciences / General Entrance Log)').classes('text-xs text-slate-400 font-medium')
-                            def export_csv():
-                                if not rows:
-                                    ui.notify("No data to export", type='warning')
-                                    return
-                                csv_content = mongo_db.export_fmlibs009_csv(logs, date_input.value, prog_select.value)
-                                b64 = base64.b64encode(csv_content.encode('utf-8')).decode('utf-8')
-                                filename = f"NEMSU_FM-LIBS-009_Visitor_Log_{date_input.value or 'All'}.csv"
-                                ui.run_javascript(f'''
-                                    const a = document.createElement('a');
-                                    a.href = 'data:text/csv;base64,{b64}';
-                                    a.download = '{filename}';
-                                    a.click();
-                                ''')
-                                ui.notify("FM-LIBS-009 Visitor Log exported successfully!", type='positive')
-
-                            ui.button('Export FM-LIBS-009 Logbook (CSV)', icon='download', on_click=export_csv) \
-                                .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-xs')
-
-                    prog_select.on('update:model-value', refresh_table)
-                    date_input.on('keydown.enter', refresh_table)
-                    await refresh_table()
-
-            # =================================================================
-            # TAB 3: MY DIGITAL LIBRARY QR PASS
-            # =================================================================
+            # TAB 3: Digital Pass
             with ui.tab_panel(tab_pass).classes('p-0'):
-                with ui.column().classes('w-full items-center justify-center py-4'):
-                    # Official Digital ID Card Container
-                    with ui.card().classes(
-                        'w-full max-w-md p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 shadow-xl '
-                        'relative overflow-hidden text-center'
-                    ):
-                        # University Top Banner Accent
-                        with ui.element('div').classes('w-full h-3 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-800 absolute top-0 left-0'):
-                            pass
+                async def handle_self_checkin():
+                    res = await mongo_db.record_attendance_scan(
+                        identifier=student_id,
+                        name=user_name,
+                        program=user_program,
+                        purpose=active_purpose['val'],
+                        user_id=user_id
+                    )
+                    if res.get('success'):
+                        ui.notify(res.get('message'), type='positive', duration=4000)
+                        await refresh_stats()
+                    else:
+                        ui.notify(res.get('error'), type='negative')
 
-                        with ui.column().classes('w-full items-center gap-1 mb-4 mt-2'):
-                            ui.label('NORTH EASTERN MINDANAO STATE UNIVERSITY').classes('text-[10px] sm:text-xs font-black text-slate-800 tracking-wider')
-                            ui.label('Tandag Campus • Libre-Library Digital Pass').classes('text-[10px] text-slate-400 font-bold uppercase tracking-widest')
-
-                        # QR Code Display
-                        qr_data_url = generate_qr_base64(student_id)
-                        with ui.element('div').classes('p-3.5 bg-slate-50 border-2 border-dashed border-indigo-200 rounded-3xl inline-block mx-auto mb-4 shadow-sm'):
-                            ui.image(qr_data_url).classes('w-44 h-44 sm:w-52 sm:h-52 rounded-2xl mx-auto')
-
-                        # Student Details
-                        ui.label(user_name).classes('text-xl sm:text-2xl font-black text-slate-900')
-                        with ui.row().classes('items-center justify-center gap-2 mb-2'):
-                            ui.label(student_id).classes('text-xs font-mono font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded')
-                            ui.label(user_program).classes('text-xs font-black text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200')
-                            ui.label(user_role.upper()).classes('text-[10px] font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full')
-
-                        ui.label('Scan this QR code at the library entrance door scanner for automatic contactless check-in/out.').classes('text-xs text-slate-500 mb-4 px-4 leading-relaxed')
-
-                        with ui.row().classes('w-full justify-center gap-3'):
-                            async def handle_self_checkin():
-                                res = await mongo_db.record_attendance_scan(
-                                    identifier=student_id,
-                                    name=user_name,
-                                    program=user_program,
-                                    purpose=active_purpose['val'],
-                                    user_id=user_id
-                                )
-                                if res.get('success'):
-                                    ui.notify(res.get('message'), type='positive', duration=4000)
-                                    await refresh_stats()
-                                else:
-                                    ui.notify(res.get('error'), type='negative')
-
-                            ui.button('Self Check-In / Out Now', icon='how_to_reg', on_click=handle_self_checkin) \
-                                .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-md')
+                render_digital_pass_card(
+                    user_name=user_name,
+                    student_id=student_id,
+                    user_program=user_program,
+                    user_role=user_role,
+                    on_self_checkin=handle_self_checkin,
+                )
