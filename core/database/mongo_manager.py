@@ -227,11 +227,23 @@ class MongoManager:
         status: str = "reading",
         cfi: Optional[str] = None,
         client_timestamp: Optional[float] = None,
-        progress_percent: Optional[float] = None
+        progress_percent: Optional[float] = None,
+        theme: Optional[str] = None,
+        font_size: Optional[int] = None,
+        font_family: Optional[str] = None,
+        line_height: Optional[float] = None
     ) -> bool:
         return await self.progress.save_reading_progress(
-            user_id, book_id, current_page, total_pages, status, cfi=cfi, client_timestamp=client_timestamp, progress_percent=progress_percent
+            user_id, book_id, current_page, total_pages, status,
+            cfi=cfi, client_timestamp=client_timestamp, progress_percent=progress_percent,
+            theme=theme, font_size=font_size, font_family=font_family, line_height=line_height
         )
+
+    async def get_reader_preferences(self, user_id: str) -> Dict[str, Any]:
+        return await self.progress.get_reader_preferences(user_id)
+
+    async def save_reader_preferences(self, user_id: str, updates: Dict[str, Any]) -> bool:
+        return await self.progress.save_reader_preferences(user_id, updates)
 
     async def get_reading_progress(self, user_id: str, book_id: str) -> Optional[Dict[str, Any]]:
         return await self.progress.get_reading_progress(user_id, book_id)

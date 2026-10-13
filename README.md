@@ -8,7 +8,7 @@
 ![MongoDB](https://img.shields.io/badge/MongoDB-Motor%20Async-green?logo=mongodb&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector%20Store-orange?logo=databricks&logoColor=white)
 ![Local LLM](https://img.shields.io/badge/Local%20LLM-Llama%203.2%203B-purple?logo=meta&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-78%2F78%20Passing-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-81%2F81%20Passing-brightgreen?logo=pytest&logoColor=white)
 ![Academic](https://img.shields.io/badge/NEMSU-BSCS--4C%20Capstone-crimson)
 ![Rating](https://img.shields.io/badge/System%20Evaluation-9.8%2F10%20(Outstanding)-gold)
 ![License](https://img.shields.io/badge/License-MIT-blue)
@@ -30,7 +30,7 @@
 
 Engineered to resolve the traditional operational bottlenecks of university libraries—such as doorway congestion during peak hours, manual paper logbooks, unmonitored reading progress, and uncoordinated textbook acquisition—Libre-Library fuses classic catalog management with modern on-premise cognitive technologies:
 
-1. **Multi-Format Academic Ingestion & Reading**: High-fidelity support for PDF, EPUB, DOCX, PPTX, TXT, and Markdown with dedicated in-browser viewers (PDF.js, EPUB.js), persistent CFI & page progress synchronization, and contextual next-action workflows.
+1. **Multi-Format Academic Ingestion & Reading**: High-fidelity support for PDF, EPUB, DOCX, PPTX, TXT, and Markdown with dedicated in-browser viewers (PDF.js, EPUB.js), 4-theme appearance engine (Light, Warm Sepia, Slate Dark, OLED Black), persistent CFI & page progress synchronization, and contextual next-action workflows.
 2. **Autonomous Local AI Companion (TARS)**: 100% private, on-premise Retrieval-Augmented Generation (RAG) powered by ChromaDB vector embeddings and local Llama 3.2 3B weights—ensuring zero student data leakage to external cloud APIs (complying with RA 10173 Philippine Data Privacy Act).
 3. **High-Speed QR Entrance Attendance**: Sub-second camera QR/barcode scanner logging daily foot traffic, dwell duration, visit purposes, year levels, and institutional FM-LIBS-009 compliant CSV exports.
 4. **Faculty Curriculum Requisition Portal**: Syllabus-driven textbook acquisition system with a visual 5-stage procurement lifecycle stepper and institutional FM-LIBS-002 Book Request Form generation.
@@ -53,7 +53,7 @@ Developed strictly in accordance with the Software Requirement Specifications (S
 | **S.O. 3: Doorway Traffic Automation** | Eliminate morning logbook queues and hallway doorway congestion. | Camera QR scanner (`html5-qrcode`), barcode gun support, sub-second check-in/out toggling ($< 0.2\text{s}$), visit purpose tagging, and institutional FM-LIBS-009 CSV export. |
 | **S.O. 4: Faculty Requisitions** | Bridge disconnect between syllabus coursebook needs and library purchasing. | Faculty coursebook acquisition portal with procurement tracking, institutional FM-LIBS-002 export, and department utilization heatmaps. |
 | **S.O. 5: Institutional Analytics** | Provide quantitative empirical evidence for university quality assurance. | Departmental utilization heatmaps, hourly foot-traffic distribution (8 AM – 5 PM), and visitor purpose categorization. |
-| **S.O. 6: Evaluation & Benchmarks** | Ensure production-grade reliability, security, and cognitive ease of use. | 4-tier Role-Based Access Control (`student`, `faculty`, `librarian`, `admin`), JWT authentication, and 78/78 automated tests passing in 15.8s. |
+| **S.O. 6: Evaluation & Benchmarks** | Ensure production-grade reliability, security, and cognitive ease of use. | 4-tier Role-Based Access Control (`student`, `faculty`, `librarian`, `admin`), JWT authentication, and 81/81 automated tests passing in 16.4s. |
 
 ### Chapter 2: Functional Requirements (FR) Traceability
 
@@ -380,13 +380,13 @@ python -m unittest discover tests/
 
 **Output:**
 ```plaintext
-Ran 78 tests in 15.751s
+Ran 81 tests in 16.380s
 
-OK (78/78 passing, 0 failures, 0 errors)
+OK (81/81 passing, 0 failures, 0 errors)
 ```
 
 ### Key Test Coverage Modules
-* **Reading Progress & CFI (`test_reading_progress.py`)**: Tests `/api/progress/sync` high-throughput synchronization, EPUB CFI persistence, and client-timestamp reconciliation.
+* **Reading Progress & Appearance Preferences (`test_reading_progress.py`)**: Tests `/api/progress/sync` high-throughput synchronization, EPUB CFI persistence, cross-device theme/font preference persistence, and BookReader theme palette adaptation.
 * **Dev Reset & Admin Bootstrap (`test_reset_and_bootstrap.py`)**: Validates development data reset, verified JSON backup generation, catalog preservation, and admin bootstrapping CLI.
 * **Institutional Forms FM-LIBS-009 & FM-LIBS-002 (`test_srs_modules.py`)**: Validates institutional CSV headers, date/program filtering, and quotation escaping.
 * **ObjectId Serialization Resilience (`test_admin.py`)**: Verifies BSON ObjectId handling across NiceGUI orjson wrappers to prevent UI runtime crashes.

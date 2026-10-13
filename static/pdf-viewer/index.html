@@ -4,7 +4,90 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Libre PDF Reader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg-body: #525659;
+            --bg-viewport: #525659;
+            --text-body: #0f172a;
+            --bg-toolbar: #ffffff;
+            --border-color: #e2e8f0;
+            --bg-controls: #ffffff;
+            --text-controls: #334155;
+            --btn-bg: #ffffff;
+            --btn-border: #cbd5e1;
+            --btn-hover: #f1f5f9;
+            --accent-color: #4f46e5;
+            --canvas-filter: none;
+            --page-bg: #ffffff;
+        }
+
+        body[data-theme="light"] {
+            --bg-body: #525659;
+            --bg-viewport: #525659;
+            --text-body: #0f172a;
+            --bg-toolbar: #ffffff;
+            --border-color: #e2e8f0;
+            --bg-controls: #ffffff;
+            --text-controls: #334155;
+            --btn-bg: #ffffff;
+            --btn-border: #cbd5e1;
+            --btn-hover: #f1f5f9;
+            --accent-color: #4f46e5;
+            --canvas-filter: none;
+            --page-bg: #ffffff;
+        }
+
+        body[data-theme="sepia"] {
+            --bg-body: #e8deca;
+            --bg-viewport: #e8deca;
+            --text-body: #3d2f1d;
+            --bg-toolbar: #ede4cf;
+            --border-color: #d9c8af;
+            --bg-controls: #ede4cf;
+            --text-controls: #4a3b2a;
+            --btn-bg: #f9f3e5;
+            --btn-border: #d4c5ae;
+            --btn-hover: #e5dac4;
+            --accent-color: #b45309;
+            --canvas-filter: sepia(0.38) contrast(0.95);
+            --page-bg: #fbf0d9;
+        }
+
+        body[data-theme="dark"] {
+            --bg-body: #0f172a;
+            --bg-viewport: #0f172a;
+            --text-body: #e2e8f0;
+            --bg-toolbar: #1e293b;
+            --border-color: #334155;
+            --bg-controls: #1e293b;
+            --text-controls: #cbd5e1;
+            --btn-bg: #334155;
+            --btn-border: #475569;
+            --btn-hover: #475569;
+            --accent-color: #818cf8;
+            --canvas-filter: invert(0.88) hue-rotate(180deg) contrast(0.92);
+            --page-bg: #1e293b;
+        }
+
+        body[data-theme="black"] {
+            --bg-body: #000000;
+            --bg-viewport: #000000;
+            --text-body: #d1d5db;
+            --bg-toolbar: #09090b;
+            --border-color: #27272a;
+            --bg-controls: #09090b;
+            --text-controls: #9ca3af;
+            --btn-bg: #18181b;
+            --btn-border: #27272a;
+            --btn-hover: #27272a;
+            --accent-color: #a855f7;
+            --canvas-filter: invert(1) contrast(1.05);
+            --page-bg: #09090b;
+        }
+
         * { box-sizing: border-box; }
         body { 
             margin: 0; 
@@ -13,26 +96,28 @@
             display: flex; 
             flex-direction: column; 
             overflow: hidden; 
-            background-color: #525659; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            background-color: var(--bg-body); 
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            transition: background-color 0.2s ease, color 0.2s ease;
         }
         
         /* Top Navigation & Toolbars */
         #toolbar { 
             height: 52px; 
-            background: #ffffff; 
-            border-bottom: 1px solid #e2e8f0; 
+            background: var(--bg-toolbar); 
+            border-bottom: 1px solid var(--border-color); 
             display: flex; 
             align-items: center; 
             justify-content: space-between; 
             padding: 0 16px;
             z-index: 100;
             box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            transition: all 0.2s ease;
         }
 
         #toolbar-brand { 
             font-weight: 700; 
-            color: #4f46e5; 
+            color: var(--accent-color); 
             font-size: 14px; 
             display: flex; 
             align-items: center; 
@@ -47,19 +132,20 @@
 
         .tool-btn { 
             padding: 6px 12px; 
-            border: 1px solid #cbd5e1; 
-            background: #ffffff; 
+            border: 1px solid var(--btn-border); 
+            background: var(--btn-bg); 
             border-radius: 8px; 
             cursor: pointer; 
             font-size: 12px; 
             font-weight: 600;
-            color: #334155; 
+            color: var(--text-controls); 
             transition: all 0.15s ease;
             display: inline-flex;
             align-items: center;
             justify-content: center;
+            gap: 4px;
         }
-        .tool-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+        .tool-btn:hover { background: var(--btn-hover); }
         .tool-btn:active { transform: scale(0.98); }
 
         .page-input-wrapper {
@@ -67,23 +153,24 @@
             align-items: center;
             gap: 4px;
             font-size: 12px;
-            color: #475569;
+            color: var(--text-controls);
             font-weight: 600;
         }
 
         #page-num-input {
             width: 48px;
             padding: 4px 6px;
-            border: 1px solid #cbd5e1;
-            border-radius: 6px;
-            text-align: center;
-            font-size: 12px;
+            border: 1px solid var(--btn-border); 
+            background: var(--btn-bg);
+            color: var(--text-controls);
+            border-radius: 6px; 
+            text-align: center; 
+            font-size: 12px; 
             font-weight: 700;
-            color: #1e293b;
         }
         #page-num-input:focus {
-            outline: 2px solid #6366f1;
-            border-color: transparent;
+            outline: 2px solid var(--accent-color); 
+            border-color: transparent; 
         }
 
         /* Document Scroll Viewport */
@@ -96,6 +183,8 @@
             position: relative; 
             padding: 24px 16px;
             scroll-behavior: smooth;
+            background-color: var(--bg-viewport);
+            transition: background-color 0.2s ease;
         }
 
         #pdf-viewer {
@@ -107,50 +196,55 @@
         }
 
         .page-container {
-            background-color: #ffffff;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            background-color: var(--page-bg);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.15), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
             position: relative;
             border-radius: 4px;
             transition: box-shadow 0.2s ease;
+            overflow: hidden;
         }
 
         .page-container.active-page {
-            box-shadow: 0 0 0 2px #6366f1, 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 0 0 2px var(--accent-color), 0 10px 15px -3px rgba(0, 0, 0, 0.2);
         }
 
         canvas {
             display: block;
             border-radius: 4px;
+            filter: var(--canvas-filter);
+            transition: filter 0.2s ease;
         }
 
         .page-loading-skeleton {
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #94a3b8;
+            color: var(--text-controls);
+            opacity: 0.6;
             font-size: 13px;
             font-weight: 600;
-            background: #f8fafc;
-            border: 1px dashed #cbd5e1;
+            background: var(--bg-toolbar);
+            border: 1px dashed var(--border-color);
             border-radius: 4px;
         }
 
         /* Bottom Controls */
         #controls { 
             height: 48px; 
-            background: #ffffff; 
-            border-top: 1px solid #e2e8f0; 
+            background: var(--bg-controls); 
+            border-top: 1px solid var(--border-color); 
             display: flex; 
             align-items: center; 
             justify-content: center; 
             gap: 16px; 
             z-index: 10; 
+            transition: all 0.2s ease;
         }
         
         #page-info { 
             font-size: 12px; 
             font-weight: 600; 
-            color: #475569; 
+            color: var(--text-controls); 
             font-family: monospace; 
         }
 
@@ -199,12 +293,64 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* Appearance Popover Dropdown */
+        #appearance-popover {
+            position: absolute;
+            top: 56px;
+            right: 16px;
+            width: 280px;
+            background: var(--bg-toolbar);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            padding: 16px;
+            display: none;
+            flex-direction: column;
+            gap: 14px;
+            z-index: 200;
+            backdrop-filter: blur(8px);
+        }
+
+        .popover-section-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-controls);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+        }
+
+        .theme-swatches {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+        }
+
+        .theme-swatch {
+            height: 38px;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            transition: all 0.15s ease;
+        }
+        .theme-swatch:hover { transform: translateY(-1px); }
+        .theme-swatch.active { border-color: var(--accent-color); box-shadow: 0 0 0 2px var(--accent-color); }
+        .swatch-light { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; }
+        .swatch-sepia { background: #f4ecd8; color: #3d2f1d; border: 1px solid #d4c5ae; }
+        .swatch-dark { background: #1e293b; color: #e2e8f0; }
+        .swatch-black { background: #000000; color: #ffffff; border: 1px solid #333; }
     </style>
     
     <!-- PDF.js from Cloudflare CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
-<body>
+<body data-theme="light">
     <div id="toolbar">
         <div id="toolbar-brand">
             <span>📄</span> Libre PDF Reader
@@ -219,9 +365,37 @@
         </div>
 
         <div class="toolbar-group">
-            <button id="zoom-out" class="tool-btn" title="Zoom Out">－</button>
+            <button id="zoom-out" class="tool-btn" title="Zoom Out ( - )">－</button>
             <button id="zoom-reset" class="tool-btn" title="Fit Width">Fit</button>
-            <button id="zoom-in" class="tool-btn" title="Zoom In">＋</button>
+            <button id="zoom-in" class="tool-btn" title="Zoom In ( + )">＋</button>
+
+            <button id="appearance-toggle" class="tool-btn" title="Appearance Settings (Press T to cycle theme)">
+                <span style="font-size: 13px; font-weight: 700;">Aa</span>
+                <span id="theme-label" style="font-size: 11px; opacity: 0.85;">Light</span>
+            </button>
+            <button id="fullscreen-btn" class="tool-btn" title="Toggle Fullscreen (F)">⛶</button>
+        </div>
+    </div>
+
+    <!-- Appearance Settings Popover Modal -->
+    <div id="appearance-popover">
+        <div>
+            <div class="popover-section-label">Reading Theme</div>
+            <div class="theme-swatches">
+                <button class="theme-swatch swatch-light active" data-theme="light" title="Default Light">Light</button>
+                <button class="theme-swatch swatch-sepia" data-theme="sepia" title="Warm Sepia">Sepia</button>
+                <button class="theme-swatch swatch-dark" data-theme="dark" title="Slate Dark">Dark</button>
+                <button class="theme-swatch swatch-black" data-theme="black" title="OLED Black">Black</button>
+            </div>
+        </div>
+
+        <div>
+            <div class="popover-section-label">Magnification</div>
+            <div style="display: flex; gap: 6px;">
+                <button id="pop-zoom-out" class="tool-btn" style="flex: 1;">Zoom Out</button>
+                <button id="pop-zoom-fit" class="tool-btn" style="flex: 1;">Fit Width</button>
+                <button id="pop-zoom-in" class="tool-btn" style="flex: 1;">Zoom In</button>
+            </div>
         </div>
     </div>
 
@@ -244,7 +418,6 @@
 
     <script>
         (function() {
-            // Configure PDF.js Worker
             if (typeof pdfjsLib !== 'undefined') {
                 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
             }
@@ -263,6 +436,10 @@
             const pageNumInput = document.getElementById('page-num-input');
             const pageCountDisplay = document.getElementById('page-count-display');
             const loaderDiv = document.getElementById('initial-loader');
+            const appearanceBtn = document.getElementById('appearance-toggle');
+            const appearancePopover = document.getElementById('appearance-popover');
+            const themeLabel = document.getElementById('theme-label');
+            const fullscreenBtn = document.getElementById('fullscreen-btn');
 
             if (!fileUrl) {
                 if (loaderDiv) loaderDiv.style.display = 'none';
@@ -282,44 +459,70 @@
             let saveDebounceTimer = null;
             let pendingSavePayload = null;
 
-            console.log(`[PDF Engine] Initializing: bookId=${bookId}, initialPage=${initialPage}, totalPages=${totalPages}`);
+            // Appearance State from localStorage
+            let currentTheme = localStorage.getItem('libre_reader_theme') || 'light';
+
+            function applyTheme(theme, save = true) {
+                currentTheme = theme;
+                document.body.setAttribute('data-theme', theme);
+                if (themeLabel) {
+                    themeLabel.innerText = theme.charAt(0).toUpperCase() + theme.slice(1);
+                }
+
+                // Update swatch active classes
+                document.querySelectorAll('.theme-swatch').forEach(btn => {
+                    btn.classList.toggle('active', btn.getAttribute('data-theme') === theme);
+                });
+
+                if (save) {
+                    localStorage.setItem('libre_reader_theme', theme);
+                    notifyParentAppearance();
+                }
+            }
+
+            function cycleTheme() {
+                const themes = ['light', 'sepia', 'dark', 'black'];
+                const nextIdx = (themes.indexOf(currentTheme) + 1) % themes.length;
+                applyTheme(themes[nextIdx], true);
+            }
+
+            function notifyParentAppearance() {
+                try {
+                    window.parent.postMessage({
+                        type: 'LIBRE_READER_THEME_CHANGE',
+                        theme: currentTheme
+                    }, '*');
+                } catch(e) {}
+            }
+
+            // Set initial theme
+            applyTheme(currentTheme, false);
 
             function calculatePercentage(page, total) {
                 if (total <= 1) return 100.0;
-                // Transition formula: Page 1 = 0%, Page total = 100%
                 return Math.max(0.0, Math.min(100.0, Math.round(((page - 1) / (total - 1)) * 1000) / 10));
             }
 
             function updateHud(page, total) {
                 const pct = calculatePercentage(page, total);
                 if (pageInfoSpan) {
-                    pageInfoSpan.innerText = `Page ${page} of ${total} (${Math.round(pct)}%)`;
+                    pageInfoSpan.innerText = `Page ${page} of ${total} (${pct}%)`;
                 }
-                if (pageNumInput && document.activeElement !== pageNumInput) {
+                if (pageNumInput) {
                     pageNumInput.value = page;
                 }
                 if (pageCountDisplay) {
                     pageCountDisplay.innerText = `of ${total}`;
                 }
 
-                // Synchronize parent frame HUD and application state
                 try {
                     window.parent.postMessage({
                         type: 'LIBRE_READER_PROGRESS',
                         book_id: bookId,
                         current_page: page,
                         total_pages: total,
-                        percentage: Math.round(pct),
-                        format: 'pdf'
-                    }, '*');
-
-                    window.parent.postMessage({
-                        type: 'READER_PROGRESS_UPDATE',
-                        book_id: bookId,
-                        current_page: page,
-                        total_pages: total,
-                        percentage: Math.round(pct),
-                        format: 'pdf'
+                        percentage: pct,
+                        theme: currentTheme
                     }, '*');
                 } catch (err) {
                     console.warn("[PDF Engine] postMessage to parent failed:", err);
@@ -327,7 +530,10 @@
             }
 
             function scheduleSave(payload) {
-                pendingSavePayload = payload;
+                pendingSavePayload = {
+                    ...payload,
+                    theme: currentTheme
+                };
                 if (saveDebounceTimer) {
                     clearTimeout(saveDebounceTimer);
                 }
@@ -345,9 +551,7 @@
                         body: JSON.stringify(payload)
                     });
                     if (response.ok) {
-                        console.log(`[PDF Engine] Persisted progress: page ${payload.current_page}/${payload.total_pages} (${payload.progress_percent}%)`);
-                    } else {
-                        console.warn(`[PDF Engine] Persist returned HTTP ${response.status}`);
+                        console.log(`[PDF Engine] Persisted progress: page ${payload.current_page}/${payload.total_pages} (${payload.progress_percent}%) theme=${payload.theme}`);
                     }
                 } catch (err) {
                     console.error("[PDF Engine] Network error during progress save:", err);
@@ -380,7 +584,6 @@
                 if (newPage < 1 || newPage > totalPages) return;
                 currentPage = newPage;
 
-                // Highlight active page border
                 pageContainers.forEach((c, idx) => {
                     if (idx + 1 === newPage) {
                         c.classList.add('active-page');
@@ -391,7 +594,6 @@
 
                 updateHud(newPage, totalPages);
 
-                // Initial restoration guard: update display but suppress saving to avoid overwriting with initial coordinate
                 if (isRestoring) {
                     console.log(`[PDF Engine] Restoration verified at page ${newPage}/${totalPages}`);
                     isRestoring = false;
@@ -423,7 +625,6 @@
                 }
             }
 
-            // Bi-directional parent-window navigation commands
             window.addEventListener('message', function(event) {
                 if (!event.data) return;
                 if (event.data.type === 'READER_NAVIGATE') {
@@ -432,24 +633,72 @@
                     } else if (event.data.action === 'prev') {
                         scrollToPage(currentPage - 1);
                     }
+                } else if (event.data.type === 'SET_THEME') {
+                    if (event.data.theme) applyTheme(event.data.theme, true);
                 }
             });
+
+            // Popover event handling
+            if (appearanceBtn && appearancePopover) {
+                appearanceBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const isVisible = appearancePopover.style.display === 'flex';
+                    appearancePopover.style.display = isVisible ? 'none' : 'flex';
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (appearancePopover && !appearancePopover.contains(e.target) && e.target !== appearanceBtn) {
+                        appearancePopover.style.display = 'none';
+                    }
+                });
+            }
+
+            document.querySelectorAll('.theme-swatch').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    applyTheme(btn.getAttribute('data-theme'), true);
+                });
+            });
+
+            // Fullscreen Button
+            if (fullscreenBtn) {
+                fullscreenBtn.addEventListener('click', () => {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                    } else {
+                        document.exitFullscreen().catch(() => {});
+                    }
+                });
+            }
 
             // Keyboard navigation
             document.addEventListener('keydown', function(e) {
                 if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
-                if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+                if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ' || e.key === 'k') {
                     scrollToPage(currentPage + 1);
                     e.preventDefault();
-                } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                } else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'j') {
                     scrollToPage(currentPage - 1);
                     e.preventDefault();
-                } else if (e.key === 'Home') {
-                    scrollToPage(1);
+                } else if (e.key === 't' || e.key === 'T') {
+                    cycleTheme();
                     e.preventDefault();
-                } else if (e.key === 'End') {
-                    scrollToPage(totalPages);
+                } else if (e.key === '+' || e.key === '=') {
+                    currentScale = Math.min(3.0, currentScale + 0.25);
+                    rebuildLayout();
                     e.preventDefault();
+                } else if (e.key === '-' || e.key === '_') {
+                    currentScale = Math.max(0.6, currentScale - 0.25);
+                    rebuildLayout();
+                    e.preventDefault();
+                } else if (e.key === 'f' || e.key === 'F') {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                    } else {
+                        document.exitFullscreen().catch(() => {});
+                    }
+                    e.preventDefault();
+                } else if (e.key === 'Escape') {
+                    if (appearancePopover) appearancePopover.style.display = 'none';
                 }
             });
 
@@ -459,7 +708,7 @@
             if (nextBtn) nextBtn.addEventListener('click', () => scrollToPage(currentPage + 1));
             if (prevBtn) prevBtn.addEventListener('click', () => scrollToPage(currentPage - 1));
 
-            // Direct page jump input
+            // Page number direct jump
             if (pageNumInput) {
                 pageNumInput.addEventListener('keydown', function(e) {
                     if (e.key === 'Enter') {
@@ -472,17 +721,25 @@
             }
 
             // Zoom handlers
-            document.getElementById('zoom-in').addEventListener('click', () => {
+            function handleZoomIn() {
                 currentScale = Math.min(3.0, currentScale + 0.25);
                 rebuildLayout();
-            });
-            document.getElementById('zoom-out').addEventListener('click', () => {
+            }
+            function handleZoomOut() {
                 currentScale = Math.max(0.6, currentScale - 0.25);
                 rebuildLayout();
-            });
-            document.getElementById('zoom-reset').addEventListener('click', () => {
-                fitToWidth();
-            });
+            }
+
+            document.getElementById('zoom-in').addEventListener('click', handleZoomIn);
+            document.getElementById('zoom-out').addEventListener('click', handleZoomOut);
+            document.getElementById('zoom-reset').addEventListener('click', fitToWidth);
+
+            const popZoomIn = document.getElementById('pop-zoom-in');
+            const popZoomOut = document.getElementById('pop-zoom-out');
+            const popZoomFit = document.getElementById('pop-zoom-fit');
+            if (popZoomIn) popZoomIn.addEventListener('click', handleZoomIn);
+            if (popZoomOut) popZoomOut.addEventListener('click', handleZoomOut);
+            if (popZoomFit) popZoomFit.addEventListener('click', fitToWidth);
 
             function fitToWidth() {
                 if (!pageContainers.length || !pdfDoc) return;
@@ -529,7 +786,6 @@
                 }
             }
 
-            // IntersectionObserver for lazy on-demand page rendering & active page detection
             let renderObserver = null;
             let scrollDebounceTimer = null;
 
@@ -552,7 +808,6 @@
                     renderObserver.observe(container);
                 });
 
-                // Scroll listener for authoritative active-page coordinate resolution
                 viewerContainer.addEventListener('scroll', () => {
                     if (scrollDebounceTimer) cancelAnimationFrame(scrollDebounceTimer);
                     scrollDebounceTimer = requestAnimationFrame(checkActivePageFromScroll);
@@ -614,13 +869,10 @@
                     }
 
                     setupObservers();
-
-                    // Restore position
                     scrollToPage(currentPage, false);
                 });
             }
 
-            // Load Document
             const loadingTask = pdfjsLib.getDocument({
                 url: fileUrl,
                 cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
@@ -645,7 +897,6 @@
 
                 rebuildLayout();
 
-                // Initial position restoration
                 if (initialPage > 1) {
                     console.log(`[PDF Engine] Restoring saved page coordinate: ${initialPage}`);
                     setTimeout(() => {

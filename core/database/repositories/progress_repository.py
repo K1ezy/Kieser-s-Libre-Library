@@ -22,7 +22,11 @@ class ProgressRepository(BaseRepository):
         status: str = "reading",
         cfi: Optional[str] = None,
         client_timestamp: Optional[float] = None,
-        progress_percent: Optional[float] = None
+        progress_percent: Optional[float] = None,
+        theme: Optional[str] = None,
+        font_size: Optional[int] = None,
+        font_family: Optional[str] = None,
+        line_height: Optional[float] = None
     ) -> bool:
         """Saves persistent reading position, percentage, CFI, and state for a user."""
         if self.db is None or not user_id or not book_id: return False
@@ -50,6 +54,27 @@ class ProgressRepository(BaseRepository):
                 doc["cfi"] = cfi
             elif existing and existing.get("cfi"):
                 doc["cfi"] = existing["cfi"]
+
+            # Persistent reader appearance preferences
+            if theme:
+                doc["theme"] = theme
+            elif existing and existing.get("theme"):
+                doc["theme"] = existing["theme"]
+
+            if font_size is not None:
+                doc["font_size"] = font_size
+            elif existing and existing.get("font_size") is not None:
+                doc["font_size"] = existing["font_size"]
+
+            if font_family:
+                doc["font_family"] = font_family
+            elif existing and existing.get("font_family"):
+                doc["font_family"] = existing["font_family"]
+
+            if line_height is not None:
+                doc["line_height"] = line_height
+            elif existing and existing.get("line_height") is not None:
+                doc["line_height"] = existing["line_height"]
 
             await self.db['reading_progress'].update_one(
                 {"user_id": user_id, "book_id": book_id},
@@ -121,4 +146,64 @@ class ProgressRepository(BaseRepository):
             return True
         except Exception as e:
             logger.error(f"Save System Settings Error: {e}")
+            return False
+
+    async def get_reader_preferences(self, user_id: str) -> Dict[str, Any]:
+        """Fetches cross-device reader appearance preferences for a user."""
+        default_prefs = {
+            "theme": "light",
+            "font_size": 16,
+            "font_family": "sans",
+            "line_height": 1.65
+        }
+        if self.db is None or not user_id:
+            return default_prefs
+        try:
+            doc = await self.db['system_settings'].find_one({"key": f"reader_prefs_{user_id}"})
+            if doc and "preferences" in doc:
+                merged = dict(default_prefs)
+                merged.update(doc["preferences"])
+                return merged
+            return default_prefs
+        except Exception as e:
+            logger.error(f"Get Reader Preferences Error: {e}")
+            return default_prefs
+
+    async def save_reader_preferences(self, user_id: str, updates: Dict[str, Any]) -> bool:
+        """Saves cross-device reader appearance preferences for a user."""
+        if self.db is None or not user_id:
+            return False
+        try:
+            clean_updates = {}
+            if "theme" in updates and str(updates["theme"]).lower() in ("light", "sepia", "dark", "black"):
+                clean_updates["theme"] = str(updates["theme"]).lower()
+            if "font_size" in updates and updates["font_size"] is not None:
+                try:
+                    clean_updates["font_size"] = max(10, min(40, int(updates["font_size"])))
+                except (ValueError, TypeError):
+                    pass
+            if "font_family" in updates and str(updates["font_family"]).lower() in ("sans", "serif", "dyslexic"):
+                clean_updates["font_family"] = str(updates["font_family"]).lower()
+            if "line_height" in updates and updates["line_height"] is not None:
+                try:
+                    clean_updates["line_height"] = max(1.0, min(3.0, round(float(updates["line_height"]), 2)))
+                except (ValueError, TypeError):
+                    pass
+
+            if not clean_updates:
+                return True
+
+            await self.db['system_settings'].update_one(
+                {"key": f"reader_prefs_{user_id}"},
+                {
+                    "$set": {
+                        "preferences": clean_updates,
+                        "updated_at": time.time()
+                    }
+                },
+                upsert=True
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Save Reader Preferences Error: {e}")
             return False

@@ -171,6 +171,62 @@ class TestReadingProgressAPI(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["progress_percent"], 13.8)
         self.assertIsNone(data["cfi"])
 
+    @patch('core.external_api.progress_router.mongo_db')
+    async def test_api_sync_with_appearance_preferences(self, mock_mongo):
+        mock_mongo.save_reading_progress = AsyncMock(return_value=True)
+        mock_mongo.update_book_reading_status = AsyncMock(return_value=True)
+        mock_mongo.save_reader_preferences = AsyncMock(return_value=True)
+
+        res = await self.client.post("/api/progress/sync", json={
+            "book_id": "epub_book_99",
+            "user_id": "student_reader",
+            "current_page": 40,
+            "total_pages": 200,
+            "progress_percent": 20.0,
+            "theme": "sepia",
+            "font_size": 18,
+            "font_family": "serif",
+            "line_height": 1.65
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["status"], "ok")
+        self.assertEqual(data["theme"], "sepia")
+        self.assertEqual(data["font_size"], 18)
+        self.assertEqual(data["font_family"], "serif")
+        self.assertEqual(data["line_height"], 1.65)
+        mock_mongo.save_reader_preferences.assert_called_once_with(
+            "student_reader",
+            {"theme": "sepia", "font_size": 18, "font_family": "serif", "line_height": 1.65}
+        )
+
+    @patch('core.external_api.progress_router.mongo_db')
+    async def test_api_preferences_get_and_post(self, mock_mongo):
+        mock_mongo.get_reader_preferences = AsyncMock(return_value={
+            "theme": "dark", "font_size": 20, "font_family": "dyslexic", "line_height": 1.95
+        })
+        mock_mongo.save_reader_preferences = AsyncMock(return_value=True)
+
+        # GET preferences
+        res_get = await self.client.get("/api/progress/preferences/user_test")
+        self.assertEqual(res_get.status_code, 200)
+        data_get = res_get.json()
+        self.assertEqual(data_get["preferences"]["theme"], "dark")
+        self.assertEqual(data_get["preferences"]["font_size"], 20)
+
+        # POST preferences
+        res_post = await self.client.post("/api/progress/preferences/user_test", json={
+            "theme": "black",
+            "font_size": 22,
+            "font_family": "sans",
+            "line_height": 1.4
+        })
+        self.assertEqual(res_post.status_code, 200)
+        data_post = res_post.json()
+        self.assertEqual(data_post["status"], "ok")
+        self.assertEqual(data_post["preferences"]["theme"], "black")
+        mock_mongo.save_reader_preferences.assert_called_once()
+
 
 class TestBookReaderComponent(unittest.TestCase):
     def test_reader_initialization(self):
@@ -179,13 +235,42 @@ class TestBookReaderComponent(unittest.TestCase):
             current_page=15,
             total_pages=250,
             user_id="user_test",
-            saved_cfi="epubcfi(/6/14!/4:0)"
+            saved_cfi="epubcfi(/6/14!/4:0)",
+            theme="sepia",
+            font_size=18,
+            font_family="serif",
+            line_height=1.95
         )
         self.assertEqual(reader.book_id, "108")
         self.assertEqual(reader.current_page, 15)
         self.assertEqual(reader.total_pages, 250)
         self.assertEqual(reader.user_id, "user_test")
         self.assertEqual(reader.saved_cfi, "epubcfi(/6/14!/4:0)")
+        self.assertEqual(reader.theme, "sepia")
+        self.assertEqual(reader.font_size, 18)
+        self.assertEqual(reader.font_family, "serif")
+        self.assertEqual(reader.line_height, 1.95)
+
+    def test_reader_theme_palette_helpers(self):
+        reader_light = BookReader(book_id="108", theme="light")
+        cls, bg = reader_light.get_prose_theme_classes()
+        self.assertIn("bg-white", cls)
+        self.assertEqual(bg, "#f8fafc")
+
+        reader_sepia = BookReader(book_id="108", theme="sepia")
+        cls, bg = reader_sepia.get_prose_theme_classes()
+        self.assertIn("bg-[#fbf0d9]", cls)
+        self.assertEqual(bg, "#f4ecd8")
+
+        reader_dark = BookReader(book_id="108", theme="dark")
+        cls, bg = reader_dark.get_prose_theme_classes()
+        self.assertIn("bg-[#1e293b]", cls)
+        self.assertEqual(bg, "#0f172a")
+
+        reader_black = BookReader(book_id="108", theme="black")
+        cls, bg = reader_black.get_prose_theme_classes()
+        self.assertIn("bg-[#09090b]", cls)
+        self.assertEqual(bg, "#000000")
 
     def test_reader_invalid_id_rejection(self):
         reader = BookReader(book_id="../../etc/passwd")
@@ -211,3 +296,4 @@ class TestBookReaderComponent(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+

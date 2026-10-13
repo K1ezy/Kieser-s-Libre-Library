@@ -4,45 +4,257 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Libre EPUB Reader</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Inter:wght@400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&display=swap" rel="stylesheet">
     <style>
-        body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; background-color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        :root {
+            --bg-body: #ffffff;
+            --text-body: #0f172a;
+            --bg-toolbar: #ffffff;
+            --border-color: #e2e8f0;
+            --bg-controls: #f8fafc;
+            --text-controls: #334155;
+            --btn-bg: #ffffff;
+            --btn-border: #cbd5e1;
+            --btn-hover: #f1f5f9;
+            --accent-color: #4f46e5;
+        }
+
+        body[data-theme="sepia"] {
+            --bg-body: #f4ecd8;
+            --text-body: #3d2f1d;
+            --bg-toolbar: #ede4cf;
+            --border-color: #d9c8af;
+            --bg-controls: #e8deca;
+            --text-controls: #4a3b2a;
+            --btn-bg: #f9f3e5;
+            --btn-border: #d4c5ae;
+            --btn-hover: #e5dac4;
+            --accent-color: #b45309;
+        }
+
+        body[data-theme="dark"] {
+            --bg-body: #0f172a;
+            --text-body: #e2e8f0;
+            --bg-toolbar: #1e293b;
+            --border-color: #334155;
+            --bg-controls: #1e293b;
+            --text-controls: #cbd5e1;
+            --btn-bg: #334155;
+            --btn-border: #475569;
+            --btn-hover: #475569;
+            --accent-color: #818cf8;
+        }
+
+        body[data-theme="black"] {
+            --bg-body: #000000;
+            --text-body: #d1d5db;
+            --bg-toolbar: #09090b;
+            --border-color: #27272a;
+            --bg-controls: #09090b;
+            --text-controls: #9ca3af;
+            --btn-bg: #18181b;
+            --btn-border: #27272a;
+            --btn-hover: #27272a;
+            --accent-color: #a855f7;
+        }
+
+        * { box-sizing: border-box; }
+        body { 
+            margin: 0; 
+            padding: 0; 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+            background-color: var(--bg-body); 
+            color: var(--text-body);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
         
-        /* Toolbar for Translation and Controls */
+        /* Top Navigation Toolbar */
         #toolbar { 
             height: 52px; 
-            background: #ffffff; 
-            border-bottom: 1px solid #e2e8f0; 
+            background: var(--bg-toolbar); 
+            border-bottom: 1px solid var(--border-color); 
             display: flex; 
             align-items: center; 
             justify-content: space-between; 
             padding: 0 16px;
             z-index: 100;
+            transition: all 0.2s ease;
         }
 
-        #toolbar-brand { font-weight: 700; color: #4f46e5; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+        #toolbar-brand { 
+            font-weight: 700; 
+            color: var(--accent-color); 
+            font-size: 14px; 
+            display: flex; 
+            align-items: center; 
+            gap: 6px; 
+        }
 
-        #viewer { flex: 1; width: 100%; height: 100%; overflow: hidden; position: relative; }
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tool-btn { 
+            padding: 6px 12px; 
+            border: 1px solid var(--btn-border); 
+            background: var(--btn-bg); 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 12px; 
+            font-weight: 600;
+            color: var(--text-controls); 
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+        }
+        .tool-btn:hover { background: var(--btn-hover); }
+        .tool-btn:active { transform: scale(0.98); }
+
+        #viewer { flex: 1; width: 100%; height: 100%; overflow: hidden; position: relative; background: var(--bg-body); }
         
-        #controls { height: 48px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; gap: 16px; z-index: 10; }
+        #controls { 
+            height: 48px; 
+            background: var(--bg-controls); 
+            border-top: 1px solid var(--border-color); 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 16px; 
+            z-index: 10; 
+            transition: all 0.2s ease;
+        }
         
-        #page-info { font-size: 12px; font-weight: 600; color: #475569; font-family: monospace; }
+        #page-info { font-size: 12px; font-weight: 600; color: var(--text-controls); font-family: monospace; }
 
         .nav-btn { 
             padding: 6px 16px; 
-            border: 1px solid #cbd5e1; 
-            background: #ffffff; 
+            border: 1px solid var(--btn-border); 
+            background: var(--btn-bg); 
             border-radius: 8px; 
             cursor: pointer; 
             font-size: 13px; 
             font-weight: 600;
-            color: #334155; 
+            color: var(--text-controls); 
             transition: all 0.15s ease;
         }
-        .nav-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+        .nav-btn:hover { background: var(--btn-hover); }
         .nav-btn:active { transform: scale(0.98); }
         
         #error-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #991b1b; background-color: #fee2e2; border: 1px solid #fecaca; padding: 18px; border-radius: 12px; display: none; z-index: 100; font-size: 13px; max-width: 80%; text-align: center; }
         
+        /* Appearance Popover Dropdown */
+        #appearance-popover {
+            position: absolute;
+            top: 56px;
+            right: 16px;
+            width: 290px;
+            background: var(--bg-toolbar);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            padding: 16px;
+            display: none;
+            flex-direction: column;
+            gap: 14px;
+            z-index: 200;
+            backdrop-filter: blur(8px);
+        }
+
+        .popover-section-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-controls);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 6px;
+        }
+
+        .theme-swatches {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+        }
+
+        .theme-swatch {
+            height: 38px;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: 700;
+            transition: all 0.15s ease;
+        }
+        .theme-swatch:hover { transform: translateY(-1px); }
+        .theme-swatch.active { border-color: var(--accent-color); box-shadow: 0 0 0 2px var(--accent-color); }
+        .swatch-light { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; }
+        .swatch-sepia { background: #f4ecd8; color: #3d2f1d; border: 1px solid #d4c5ae; }
+        .swatch-dark { background: #1e293b; color: #e2e8f0; }
+        .swatch-black { background: #000000; color: #ffffff; border: 1px solid #333; }
+
+        .font-size-control {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--bg-controls);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 4px 8px;
+        }
+
+        .stepper-btn {
+            background: var(--btn-bg);
+            border: 1px solid var(--btn-border);
+            color: var(--text-controls);
+            border-radius: 6px;
+            width: 32px;
+            height: 28px;
+            font-weight: 700;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .stepper-btn:hover { background: var(--btn-hover); }
+
+        .font-family-group, .line-height-group {
+            display: flex;
+            gap: 6px;
+        }
+
+        .pill-btn {
+            flex: 1;
+            padding: 6px 4px;
+            font-size: 11px;
+            font-weight: 600;
+            background: var(--btn-bg);
+            border: 1px solid var(--btn-border);
+            color: var(--text-controls);
+            border-radius: 6px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.15s ease;
+        }
+        .pill-btn:hover { background: var(--btn-hover); }
+        .pill-btn.active {
+            background: var(--accent-color);
+            color: #ffffff;
+            border-color: var(--accent-color);
+        }
+
         /* Google Translate branding overrides */
         .goog-logo-link { display:none !important; } 
         .goog-te-gadget { color: transparent !important; }
@@ -52,12 +264,61 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
 </head>
-<body>
+<body data-theme="light">
     <div id="toolbar">
         <div id="toolbar-brand">
             <span>📖</span> Libre Reader
         </div>
-        <div id="google_translate_element"></div>
+
+        <div class="toolbar-group">
+            <div id="google_translate_element"></div>
+            
+            <button id="appearance-toggle" class="tool-btn" title="Display & Appearance (Press T to cycle theme)">
+                <span style="font-size: 13px; font-weight: 700;">Aa</span>
+                <span id="theme-label" style="font-size: 11px; opacity: 0.85;">Light</span>
+            </button>
+            <button id="fullscreen-btn" class="tool-btn" title="Toggle Fullscreen (F)">⛶</button>
+        </div>
+    </div>
+
+    <!-- Appearance Settings Popover Modal -->
+    <div id="appearance-popover">
+        <div>
+            <div class="popover-section-label">Reading Theme</div>
+            <div class="theme-swatches">
+                <button class="theme-swatch swatch-light active" data-theme="light" title="Default Light">Light</button>
+                <button class="theme-swatch swatch-sepia" data-theme="sepia" title="Warm Sepia">Sepia</button>
+                <button class="theme-swatch swatch-dark" data-theme="dark" title="Slate Dark">Dark</button>
+                <button class="theme-swatch swatch-black" data-theme="black" title="OLED Black">Black</button>
+            </div>
+        </div>
+
+        <div>
+            <div class="popover-section-label">Text Size</div>
+            <div class="font-size-control">
+                <button id="font-dec-btn" class="stepper-btn" title="Decrease Font ( - )">A-</button>
+                <span id="font-size-val" style="font-size: 12px; font-weight: 700; font-family: monospace;">16px</span>
+                <button id="font-inc-btn" class="stepper-btn" title="Increase Font ( + )">A+</button>
+            </div>
+        </div>
+
+        <div>
+            <div class="popover-section-label">Font Family</div>
+            <div class="font-family-group">
+                <button class="pill-btn active" data-font="sans" style="font-family: 'Inter', sans-serif;">Sans</button>
+                <button class="pill-btn" data-font="serif" style="font-family: 'Merriweather', serif;">Serif</button>
+                <button class="pill-btn" data-font="dyslexic" style="font-family: 'Atkinson Hyperlegible', sans-serif;">Dyslexic</button>
+            </div>
+        </div>
+
+        <div>
+            <div class="popover-section-label">Line Spacing</div>
+            <div class="line-height-group">
+                <button class="pill-btn" data-height="1.4">Compact</button>
+                <button class="pill-btn active" data-height="1.65">Normal</button>
+                <button class="pill-btn" data-height="1.95">Relaxed</button>
+            </div>
+        </div>
     </div>
 
     <div id="error-msg"></div>
@@ -96,6 +357,11 @@
 
             const errorDiv = document.getElementById('error-msg');
             const pageInfoSpan = document.getElementById('page-info');
+            const appearanceBtn = document.getElementById('appearance-toggle');
+            const appearancePopover = document.getElementById('appearance-popover');
+            const themeLabel = document.getElementById('theme-label');
+            const fontSizeVal = document.getElementById('font-size-val');
+            const fullscreenBtn = document.getElementById('fullscreen-btn');
 
             if (!bookUrl) {
                 errorDiv.style.display = 'block';
@@ -114,12 +380,144 @@
             let saveDebounceTimer = null;
             let pendingSavePayload = null;
 
+            // Appearance State from localStorage
+            let currentTheme = localStorage.getItem('libre_reader_theme') || 'light';
+            let currentFontSize = parseInt(localStorage.getItem('libre_reader_font_size') || '16', 10);
+            let currentFontFamily = localStorage.getItem('libre_reader_font_family') || 'sans';
+            let currentLineHeight = parseFloat(localStorage.getItem('libre_reader_line_height') || '1.65');
+
+            const fontFamilies = {
+                sans: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                serif: "'Merriweather', Georgia, 'Times New Roman', serif",
+                dyslexic: "'Atkinson Hyperlegible', -apple-system, sans-serif"
+            };
+
+            function getThemeCss(theme) {
+                switch(theme) {
+                    case 'sepia':
+                        return { body: { background: '#f4ecd8 !important', color: '#3d2f1d !important' }, 'p, div, span, li': { color: '#3d2f1d !important' } };
+                    case 'dark':
+                        return { body: { background: '#0f172a !important', color: '#e2e8f0 !important' }, 'p, div, span, li': { color: '#e2e8f0 !important' } };
+                    case 'black':
+                        return { body: { background: '#000000 !important', color: '#d1d5db !important' }, 'p, div, span, li': { color: '#d1d5db !important' } };
+                    default:
+                        return { body: { background: '#ffffff !important', color: '#0f172a !important' }, 'p, div, span, li': { color: '#0f172a !important' } };
+                }
+            }
+
+            function applyTheme(theme, save = true) {
+                currentTheme = theme;
+                document.body.setAttribute('data-theme', theme);
+                if (themeLabel) {
+                    themeLabel.innerText = theme.charAt(0).toUpperCase() + theme.slice(1);
+                }
+
+                // Update swatch active classes
+                document.querySelectorAll('.theme-swatch').forEach(btn => {
+                    btn.classList.toggle('active', btn.getAttribute('data-theme') === theme);
+                });
+
+                if (rendition) {
+                    try {
+                        rendition.themes.select(theme);
+                    } catch(e) {
+                        console.warn("[EPUB Engine] Error selecting theme in rendition:", e);
+                    }
+                }
+
+                if (save) {
+                    localStorage.setItem('libre_reader_theme', theme);
+                    notifyParentAppearance();
+                }
+            }
+
+            function applyFontSize(size, save = true) {
+                currentFontSize = Math.max(12, Math.min(32, size));
+                if (fontSizeVal) fontSizeVal.innerText = `${currentFontSize}px`;
+
+                if (rendition) {
+                    try {
+                        rendition.themes.fontSize(`${currentFontSize}px`);
+                    } catch(e) {
+                        console.warn("[EPUB Engine] Error setting font size in rendition:", e);
+                    }
+                }
+
+                if (save) {
+                    localStorage.setItem('libre_reader_font_size', currentFontSize);
+                    notifyParentAppearance();
+                }
+            }
+
+            function applyFontFamily(fontKey, save = true) {
+                currentFontFamily = fontKey;
+                document.querySelectorAll('.font-family-group .pill-btn').forEach(btn => {
+                    btn.classList.toggle('active', btn.getAttribute('data-font') === fontKey);
+                });
+
+                const fontVal = fontFamilies[fontKey] || fontFamilies.sans;
+                if (rendition) {
+                    try {
+                        rendition.themes.font(fontVal);
+                    } catch(e) {
+                        console.warn("[EPUB Engine] Error applying font family in rendition:", e);
+                    }
+                }
+
+                if (save) {
+                    localStorage.setItem('libre_reader_font_family', fontKey);
+                    notifyParentAppearance();
+                }
+            }
+
+            function applyLineHeight(height, save = true) {
+                currentLineHeight = height;
+                document.querySelectorAll('.line-height-group .pill-btn').forEach(btn => {
+                    btn.classList.toggle('active', parseFloat(btn.getAttribute('data-height')) === height);
+                });
+
+                if (rendition) {
+                    try {
+                        rendition.themes.override('line-height', `${currentLineHeight} !important`);
+                    } catch(e) {
+                        console.warn("[EPUB Engine] Error applying line height:", e);
+                    }
+                }
+
+                if (save) {
+                    localStorage.setItem('libre_reader_line_height', currentLineHeight);
+                    notifyParentAppearance();
+                }
+            }
+
+            function notifyParentAppearance() {
+                try {
+                    window.parent.postMessage({
+                        type: 'LIBRE_READER_THEME_CHANGE',
+                        theme: currentTheme,
+                        font_size: currentFontSize,
+                        font_family: currentFontFamily,
+                        line_height: currentLineHeight
+                    }, '*');
+                } catch(e) {}
+            }
+
+            function registerThemesInRendition() {
+                if (!rendition) return;
+                ['light', 'sepia', 'dark', 'black'].forEach(t => {
+                    rendition.themes.register(t, getThemeCss(t));
+                });
+                applyTheme(currentTheme, false);
+                applyFontSize(currentFontSize, false);
+                applyFontFamily(currentFontFamily, false);
+                applyLineHeight(currentLineHeight, false);
+            }
+
             function updateHud(page, total, pct, cfi) {
                 if (pageInfoSpan) {
                     pageInfoSpan.innerText = `Page ${page} of ${total} (${pct}%)`;
                 }
 
-                // Synchronize parent frame HUD and application state
                 try {
                     window.parent.postMessage({
                         type: 'LIBRE_READER_PROGRESS',
@@ -127,17 +525,11 @@
                         current_page: page,
                         total_pages: total,
                         percentage: pct,
-                        cfi: cfi
-                    }, '*');
-
-                    // Legacy fallback message
-                    window.parent.postMessage({
-                        type: 'READER_PROGRESS_UPDATE',
-                        book_id: bookId,
-                        current_page: page,
-                        total_pages: total,
-                        percentage: pct,
-                        cfi: cfi
+                        cfi: cfi,
+                        theme: currentTheme,
+                        font_size: currentFontSize,
+                        font_family: currentFontFamily,
+                        line_height: currentLineHeight
                     }, '*');
                 } catch (err) {
                     console.warn("[EPUB Engine] postMessage to parent failed:", err);
@@ -145,7 +537,13 @@
             }
 
             function scheduleSave(payload) {
-                pendingSavePayload = payload;
+                pendingSavePayload = {
+                    ...payload,
+                    theme: currentTheme,
+                    font_size: currentFontSize,
+                    font_family: currentFontFamily,
+                    line_height: currentLineHeight
+                };
                 if (saveDebounceTimer) {
                     clearTimeout(saveDebounceTimer);
                 }
@@ -163,9 +561,7 @@
                         body: JSON.stringify(payload)
                     });
                     if (response.ok) {
-                        console.log(`[EPUB Engine] Persisted progress: page ${payload.current_page}/${payload.total_pages} (${payload.progress_percent}%)`);
-                    } else {
-                        console.warn(`[EPUB Engine] Persist returned HTTP ${response.status}`);
+                        console.log(`[EPUB Engine] Persisted progress: page ${payload.current_page}/${payload.total_pages} (${payload.progress_percent}%) theme=${payload.theme}`);
                     }
                 } catch (err) {
                     console.error("[EPUB Engine] Network error during progress save:", err);
@@ -203,8 +599,107 @@
                     } else if (event.data.action === 'prev') {
                         rendition.prev();
                     }
+                } else if (event.data.type === 'SET_THEME') {
+                    if (event.data.theme) applyTheme(event.data.theme, true);
                 }
             });
+
+            // UI Popover Toggle & Dismissal
+            if (appearanceBtn && appearancePopover) {
+                appearanceBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const isVisible = appearancePopover.style.display === 'flex';
+                    appearancePopover.style.display = isVisible ? 'none' : 'flex';
+                });
+
+                document.addEventListener('click', (e) => {
+                    if (appearancePopover && !appearancePopover.contains(e.target) && e.target !== appearanceBtn) {
+                        appearancePopover.style.display = 'none';
+                    }
+                });
+            }
+
+            // Theme Swatch Listeners
+            document.querySelectorAll('.theme-swatch').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const t = btn.getAttribute('data-theme');
+                    applyTheme(t, true);
+                });
+            });
+
+            // Font Stepper Listeners
+            const fontDecBtn = document.getElementById('font-dec-btn');
+            const fontIncBtn = document.getElementById('font-inc-btn');
+            if (fontDecBtn) fontDecBtn.addEventListener('click', () => applyFontSize(currentFontSize - 1, true));
+            if (fontIncBtn) fontIncBtn.addEventListener('click', () => applyFontSize(currentFontSize + 1, true));
+
+            // Font Family Listeners
+            document.querySelectorAll('.font-family-group .pill-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    applyFontFamily(btn.getAttribute('data-font'), true);
+                });
+            });
+
+            // Line Height Listeners
+            document.querySelectorAll('.line-height-group .pill-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    applyLineHeight(parseFloat(btn.getAttribute('data-height')), true);
+                });
+            });
+
+            // Fullscreen Button
+            if (fullscreenBtn) {
+                fullscreenBtn.addEventListener('click', () => {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                    } else {
+                        document.exitFullscreen().catch(() => {});
+                    }
+                });
+            }
+
+            // Cycle Theme helper
+            function cycleTheme() {
+                const themes = ['light', 'sepia', 'dark', 'black'];
+                const nextIdx = (themes.indexOf(currentTheme) + 1) % themes.length;
+                applyTheme(themes[nextIdx], true);
+            }
+
+            // Keyboard Shortcuts
+            function handleKeyDown(e) {
+                if (e.target && e.target.tagName === 'INPUT') return;
+
+                if (e.key === "ArrowLeft" || e.key === "PageUp" || e.key === "j") {
+                    if (rendition) rendition.prev();
+                    e.preventDefault();
+                } else if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === "k") {
+                    if (rendition) rendition.next();
+                    e.preventDefault();
+                } else if (e.key === "t" || e.key === "T") {
+                    cycleTheme();
+                    e.preventDefault();
+                } else if (e.key === "+" || e.key === "=") {
+                    applyFontSize(currentFontSize + 1, true);
+                    e.preventDefault();
+                } else if (e.key === "-" || e.key === "_") {
+                    applyFontSize(currentFontSize - 1, true);
+                    e.preventDefault();
+                } else if (e.key === "f" || e.key === "F") {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen().catch(() => {});
+                    } else {
+                        document.exitFullscreen().catch(() => {});
+                    }
+                    e.preventDefault();
+                } else if (e.key === "Escape") {
+                    if (appearancePopover) appearancePopover.style.display = 'none';
+                }
+            }
+
+            document.addEventListener("keydown", handleKeyDown);
+
+            // Set initial theme on body before rendering
+            applyTheme(currentTheme, false);
 
             try {
                 book = ePub(bookUrl);
@@ -214,6 +709,8 @@
                     flow: "paginated",
                     manager: "default"
                 });
+
+                registerThemesInRendition();
 
                 // Display immediately at saved CFI, or start of book
                 if (initialCfi) {
@@ -233,7 +730,6 @@
                     locationsReady = true;
                     console.log("[EPUB Engine] Location coordinates generated successfully.");
 
-                    // If no CFI was stored but initialPage > 1, navigate by fraction
                     if (isRestoring && !initialCfi && initialPage > 1 && totalPages > 1) {
                         const targetFraction = Math.max(0, Math.min(1, (initialPage - 1) / (totalPages - 1)));
                         const cfi = book.locations.cfiFromPercentage(targetFraction);
@@ -262,10 +758,8 @@
                     const curPage = Math.max(1, Math.min(totalPages, Math.round(pct * (totalPages - 1)) + 1));
                     const pctInt = Math.round(pct * 100);
 
-                    // Update HUD immediately
                     updateHud(curPage, totalPages, pctInt, curCfi);
 
-                    // Initial restoration event check: synchronize UI but suppress redundant overwrite save
                     if (isRestoring) {
                         console.log(`[EPUB Engine] Restoration verified at page ${curPage}/${totalPages} (${pctInt}%)`);
                         isRestoring = false;
@@ -274,7 +768,6 @@
                         return;
                     }
 
-                    // Avoid duplicate persistence for identical position
                     if (curCfi === lastNotifiedCfi && curPage === lastNotifiedPage) {
                         return;
                     }
@@ -282,7 +775,6 @@
                     lastNotifiedCfi = curCfi;
                     lastNotifiedPage = curPage;
 
-                    // Automatically persist position without manual buttons
                     scheduleSave({
                         book_id: bookId,
                         user_id: userId,
@@ -301,28 +793,9 @@
                 if (nextBtn) nextBtn.addEventListener("click", () => rendition.next());
                 if (prevBtn) prevBtn.addEventListener("click", () => rendition.prev());
 
-                // Keyboard listener on outer document
-                document.addEventListener("keydown", (e) => {
-                    if (e.key === "ArrowLeft" || e.key === "PageUp") {
-                        rendition.prev();
-                        e.preventDefault();
-                    } else if (e.key === "ArrowRight" || e.key === "PageDown") {
-                        rendition.next();
-                        e.preventDefault();
-                    }
-                });
-
-                // Keyboard listener inside EPUB iframe contents
+                // Hook content iframe for keyboard shortcuts
                 rendition.hooks.content.register(function(contents) {
-                    contents.document.addEventListener("keydown", (e) => {
-                        if (e.key === "ArrowLeft" || e.key === "PageUp") {
-                            rendition.prev();
-                            e.preventDefault();
-                        } else if (e.key === "ArrowRight" || e.key === "PageDown") {
-                            rendition.next();
-                            e.preventDefault();
-                        }
-                    });
+                    contents.document.addEventListener("keydown", handleKeyDown);
                 });
 
             } catch (e) {
