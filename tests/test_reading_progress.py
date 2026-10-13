@@ -293,6 +293,13 @@ class TestBookReaderComponent(unittest.TestCase):
         self.assertEqual(epub_reader.file_type, "epub")
         self.assertIn(".epub", epub_reader.file_name.lower())
 
+    def test_reader_finds_witcher_pdf_with_special_characters(self):
+        witcher_reader = BookReader(book_id="The_Complete_Witcher__The_Last___Andrzej_Sapkowski_(1)_ba93")
+        found = witcher_reader.find_content_file()
+        self.assertTrue(found, f"Witcher book should be found, error: {witcher_reader.error_msg}")
+        self.assertEqual(witcher_reader.file_type, "pdf")
+        self.assertIn(".pdf", witcher_reader.file_name.lower())
+
 
 if __name__ == '__main__':
     unittest.main()

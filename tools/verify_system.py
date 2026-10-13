@@ -15,6 +15,7 @@ from core.config import settings
 from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import create_access_token, verify_token
 from core.services.ingestion_service import IngestionService
+from core.utils.security_utils import is_valid_book_id
 
 
 async def run_verification():
@@ -78,14 +79,13 @@ async def run_verification():
     else:
         results["security"].append(("Filesystem Traversal Protection", "FAIL", "Sanitizer leaked directory separators"))
 
-    # E. Book ID Alphanumeric Regex Guard
-    id_regex = re.compile(r"^[a-zA-Z0-9_-]+$")
+    # E. Book ID Security Guard
     bad_ids = ["../book", "book;drop table", "book\x00null", "safe-uuid_123"]
-    regex_pass = not id_regex.match(bad_ids[0]) and not id_regex.match(bad_ids[1]) and not id_regex.match(bad_ids[2]) and id_regex.match(bad_ids[3])
+    regex_pass = not is_valid_book_id(bad_ids[0]) and not is_valid_book_id(bad_ids[1]) and not is_valid_book_id(bad_ids[2]) and is_valid_book_id(bad_ids[3])
     if regex_pass:
-        results["security"].append(("Alphanumeric Book ID Regex", "PASS", "Strict identifier enforcement blocks injection"))
+        results["security"].append(("Book ID Security Guard", "PASS", "Strict identifier enforcement blocks injection"))
     else:
-        results["security"].append(("Alphanumeric Book ID Regex", "FAIL", "ID regex validation failed"))
+        results["security"].append(("Book ID Security Guard", "FAIL", "ID security validation failed"))
 
     # ---------------------------------------------------------
     # 2. PERFORMANCE VALIDATION CHECKS

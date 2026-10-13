@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from core.database.mongo_manager import mongo_db
 from core.ai_engine.llm_engine import tars_engine
+from core.utils.security_utils import is_valid_book_id
 
 logger = logging.getLogger("ANNOTATIONS_ROUTER")
 
@@ -39,7 +40,7 @@ class ExplainPassageRequest(BaseModel):
 async def get_annotations_for_book(book_id: str, user_id: Optional[str] = "guest"):
     """Fetches all highlights and notes created by the user for this book."""
     clean_book = book_id.strip()
-    if not re.match(r'^[a-zA-Z0-9_-]+$', clean_book):
+    if not is_valid_book_id(clean_book):
         raise HTTPException(status_code=400, detail="Invalid book identifier format.")
 
     clean_user = (user_id or "guest").strip()
@@ -57,7 +58,7 @@ async def get_annotations_for_book(book_id: str, user_id: Optional[str] = "guest
 async def create_annotation(payload: CreateAnnotationRequest):
     """Creates and persists a new text highlight or note."""
     clean_book = payload.book_id.strip()
-    if not re.match(r'^[a-zA-Z0-9_-]+$', clean_book):
+    if not is_valid_book_id(clean_book):
         raise HTTPException(status_code=400, detail="Invalid book identifier format.")
 
     clean_user = (payload.user_id or "guest").strip()
@@ -117,7 +118,7 @@ async def delete_annotation(annotation_id: str, user_id: Optional[str] = None):
 async def export_annotations_markdown(book_id: str, user_id: Optional[str] = "guest"):
     """Generates and downloads a clean Markdown study guide of all student notes."""
     clean_book = book_id.strip()
-    if not re.match(r'^[a-zA-Z0-9_-]+$', clean_book):
+    if not is_valid_book_id(clean_book):
         raise HTTPException(status_code=400, detail="Invalid book identifier format.")
 
     clean_user = (user_id or "guest").strip()

@@ -7,6 +7,7 @@ import bcrypt
 import re
 from core.database.mongo_manager import mongo_db
 from core.config import settings
+from core.utils.security_utils import is_valid_book_id
 
 opds_router = APIRouter(prefix="/opds", tags=["OPDS"])
 
@@ -81,7 +82,7 @@ def get_mime_type(file_type: str, url: str) -> str:
 def generate_entry_xml(book: Dict[str, Any], base_url: str) -> str:
     """Generates an Atom/OPDS entry for a single book."""
     raw_id = str(book.get('id', ''))
-    if not re.match(r'^[a-zA-Z0-9_-]+$', raw_id):
+    if not is_valid_book_id(raw_id):
         return ""
 
     b_id = escape(raw_id)

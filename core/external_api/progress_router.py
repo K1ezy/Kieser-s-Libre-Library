@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel, Field
 
 from core.database.mongo_manager import mongo_db
+from core.utils.security_utils import is_valid_book_id
 
 logger = logging.getLogger("PROGRESS_ROUTER")
 
@@ -38,7 +39,7 @@ async def sync_reading_progress(payload: ProgressSyncRequest):
     Called automatically by reader engines (EPUB.js, PDF, DOCX/PPTX scroll trackers).
     """
     book_id = payload.book_id.strip()
-    if not re.match(r'^[a-zA-Z0-9_-]+$', book_id):
+    if not is_valid_book_id(book_id):
         raise HTTPException(status_code=400, detail="Invalid book identifier format.")
 
     user_id = (payload.user_id or "guest").strip()
@@ -129,7 +130,7 @@ async def save_user_reader_preferences(user_id: str, payload: ReaderPreferencesP
 async def get_book_progress(book_id: str, user_id: Optional[str] = "guest"):
     """Fetches saved persistent reading progress for a given book and user."""
     book_id = book_id.strip()
-    if not re.match(r'^[a-zA-Z0-9_-]+$', book_id):
+    if not is_valid_book_id(book_id):
         raise HTTPException(status_code=400, detail="Invalid book identifier format.")
 
     user_id = (user_id or "guest").strip()

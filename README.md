@@ -389,9 +389,9 @@ python -m unittest discover tests/
 
 **Output:**
 ```plaintext
-Ran 94 tests in 16.315s
+Ran 95 tests in 20.126s
 
-OK (94/94 passing, 0 failures, 0 errors)
+OK (95/95 passing, 0 failures, 0 errors)
 ```
 
 ### Key Test Coverage Modules

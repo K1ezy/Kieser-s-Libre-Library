@@ -3,12 +3,13 @@ import re
 from pathlib import Path
 from core.config import settings
 from core.services.ingestion_service import IngestionService
+from core.utils.security_utils import is_valid_book_id, SAFE_BOOK_ID_PATTERN
 
 class TestSecurity(unittest.TestCase):
     """Verifies security controls against path traversal, file manipulation, and privilege escalation."""
 
     def setUp(self):
-        self.id_regex = re.compile(r"^[a-zA-Z0-9_-]+$")
+        self.id_regex = SAFE_BOOK_ID_PATTERN
         self.books_dir = settings.BOOKS_INFO_DIR
 
     def test_book_id_regex_blocks_path_traversal(self):
@@ -21,27 +22,37 @@ class TestSecurity(unittest.TestCase):
             "book_id/subfolder",
             "book;rm -rf /",
             "book`whoami`",
-            "book\x00nullbyte"
+            "book\x00nullbyte",
+            "..",
+            ".",
+            "book/../other",
+            "   ",
+            ""
         ]
         for bad_id in malicious_ids:
-            self.assertIsNone(
-                self.id_regex.match(bad_id),
-                f"Malicious ID '{bad_id}' must be rejected by ID regex."
+            self.assertFalse(
+                is_valid_book_id(bad_id),
+                f"Malicious ID '{bad_id}' must be rejected by ID validator."
             )
 
     def test_book_id_regex_accepts_valid_ids(self):
-        """Valid book IDs containing alphanumerics, underscores, and dashes must pass."""
+        """Valid book IDs containing alphanumerics, underscores, dashes, and catalog formatting must pass."""
         valid_ids = [
             "book_123",
             "Clean-Code-99",
             "python_guide",
             "42",
-            "ABC_def-123_XYZ"
+            "ABC_def-123_XYZ",
+            "The_Complete_Witcher__The_Last___Andrzej_Sapkowski_(1)_ba93",
+            "inventwithpython_3rd_(1)_6c1d",
+            "Moby_Dick;_Or,_The_Whale_by_Herman_Melville_5da7",
+            "The_Little_Prince_Antoine-de-Saint-Exupér-y_e635",
+            "Wuthering-Heights_Emily_Brontë_dfcd"
         ]
         for good_id in valid_ids:
-            self.assertIsNotNone(
-                self.id_regex.match(good_id),
-                f"Valid ID '{good_id}' should be accepted by ID regex."
+            self.assertTrue(
+                is_valid_book_id(good_id),
+                f"Valid ID '{good_id}' should be accepted by ID validator."
             )
 
     def test_path_confinement_under_books_dir(self):

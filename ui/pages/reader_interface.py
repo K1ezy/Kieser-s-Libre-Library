@@ -7,6 +7,7 @@ import logging
 from typing import Optional
 
 from core.config import settings
+from core.utils.security_utils import is_valid_book_id
 
 logger = logging.getLogger("READER_INTERFACE")
 
@@ -50,7 +51,7 @@ class BookReader:
 
     def find_content_file(self) -> bool:
         """Security: Validates identifier and searches for supported format in book folder."""
-        if not re.match(r'^[a-zA-Z0-9_-]+$', self.book_id):
+        if not is_valid_book_id(self.book_id):
             self.error_msg = "Invalid book identifier format."
             return False
 

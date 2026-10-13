@@ -9,6 +9,7 @@ from bson import ObjectId
 
 from core.config import settings
 from core.database.repositories.base_repository import BaseRepository
+from core.utils.security_utils import is_valid_book_id
 
 logger = logging.getLogger("BOOK_REPOSITORY")
 
@@ -190,7 +191,7 @@ class BookRepository(BaseRepository):
             return False
 
         # Security: Prevent path traversal in book_id
-        if not re.match(r'^[a-zA-Z0-9_-]+$', str(book_id)):
+        if not is_valid_book_id(str(book_id)):
             logger.warning(f"Rejected delete_book with suspicious ID: {book_id}")
             return False
 
