@@ -8,7 +8,7 @@
 ![MongoDB](https://img.shields.io/badge/MongoDB-Motor%20Async-green?logo=mongodb&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector%20Store-orange?logo=databricks&logoColor=white)
 ![Local LLM](https://img.shields.io/badge/Local%20LLM-Llama%203.2%203B-purple?logo=meta&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-81%2F81%20Passing-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-94%2F94%20Passing-brightgreen?logo=pytest&logoColor=white)
 ![Academic](https://img.shields.io/badge/NEMSU-BSCS--4C%20Capstone-crimson)
 ![Rating](https://img.shields.io/badge/System%20Evaluation-9.8%2F10%20(Outstanding)-gold)
 ![License](https://img.shields.io/badge/License-MIT-blue)
@@ -31,12 +31,13 @@
 Engineered to resolve the traditional operational bottlenecks of university libraries—such as doorway congestion during peak hours, manual paper logbooks, unmonitored reading progress, and uncoordinated textbook acquisition—Libre-Library fuses classic catalog management with modern on-premise cognitive technologies:
 
 1. **Multi-Format Academic Ingestion & Reading**: High-fidelity support for PDF, EPUB, DOCX, PPTX, TXT, and Markdown with dedicated in-browser viewers (PDF.js, EPUB.js), 4-theme appearance engine (Light, Warm Sepia, Slate Dark, OLED Black), persistent CFI & page progress synchronization, and contextual next-action workflows.
-2. **Autonomous Local AI Companion (TARS)**: 100% private, on-premise Retrieval-Augmented Generation (RAG) powered by ChromaDB vector embeddings and local Llama 3.2 3B weights—ensuring zero student data leakage to external cloud APIs (complying with RA 10173 Philippine Data Privacy Act).
-3. **High-Speed QR Entrance Attendance**: Sub-second camera QR/barcode scanner logging daily foot traffic, dwell duration, visit purposes, year levels, and institutional FM-LIBS-009 compliant CSV exports.
-4. **Faculty Curriculum Requisition Portal**: Syllabus-driven textbook acquisition system with a visual 5-stage procurement lifecycle stepper and institutional FM-LIBS-002 Book Request Form generation.
-5. **Program & Circulation Analytics**: Program-level utilization metrics, hourly doorway heatmaps (8:00 AM – 5:00 PM), and visitor purpose categorization.
-6. **Pedagogical Tools**: 4-mode AI document summarizer and automated 3D interactive flashcards.
-7. **Production Data Governance**: Safe development data reset with automated JSON backups and administrative bootstrapping utilities.
+2. **Interactive Highlighting & Study Notes Drawer**: 4-color pastel highlighters (Yellow, Green, Blue, Pink), inline sticky note composer, citation copy, floating in-reader TARS AI Socratic explainer, and aggregated slide-out study drawer with 1-click Markdown study guide export.
+3. **Autonomous Local AI Companion (TARS)**: 100% private, on-premise Retrieval-Augmented Generation (RAG) powered by ChromaDB vector embeddings and local Llama 3.2 3B weights—ensuring zero student data leakage to external cloud APIs (complying with RA 10173 Philippine Data Privacy Act).
+4. **High-Speed QR Entrance Attendance**: Sub-second camera QR/barcode scanner logging daily foot traffic, dwell duration, visit purposes, year levels, and institutional FM-LIBS-009 compliant CSV exports.
+5. **Faculty Curriculum Requisition Portal**: Syllabus-driven textbook acquisition system with a visual 5-stage procurement lifecycle stepper and institutional FM-LIBS-002 Book Request Form generation.
+6. **Program & Circulation Analytics**: Program-level utilization metrics, hourly doorway heatmaps (8:00 AM – 5:00 PM), and visitor purpose categorization.
+7. **Pedagogical Tools**: 4-mode AI document summarizer and automated 3D interactive flashcards.
+8. **Production Data Governance**: Safe development data reset with automated JSON backups and administrative bootstrapping utilities.
 
 ---
 
@@ -53,19 +54,20 @@ Developed strictly in accordance with the Software Requirement Specifications (S
 | **S.O. 3: Doorway Traffic Automation** | Eliminate morning logbook queues and hallway doorway congestion. | Camera QR scanner (`html5-qrcode`), barcode gun support, sub-second check-in/out toggling ($< 0.2\text{s}$), visit purpose tagging, and institutional FM-LIBS-009 CSV export. |
 | **S.O. 4: Faculty Requisitions** | Bridge disconnect between syllabus coursebook needs and library purchasing. | Faculty coursebook acquisition portal with procurement tracking, institutional FM-LIBS-002 export, and department utilization heatmaps. |
 | **S.O. 5: Institutional Analytics** | Provide quantitative empirical evidence for university quality assurance. | Departmental utilization heatmaps, hourly foot-traffic distribution (8 AM – 5 PM), and visitor purpose categorization. |
-| **S.O. 6: Evaluation & Benchmarks** | Ensure production-grade reliability, security, and cognitive ease of use. | 4-tier Role-Based Access Control (`student`, `faculty`, `librarian`, `admin`), JWT authentication, and 81/81 automated tests passing in 16.4s. |
+| **S.O. 6: Evaluation & Benchmarks** | Ensure production-grade reliability, security, and cognitive ease of use. | 4-tier Role-Based Access Control (`student`, `faculty`, `librarian`, `admin`), JWT authentication, and 94/94 automated tests passing in 16.3s. |
 
 ### Chapter 2: Functional Requirements (FR) Traceability
 
 | Requirement | Description | Route / Component | Status |
 | :--- | :--- | :--- | :---: |
 | **FR 1: Document Ingestion & Reading** | Support PDF, EPUB, DOCX, PPTX, TXT with persistent CFI & page progress synchronization. | [`/upload`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/upload.py), [`/read/{id}`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/reader_interface.py), [`/api/progress`](file:///c:/Users/User/Desktop/Libre-Library/core/external_api/progress_router.py) | **100% Compliant** |
-| **FR 2: OPDS 1.2 Feed** | Standardized Atom XML catalog feed for mobile and e-ink e-readers. | [`/opds`](file:///c:/Users/User/Desktop/Libre-Library/core/external_api/opds_router.py) | **100% Compliant** |
-| **FR 3: QR Attendance System** | Contactless camera scan, dwell tracking, purpose tagging, year levels, and institutional FM-LIBS-009 CSV export. | [`/attendance`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/attendance.py) | **100% Compliant** |
-| **FR 4: Book Requisitions** | Curricular book request portal with FM-LIBS-002 export and 5-stage procurement lifecycle stepper. | [`/requisitions`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/requisitions.py) | **100% Compliant** |
-| **FR 5: Program Analytics** | College heatmaps, hourly congestion chart, and visitor purpose distribution. | [`/analytics`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/analytics.py) | **100% Compliant** |
-| **FR 6: Socratic AI Companion** | Local Llama 3.2 3B RAG, citation chips, 4-mode summarizer, and 3D flashcards. | [`/chat`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/chat.py), [`/summarizer`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/summarizer.py), [`/planner`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/planner.py) | **100% Compliant** |
-| **FR 7: Role-Based Access Control** | 4 tiers (`student`, `faculty`, `librarian`, `admin`) with dynamic UI menus, JWT guards, and Bcrypt. | [`/admin`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/admin.py), [jwt_handler.py](file:///c:/Users/User/Desktop/Libre-Library/core/auth/jwt_handler.py) | **100% Compliant** |
+| **FR 2: Highlighting & Study Notes** | Interactive 4-color highlighters, sticky notes, in-reader TARS AI explainer, and Markdown study guide export. | [`/api/annotations`](file:///c:/Users/User/Desktop/Libre-Library/core/external_api/annotations_router.py), [`epub-viewer`](file:///c:/Users/User/Desktop/Libre-Library/static/epub-viewer/index.html), [`pdf-viewer`](file:///c:/Users/User/Desktop/Libre-Library/static/pdf-viewer/index.html) | **100% Compliant** |
+| **FR 3: OPDS 1.2 Feed** | Standardized Atom XML catalog feed for mobile and e-ink e-readers. | [`/opds`](file:///c:/Users/User/Desktop/Libre-Library/core/external_api/opds_router.py) | **100% Compliant** |
+| **FR 4: QR Attendance System** | Contactless camera scan, dwell tracking, purpose tagging, year levels, and institutional FM-LIBS-009 CSV export. | [`/attendance`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/attendance.py) | **100% Compliant** |
+| **FR 5: Book Requisitions** | Curricular book request portal with FM-LIBS-002 export and 5-stage procurement lifecycle stepper. | [`/requisitions`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/requisitions.py) | **100% Compliant** |
+| **FR 6: Program Analytics** | College heatmaps, hourly congestion chart, and visitor purpose distribution. | [`/analytics`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/analytics.py) | **100% Compliant** |
+| **FR 7: Socratic AI Companion** | Local Llama 3.2 3B RAG, citation chips, 4-mode summarizer, and 3D flashcards. | [`/chat`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/chat.py), [`/summarizer`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/summarizer.py), [`/planner`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/planner.py) | **100% Compliant** |
+| **FR 8: Role-Based Access Control** | 4 tiers (`student`, `faculty`, `librarian`, `admin`) with dynamic UI menus, JWT guards, and Bcrypt. | [`/admin`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/admin.py), [jwt_handler.py](file:///c:/Users/User/Desktop/Libre-Library/core/auth/jwt_handler.py) | **100% Compliant** |
 
 ---
 
@@ -170,6 +172,13 @@ graph TD
 * **Role-Based Navigation**: Dynamic UI menus adapting automatically to `student`, `faculty`, `librarian`, and `admin` permissions.
 * **Safe Dev Data Reset Utility ([`tools/reset_dev_data.py`](file:///c:/Users/User/Desktop/Libre-Library/tools/reset_dev_data.py))**: Creates verified timestamped JSON backups and resets user/chat/operational data while strictly preserving books, ChromaDB vectors, and cover artwork.
 * **Administrator Bootstrap Utility ([`tools/bootstrap_admin.py`](file:///c:/Users/User/Desktop/Libre-Library/tools/bootstrap_admin.py))**: Secure command-line tool to initialize or recover administrator credentials with validation rules.
+
+### 9. 🖍️ Interactive Text Highlighting & Study Notes Engine ([`/api/annotations`](file:///c:/Users/User/Desktop/Libre-Library/core/external_api/annotations_router.py))
+* **Floating Selection Popover**: Triggered automatically on mouse/touch selection offering 4 curated pastel highlighter colors (Yellow `#fef08a`, Green `#bbf7d0`, Blue `#bfdbfe`, Pink `#fbcfe8`), Sticky Note authoring, and Citation Copying.
+* **In-Reader TARS AI Socratic Explainer**: Floating AI card generating a concise 2–3 sentence pedagogical clarification of any selected concept or archaic passage, with 1-click **"Attach as Note"** and **"Continue in TARS Chat"** handoff buttons.
+* **Inline Highlight Detail Popover**: 1-click interaction on existing highlights offering instant color changing, note editing, and deletion.
+* **Aggregated Study Notes Drawer (Press `H`)**: Slide-out right sidebar aggregating all book quotes, chapter/page locations, color filter chips (All, Yellow, Green, Blue, Pink), real-time search, and 1-click jump-to-location.
+* **1-Click Markdown Study Guide Export**: Generates and downloads a clean, beautifully formatted `.md` summary file with metadata headers, timestamps, and quotes categorized with color callout badges.
 
 ---
 
@@ -380,12 +389,13 @@ python -m unittest discover tests/
 
 **Output:**
 ```plaintext
-Ran 81 tests in 16.380s
+Ran 94 tests in 16.315s
 
-OK (81/81 passing, 0 failures, 0 errors)
+OK (94/94 passing, 0 failures, 0 errors)
 ```
 
 ### Key Test Coverage Modules
+* **Interactive Highlighting & Study Notes (`test_annotations.py`)**: Tests CRUD operations on student highlights, compound B-tree index queries, in-reader TARS Socratic explainer, and formatted Markdown study guide generation.
 * **Reading Progress & Appearance Preferences (`test_reading_progress.py`)**: Tests `/api/progress/sync` high-throughput synchronization, EPUB CFI persistence, cross-device theme/font preference persistence, and BookReader theme palette adaptation.
 * **Dev Reset & Admin Bootstrap (`test_reset_and_bootstrap.py`)**: Validates development data reset, verified JSON backup generation, catalog preservation, and admin bootstrapping CLI.
 * **Institutional Forms FM-LIBS-009 & FM-LIBS-002 (`test_srs_modules.py`)**: Validates institutional CSV headers, date/program filtering, and quotation escaping.

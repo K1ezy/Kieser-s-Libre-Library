@@ -6,6 +6,7 @@ from core.database.repositories.progress_repository import ProgressRepository
 from core.database.repositories.user_repository import UserRepository
 from core.database.repositories.attendance_repository import AttendanceRepository
 from core.database.repositories.requisition_repository import RequisitionRepository
+from core.database.repositories.annotation_repository import AnnotationRepository
 
 __all__ = [
     "BaseRepository",
@@ -16,4 +17,5 @@ __all__ = [
     "UserRepository",
     "AttendanceRepository",
     "RequisitionRepository",
+    "AnnotationRepository",
 ]

@@ -48,6 +48,10 @@ app.include_router(opds_router)
 from core.external_api.progress_router import progress_router
 app.include_router(progress_router)
 
+# Register Interactive Text Highlighting & Annotations Engine API
+from core.external_api.annotations_router import annotations_router
+app.include_router(annotations_router)
+
 # --- PAGE IMPORTS ---
 import ui.pages.home as home
 import ui.pages.auth as auth

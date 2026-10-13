@@ -12,6 +12,7 @@ from core.database.repositories import (
     UserRepository,
     AttendanceRepository,
     RequisitionRepository,
+    AnnotationRepository,
 )
 
 logger = logging.getLogger("TARS_DB")
@@ -28,6 +29,7 @@ class MongoManager:
       - users: UserRepository (accounts, authentication, profiles, diagnostics)
       - attendance: AttendanceRepository (QR check-in/out, entrance logs, foot traffic)
       - requisitions: RequisitionRepository (faculty curriculum book requests, tracking)
+      - annotations: AnnotationRepository (highlights, sticky notes, quotes, exports)
     """
 
     def __init__(self):
@@ -44,6 +46,7 @@ class MongoManager:
         self.users = UserRepository()
         self.attendance = AttendanceRepository()
         self.requisitions = RequisitionRepository()
+        self.annotations = AnnotationRepository()
 
     async def initialize(self):
         """Connects to MongoDB, configures optimized query indexes, and binds repositories."""
@@ -60,6 +63,7 @@ class MongoManager:
             self.users.set_db(self.db)
             self.attendance.set_db(self.db)
             self.requisitions.set_db(self.db)
+            self.annotations.set_db(self.db)
 
             # Confirm connection
             await self.client.admin.command('ping')
@@ -94,6 +98,8 @@ class MongoManager:
                 await self.db['attendance_logs'].create_index([("timestamp_in", -1)])
                 await self.db['faculty_requisitions'].create_index([("faculty_id", 1), ("created_at", -1)])
                 await self.db['faculty_requisitions'].create_index("status")
+                await self.db['annotations'].create_index("id", unique=True)
+                await self.db['annotations'].create_index([("user_id", 1), ("book_id", 1), ("created_at", -1)])
                 await self.users.normalize_existing_users()
                 asyncio.create_task(self._ensure_covers_background())
             except Exception as idx_err:
@@ -435,6 +441,40 @@ class MongoManager:
 
     async def get_department_requisition_counts(self) -> Dict[str, int]:
         return await self.requisitions.get_department_requisition_counts()
+
+    # =========================================================================
+    # 🖍️ INTERACTIVE ANNOTATIONS & HIGHLIGHTS DELEGATE METHODS
+    # =========================================================================
+    async def create_annotation(
+        self,
+        user_id: str,
+        book_id: str,
+        selected_text: str,
+        color: str = "yellow",
+        cfi_range: Optional[str] = None,
+        page_number: Optional[int] = 1,
+        rects: Optional[List[Dict[str, Any]]] = None,
+        note: Optional[str] = ""
+    ) -> Dict[str, Any]:
+        return await self.annotations.create_annotation(
+            user_id=user_id, book_id=book_id, selected_text=selected_text,
+            color=color, cfi_range=cfi_range, page_number=page_number, rects=rects, note=note
+        )
+
+    async def get_book_annotations(self, user_id: str, book_id: str) -> List[Dict[str, Any]]:
+        return await self.annotations.get_book_annotations(user_id, book_id)
+
+    async def get_annotation(self, annotation_id: str) -> Optional[Dict[str, Any]]:
+        return await self.annotations.get_annotation(annotation_id)
+
+    async def update_annotation(self, annotation_id: str, updates: Dict[str, Any]) -> bool:
+        return await self.annotations.update_annotation(annotation_id, updates)
+
+    async def delete_annotation(self, annotation_id: str, user_id: Optional[str] = None) -> bool:
+        return await self.annotations.delete_annotation(annotation_id, user_id=user_id)
+
+    def generate_annotations_markdown(self, annotations: List[Dict[str, Any]], book_title: str = "Document") -> str:
+        return self.annotations.generate_markdown_export(annotations, book_title=book_title)
 
 # Global Singleton Instance
 mongo_db = MongoManager()

@@ -344,7 +344,412 @@
         .swatch-light { background: #ffffff; color: #0f172a; border: 1px solid #cbd5e1; }
         .swatch-sepia { background: #f4ecd8; color: #3d2f1d; border: 1px solid #d4c5ae; }
         .swatch-dark { background: #1e293b; color: #e2e8f0; }
-        .swatch-black { background: #000000; color: #ffffff; border: 1px solid #333; }
+        .theme-swatch-black { background: #000000; color: #ffffff; border: 1px solid #333; }
+
+        /* PDF.js Text Layer for Selectable Text */
+        .textLayer {
+            position: absolute;
+            text-align: initial;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            opacity: 1;
+            line-height: 1.0;
+            -webkit-text-size-adjust: none;
+            -moz-text-size-adjust: none;
+            text-size-adjust: none;
+            forced-color-adjust: none;
+            transform-origin: 0 0;
+            z-index: 2;
+        }
+
+        .textLayer span,
+        .textLayer br {
+            color: transparent;
+            position: absolute;
+            white-space: pre;
+            cursor: text;
+            transform-origin: 0% 0%;
+        }
+
+        .textLayer ::selection {
+            background: rgba(59, 130, 246, 0.35);
+        }
+
+        .annotation-layer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 3;
+        }
+
+        .pdf-highlight-rect {
+            position: absolute;
+            pointer-events: auto;
+            cursor: pointer;
+            border-radius: 2px;
+            transition: filter 0.15s ease;
+        }
+        .pdf-highlight-rect:hover {
+            filter: brightness(0.85);
+        }
+        .pdf-hl-yellow { background-color: rgba(254, 240, 138, 0.45); }
+        .pdf-hl-green { background-color: rgba(187, 247, 208, 0.45); }
+        .pdf-hl-blue { background-color: rgba(191, 219, 254, 0.45); }
+        .pdf-hl-pink { background-color: rgba(251, 207, 232, 0.45); }
+
+        /* --- INTERACTIVE HIGHLIGHTING & ANNOTATIONS SYSTEM --- */
+        #selection-popover {
+            position: fixed;
+            display: none;
+            background: var(--bg-toolbar);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            padding: 8px 10px;
+            z-index: 300;
+            backdrop-filter: blur(10px);
+            flex-direction: column;
+            gap: 8px;
+            animation: popoverFadeIn 0.15s ease-out;
+        }
+
+        @keyframes popoverFadeIn {
+            from { opacity: 0; transform: scale(0.95) translateY(4px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .popover-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .hl-swatch {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            border: 2px solid rgba(0, 0, 0, 0.15);
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+            outline: none;
+        }
+        .hl-swatch:hover { transform: scale(1.18); box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+        .hl-swatch-yellow { background-color: #fef08a; border-color: #ca8a04; }
+        .hl-swatch-green { background-color: #bbf7d0; border-color: #16a34a; }
+        .hl-swatch-blue { background-color: #bfdbfe; border-color: #2563eb; }
+        .hl-swatch-pink { background-color: #fbcfe8; border-color: #db2777; }
+
+        .pop-divider {
+            width: 1px;
+            height: 18px;
+            background: var(--border-color);
+            margin: 0 2px;
+        }
+
+        .pop-action-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-controls);
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 4px 7px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s ease;
+        }
+        .pop-action-btn:hover { background: var(--btn-hover); color: var(--accent-color); }
+
+        .note-input-container {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+            width: 240px;
+            padding-top: 6px;
+            border-top: 1px solid var(--border-color);
+        }
+        .note-textarea {
+            width: 100%;
+            height: 54px;
+            font-size: 12px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-body);
+            color: var(--text-body);
+            resize: none;
+            font-family: inherit;
+            box-sizing: border-box;
+            outline: none;
+        }
+        .note-save-btn {
+            align-self: flex-end;
+            padding: 4px 10px;
+            background: var(--accent-color);
+            color: #ffffff;
+            border: none;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        /* In-Reader TARS AI Explainer Card */
+        #ai-explainer-card {
+            position: fixed;
+            display: none;
+            width: 320px;
+            background: var(--bg-toolbar);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.25);
+            padding: 14px;
+            z-index: 310;
+            backdrop-filter: blur(12px);
+            flex-direction: column;
+            gap: 10px;
+            animation: popoverFadeIn 0.2s ease-out;
+        }
+        .ai-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .ai-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--accent-color);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .ai-close-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-controls);
+            line-height: 1;
+        }
+        .ai-body {
+            font-size: 12.5px;
+            line-height: 1.5;
+            color: var(--text-body);
+        }
+        .ai-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        /* Existing Highlight Detail Popover */
+        #highlight-popover {
+            position: fixed;
+            display: none;
+            background: var(--bg-toolbar);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+            padding: 10px 12px;
+            z-index: 300;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 220px;
+            backdrop-filter: blur(10px);
+            animation: popoverFadeIn 0.15s ease-out;
+        }
+
+        /* Annotations Drawer (Sidebar) */
+        #annotations-drawer {
+            position: fixed;
+            top: 52px;
+            right: 0;
+            width: 340px;
+            height: calc(100vh - 52px);
+            background: var(--bg-toolbar);
+            border-left: 1px solid var(--border-color);
+            box-shadow: -4px 0 20px rgba(0, 0, 0, 0.12);
+            transform: translateX(100%);
+            transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 150;
+            display: flex;
+            flex-direction: column;
+        }
+        #annotations-drawer.open {
+            transform: translateX(0);
+        }
+        .drawer-header {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .drawer-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-body);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .drawer-filter-bar {
+            padding: 10px 16px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .filter-pills {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+        .filter-pill {
+            padding: 3px 8px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--border-color);
+            background: var(--bg-body);
+            color: var(--text-controls);
+            transition: all 0.15s ease;
+        }
+        .filter-pill.active {
+            background: var(--accent-color);
+            color: #ffffff;
+            border-color: var(--accent-color);
+        }
+        .drawer-search-input {
+            width: 100%;
+            padding: 6px 10px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+            background: var(--bg-body);
+            color: var(--text-body);
+            font-size: 12px;
+            box-sizing: border-box;
+            outline: none;
+        }
+        .drawer-cards {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .ann-card {
+            background: var(--bg-body);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px 12px;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            transition: all 0.15s ease;
+            border-left-width: 4px;
+        }
+        .ann-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+            transform: translateY(-1px);
+        }
+        .ann-card-yellow { border-left-color: #eab308; }
+        .ann-card-green { border-left-color: #22c55e; }
+        .ann-card-blue { border-left-color: #3b82f6; }
+        .ann-card-pink { border-left-color: #ec4899; }
+
+        .ann-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-controls);
+            font-weight: 600;
+        }
+        .ann-quote {
+            font-size: 12px;
+            font-style: italic;
+            color: var(--text-body);
+            line-height: 1.45;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .ann-student-note {
+            font-size: 11.5px;
+            color: var(--text-body);
+            background: rgba(125, 125, 125, 0.08);
+            padding: 5px 8px;
+            border-radius: 4px;
+            line-height: 1.4;
+        }
+        .ann-card-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            margin-top: 2px;
+        }
+        .drawer-footer {
+            padding: 12px 16px;
+            border-top: 1px solid var(--border-color);
+            background: var(--bg-toolbar);
+        }
+        .export-btn {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            background: var(--accent-color);
+            color: #ffffff;
+            border: none;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: opacity 0.15s ease;
+        }
+        .export-btn:hover { opacity: 0.9; }
+
+        /* Toast Notification */
+        #reader-toast {
+            position: fixed;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: #0f172a;
+            color: #f8fafc;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+            z-index: 400;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        #reader-toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
     </style>
     
     <!-- PDF.js from Cloudflare CDN -->
@@ -368,6 +773,12 @@
             <button id="zoom-out" class="tool-btn" title="Zoom Out ( - )">－</button>
             <button id="zoom-reset" class="tool-btn" title="Fit Width">Fit</button>
             <button id="zoom-in" class="tool-btn" title="Zoom In ( + )">＋</button>
+
+            <button id="annotations-drawer-toggle" class="tool-btn" title="Reading Notes & Highlights (H)">
+                <span>📝</span>
+                <span>Notes</span>
+                <span id="annotations-badge" style="background: var(--accent-color); color: #fff; border-radius: 9999px; padding: 1px 6px; font-size: 10px; font-weight: 700; margin-left: 2px;">0</span>
+            </button>
 
             <button id="appearance-toggle" class="tool-btn" title="Appearance Settings (Press T to cycle theme)">
                 <span style="font-size: 13px; font-weight: 700;">Aa</span>
@@ -398,6 +809,103 @@
             </div>
         </div>
     </div>
+
+    <!-- Floating Text Selection Popover -->
+    <div id="selection-popover">
+        <div class="popover-row">
+            <button class="hl-swatch hl-swatch-yellow" data-color="yellow" title="Highlight Yellow"></button>
+            <button class="hl-swatch hl-swatch-green" data-color="green" title="Highlight Green"></button>
+            <button class="hl-swatch hl-swatch-blue" data-color="blue" title="Highlight Blue"></button>
+            <button class="hl-swatch hl-swatch-pink" data-color="pink" title="Highlight Pink"></button>
+            <div class="pop-divider"></div>
+            <button id="pop-add-note-btn" class="pop-action-btn" title="Add Sticky Note">
+                <span>✏️</span> Note
+            </button>
+            <button id="pop-copy-btn" class="pop-action-btn" title="Copy Quote with Citation">
+                <span>📋</span> Copy
+            </button>
+            <button id="pop-ask-tars-btn" class="pop-action-btn" style="color: var(--accent-color);" title="Ask TARS AI Explainer">
+                <span>🤖</span> Ask TARS
+            </button>
+        </div>
+        <div id="pop-note-container" class="note-input-container">
+            <textarea id="pop-note-text" class="note-textarea" placeholder="Add study note or reflection..."></textarea>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 10px; color: var(--text-controls);">Press Save to persist</span>
+                <button id="pop-note-save" class="note-save-btn">Save Note</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- In-Reader TARS AI Explainer Bubble -->
+    <div id="ai-explainer-card">
+        <div class="ai-header">
+            <div class="ai-badge">
+                <span>🤖</span> TARS Socratic Explainer
+            </div>
+            <button id="ai-card-close" class="ai-close-btn" title="Close">✕</button>
+        </div>
+        <div id="ai-card-body" class="ai-body">
+            <div style="display: flex; align-items: center; gap: 8px; padding: 8px 0; color: var(--text-controls);">
+                <div style="width: 14px; height: 14px; border: 2px solid var(--accent-color); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                <span>Analyzing passage with TARS AI...</span>
+            </div>
+        </div>
+        <div class="ai-footer">
+            <button id="ai-attach-note-btn" class="tool-btn" style="display: none;">Attach as Note</button>
+            <button id="ai-open-chat-btn" class="tool-btn" style="background: var(--accent-color); color: #fff; border-color: var(--accent-color);">Continue in TARS Chat ↗</button>
+        </div>
+    </div>
+
+    <!-- Existing Highlight Detail Popover -->
+    <div id="highlight-popover">
+        <div class="popover-row" style="justify-content: space-between;">
+            <div style="display: flex; gap: 6px; align-items: center;">
+                <button class="hl-swatch hl-swatch-yellow" data-update-color="yellow" title="Change to Yellow"></button>
+                <button class="hl-swatch hl-swatch-green" data-update-color="green" title="Change to Green"></button>
+                <button class="hl-swatch hl-swatch-blue" data-update-color="blue" title="Change to Blue"></button>
+                <button class="hl-swatch hl-swatch-pink" data-update-color="pink" title="Change to Pink"></button>
+            </div>
+            <button id="hl-delete-btn" class="pop-action-btn" style="color: #ef4444;" title="Delete Highlight">
+                <span>🗑️</span> Delete
+            </button>
+        </div>
+        <div style="padding-top: 6px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 6px;">
+            <textarea id="hl-edit-note-text" class="note-textarea" placeholder="Edit attached note..."></textarea>
+            <button id="hl-save-note-btn" class="note-save-btn">Update Note</button>
+        </div>
+    </div>
+
+    <!-- Aggregated Annotations Drawer (Sidebar) -->
+    <div id="annotations-drawer">
+        <div class="drawer-header">
+            <div class="drawer-title">
+                <span>📝</span> Notes & Highlights (<span id="drawer-count">0</span>)
+            </div>
+            <button id="drawer-close-btn" class="ai-close-btn" title="Close Drawer (H)">✕</button>
+        </div>
+        <div class="drawer-filter-bar">
+            <div class="filter-pills">
+                <button class="filter-pill active" data-filter="all">All</button>
+                <button class="filter-pill" data-filter="yellow">🟡 Yellow</button>
+                <button class="filter-pill" data-filter="green">🟢 Green</button>
+                <button class="filter-pill" data-filter="blue">🔵 Blue</button>
+                <button class="filter-pill" data-filter="pink">🌸 Pink</button>
+            </div>
+            <input type="text" id="drawer-search" class="drawer-search-input" placeholder="Search highlights & notes..." />
+        </div>
+        <div id="drawer-cards" class="drawer-cards">
+            <!-- Cards populated dynamically -->
+        </div>
+        <div class="drawer-footer">
+            <button id="drawer-export-btn" class="export-btn">
+                <span>📥</span> Export Study Guide (Markdown)
+            </button>
+        </div>
+    </div>
+
+    <!-- Global Toast -->
+    <div id="reader-toast"></div>
 
     <div id="error-msg"></div>
 
@@ -670,6 +1178,340 @@
                 });
             }
 
+            // Annotations State
+            let bookAnnotations = [];
+            let activeSelectionRects = [];
+            let activeSelectedText = "";
+            let activeSelectionPage = 1;
+            let activePopoverColor = "yellow";
+            let activeHighlightAnnotation = null;
+            let currentFilter = 'all';
+            let currentSearch = '';
+            let lastExplainedText = "";
+            let lastExplanationResult = "";
+
+            // Popover & Drawer DOM Elements
+            const selectionPopover = document.getElementById('selection-popover');
+            const popNoteContainer = document.getElementById('pop-note-container');
+            const popNoteText = document.getElementById('pop-note-text');
+            const popNoteSave = document.getElementById('pop-note-save');
+            const popAddNoteBtn = document.getElementById('pop-add-note-btn');
+            const popCopyBtn = document.getElementById('pop-copy-btn');
+            const popAskTarsBtn = document.getElementById('pop-ask-tars-btn');
+
+            const aiExplainerCard = document.getElementById('ai-explainer-card');
+            const aiCardBody = document.getElementById('ai-card-body');
+            const aiCardClose = document.getElementById('ai-card-close');
+            const aiAttachNoteBtn = document.getElementById('ai-attach-note-btn');
+            const aiOpenChatBtn = document.getElementById('ai-open-chat-btn');
+
+            const highlightPopover = document.getElementById('highlight-popover');
+            const hlEditNoteText = document.getElementById('hl-edit-note-text');
+            const hlSaveNoteBtn = document.getElementById('hl-save-note-btn');
+            const hlDeleteBtn = document.getElementById('hl-delete-btn');
+
+            const annotationsDrawer = document.getElementById('annotations-drawer');
+            const drawerToggleBtn = document.getElementById('annotations-drawer-toggle');
+            const drawerCloseBtn = document.getElementById('drawer-close-btn');
+            const drawerBadge = document.getElementById('annotations-badge');
+            const drawerCount = document.getElementById('drawer-count');
+            const drawerCardsContainer = document.getElementById('drawer-cards');
+            const drawerSearchInput = document.getElementById('drawer-search');
+            const drawerExportBtn = document.getElementById('drawer-export-btn');
+            const readerToast = document.getElementById('reader-toast');
+
+            let toastTimer = null;
+            function showToast(msg) {
+                if (!readerToast) return;
+                readerToast.innerText = msg;
+                readerToast.classList.add('show');
+                if (toastTimer) clearTimeout(toastTimer);
+                toastTimer = setTimeout(() => {
+                    readerToast.classList.remove('show');
+                }, 2400);
+            }
+
+            function dismissAllPopovers() {
+                if (selectionPopover) selectionPopover.style.display = 'none';
+                if (popNoteContainer) popNoteContainer.style.display = 'none';
+                if (highlightPopover) highlightPopover.style.display = 'none';
+                if (aiExplainerCard) aiExplainerCard.style.display = 'none';
+            }
+
+            function toggleAnnotationsDrawer() {
+                if (!annotationsDrawer) return;
+                const isOpen = annotationsDrawer.classList.contains('open');
+                if (isOpen) {
+                    annotationsDrawer.classList.remove('open');
+                } else {
+                    annotationsDrawer.classList.add('open');
+                    dismissAllPopovers();
+                }
+            }
+
+            function escapeHtml(text) {
+                if (!text) return '';
+                return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            }
+
+            function updateDrawerUI() {
+                if (drawerBadge) {
+                    drawerBadge.innerText = bookAnnotations.length;
+                    drawerBadge.style.display = bookAnnotations.length > 0 ? 'inline-block' : 'none';
+                }
+                if (drawerCount) {
+                    drawerCount.innerText = bookAnnotations.length;
+                }
+
+                if (!drawerCardsContainer) return;
+
+                const filtered = bookAnnotations.filter(ann => {
+                    const matchColor = (currentFilter === 'all') || (ann.color === currentFilter);
+                    const query = currentSearch.toLowerCase();
+                    const matchSearch = !query || 
+                        (ann.selected_text && ann.selected_text.toLowerCase().includes(query)) ||
+                        (ann.note && ann.note.toLowerCase().includes(query));
+                    return matchColor && matchSearch;
+                });
+
+                if (filtered.length === 0) {
+                    drawerCardsContainer.innerHTML = `
+                        <div style="text-align: center; color: var(--text-controls); padding: 40px 16px; font-size: 13px;">
+                            <span style="font-size: 28px; display: block; margin-bottom: 8px;">📖</span>
+                            ${bookAnnotations.length === 0 ? 'No annotations yet.<br>Select any passage in the PDF to highlight or add study notes!' : 'No annotations match your filter.'}
+                        </div>
+                    `;
+                    return;
+                }
+
+                drawerCardsContainer.innerHTML = filtered.map(ann => {
+                    const colorClass = `ann-card-${ann.color || 'yellow'}`;
+                    const noteHtml = ann.note ? `<div class="ann-student-note">💭 ${escapeHtml(ann.note)}</div>` : '';
+                    return `
+                        <div class="ann-card ${colorClass}" data-ann-id="${ann.id}" data-page="${ann.page_number || 1}">
+                            <div class="ann-card-header">
+                                <span style="text-transform: capitalize;">● ${(ann.color || 'yellow')}</span>
+                                <span>Page ${ann.page_number || 1}</span>
+                            </div>
+                            <div class="ann-quote">"${escapeHtml(ann.selected_text || '')}"</div>
+                            ${noteHtml}
+                            <div class="ann-card-actions">
+                                <button class="tool-btn jump-btn" style="padding: 3px 8px; font-size: 11px;">Jump ↗</button>
+                                <button class="tool-btn del-btn" style="padding: 3px 8px; font-size: 11px; color: #ef4444;">Delete</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                drawerCardsContainer.querySelectorAll('.ann-card').forEach(card => {
+                    const annId = card.getAttribute('data-ann-id');
+                    const page = parseInt(card.getAttribute('data-page') || '1', 10);
+
+                    const jumpBtn = card.querySelector('.jump-btn');
+                    if (jumpBtn) {
+                        jumpBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            scrollToPage(page);
+                        });
+                    }
+
+                    const delBtn = card.querySelector('.del-btn');
+                    if (delBtn) {
+                        delBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            deleteAnnotationById(annId);
+                        });
+                    }
+
+                    card.addEventListener('click', () => {
+                        scrollToPage(page);
+                    });
+                });
+            }
+
+            function renderPageHighlights(pageNum, layer) {
+                if (!layer) return;
+                layer.innerHTML = '';
+                const pageAnns = bookAnnotations.filter(a => a.page_number === pageNum);
+
+                pageAnns.forEach(ann => {
+                    if (!ann.rects || !Array.isArray(ann.rects)) return;
+                    ann.rects.forEach(r => {
+                        const el = document.createElement('div');
+                        el.className = `pdf-highlight-rect pdf-hl-${ann.color || 'yellow'}`;
+                        el.style.left = `${Math.round(r.x * currentScale)}px`;
+                        el.style.top = `${Math.round(r.y * currentScale)}px`;
+                        el.style.width = `${Math.round(r.width * currentScale)}px`;
+                        el.style.height = `${Math.round(r.height * currentScale)}px`;
+                        el.title = ann.note ? `Note: ${ann.note}` : 'Highlight';
+                        el.addEventListener('click', (e) => onHighlightClicked(e, ann));
+                        layer.appendChild(el);
+                    });
+                });
+            }
+
+            function refreshAllAnnotationLayers() {
+                pageContainers.forEach(container => {
+                    const pageNum = parseInt(container.getAttribute('data-page-number'), 10);
+                    const layer = container.querySelector('.annotation-layer');
+                    if (layer) {
+                        renderPageHighlights(pageNum, layer);
+                    }
+                });
+            }
+
+            async function fetchBookAnnotations() {
+                try {
+                    const res = await fetch(`/api/annotations/${encodeURIComponent(bookId)}?user_id=${encodeURIComponent(userId)}`);
+                    const data = await res.json();
+                    if (res.ok && data.annotations) {
+                        bookAnnotations = data.annotations;
+                        updateDrawerUI();
+                        refreshAllAnnotationLayers();
+                        console.log(`[PDF Engine] Loaded ${bookAnnotations.length} annotations`);
+                    }
+                } catch(e) {
+                    console.error("[PDF Engine] Error fetching annotations:", e);
+                }
+            }
+
+            async function createNewAnnotation(color, note = "") {
+                if (!activeSelectedText || !activeSelectionRects.length) return;
+                const payload = {
+                    book_id: bookId,
+                    user_id: userId,
+                    selected_text: activeSelectedText,
+                    color: color || "yellow",
+                    page_number: activeSelectionPage || currentPage,
+                    rects: activeSelectionRects,
+                    note: note
+                };
+
+                try {
+                    const res = await fetch('/api/annotations/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.annotation) {
+                        bookAnnotations.unshift(data.annotation);
+                        updateDrawerUI();
+                        refreshAllAnnotationLayers();
+                        dismissAllPopovers();
+                        window.getSelection()?.removeAllRanges();
+                        showToast(note ? "Highlight with note saved!" : "Highlight saved!");
+                    } else {
+                        showToast("Failed to save highlight.");
+                    }
+                } catch(e) {
+                    console.error("[PDF Engine] Create annotation failed:", e);
+                    showToast("Error saving highlight.");
+                }
+            }
+
+            function onHighlightClicked(e, ann) {
+                e.stopPropagation();
+                activeHighlightAnnotation = ann;
+
+                const clientX = e.clientX !== undefined ? e.clientX : 150;
+                const clientY = e.clientY !== undefined ? e.clientY : 150;
+                const x = Math.max(12, Math.min(window.innerWidth - 260, clientX - 100));
+                const y = Math.max(60, clientY - 60);
+
+                dismissAllPopovers();
+                if (highlightPopover) {
+                    highlightPopover.style.left = `${x}px`;
+                    highlightPopover.style.top = `${y}px`;
+                    highlightPopover.style.display = 'flex';
+                    if (hlEditNoteText) hlEditNoteText.value = ann.note || '';
+                }
+            }
+
+            async function updateAnnotationById(annId, updates) {
+                if (!annId) return;
+                try {
+                    const res = await fetch(`/api/annotations/${encodeURIComponent(annId)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(updates)
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.annotation) {
+                        const idx = bookAnnotations.findIndex(a => a.id === annId);
+                        if (idx !== -1) {
+                            bookAnnotations[idx] = data.annotation;
+                        }
+                        updateDrawerUI();
+                        refreshAllAnnotationLayers();
+                        dismissAllPopovers();
+                        showToast("Annotation updated!");
+                    }
+                } catch(e) {
+                    console.error("[PDF Engine] Update error:", e);
+                }
+            }
+
+            async function deleteAnnotationById(annId) {
+                if (!annId) return;
+                try {
+                    const res = await fetch(`/api/annotations/${encodeURIComponent(annId)}?user_id=${encodeURIComponent(userId)}`, {
+                        method: 'DELETE'
+                    });
+                    if (res.ok) {
+                        bookAnnotations = bookAnnotations.filter(a => a.id !== annId);
+                        updateDrawerUI();
+                        refreshAllAnnotationLayers();
+                        dismissAllPopovers();
+                        showToast("Highlight deleted.");
+                    }
+                } catch(e) {
+                    console.error("[PDF Engine] Delete error:", e);
+                }
+            }
+
+            async function triggerTarsExplainer(text) {
+                if (!text) return;
+                lastExplainedText = text;
+                const popLeft = selectionPopover ? selectionPopover.style.left : "20px";
+                const popTop = selectionPopover ? selectionPopover.style.top : "80px";
+                dismissAllPopovers();
+
+                if (aiExplainerCard) {
+                    aiExplainerCard.style.left = popLeft;
+                    aiExplainerCard.style.top = popTop;
+                    aiExplainerCard.style.display = 'flex';
+                    if (aiCardBody) {
+                        aiCardBody.innerHTML = `
+                            <div style="display: flex; align-items: center; gap: 8px; padding: 6px 0; color: var(--text-controls);">
+                                <div style="width: 14px; height: 14px; border: 2px solid var(--accent-color); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+                                <span>TARS is consulting knowledge archive...</span>
+                            </div>
+                        `;
+                    }
+                    if (aiAttachNoteBtn) aiAttachNoteBtn.style.display = 'none';
+                }
+
+                try {
+                    const res = await fetch('/api/annotations/explain', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ passage_text: text, book_id: bookId })
+                    });
+                    const data = await res.json();
+                    lastExplanationResult = data.explanation || "No explanation provided.";
+                    if (aiCardBody) {
+                        aiCardBody.innerHTML = `
+                            <div style="font-style: italic; margin-bottom: 6px; color: var(--text-controls); font-size: 11px;">"${escapeHtml(text.length > 80 ? text.substring(0, 80) + '...' : text)}"</div>
+                            <div>${escapeHtml(lastExplanationResult)}</div>
+                        `;
+                    }
+                    if (aiAttachNoteBtn) aiAttachNoteBtn.style.display = 'inline-block';
+                } catch(e) {
+                    if (aiCardBody) aiCardBody.innerText = "TARS explanation unavailable at this time.";
+                }
+            }
+
             // Keyboard navigation
             document.addEventListener('keydown', function(e) {
                 if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
@@ -681,6 +1523,9 @@
                     e.preventDefault();
                 } else if (e.key === 't' || e.key === 'T') {
                     cycleTheme();
+                    e.preventDefault();
+                } else if (e.key === 'h' || e.key === 'H') {
+                    toggleAnnotationsDrawer();
                     e.preventDefault();
                 } else if (e.key === '+' || e.key === '=') {
                     currentScale = Math.min(3.0, currentScale + 0.25);
@@ -698,7 +1543,221 @@
                     }
                     e.preventDefault();
                 } else if (e.key === 'Escape') {
+                    dismissAllPopovers();
                     if (appearancePopover) appearancePopover.style.display = 'none';
+                    if (annotationsDrawer) annotationsDrawer.classList.remove('open');
+                }
+            });
+
+            // Bind Popover & Drawer Interactions
+            document.querySelectorAll('#selection-popover .hl-swatch').forEach(swatch => {
+                swatch.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const color = swatch.getAttribute('data-color') || 'yellow';
+                    activePopoverColor = color;
+                    createNewAnnotation(color, "");
+                });
+            });
+
+            if (popAddNoteBtn) {
+                popAddNoteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (!popNoteContainer) return;
+                    const isOpen = popNoteContainer.style.display === 'flex';
+                    popNoteContainer.style.display = isOpen ? 'none' : 'flex';
+                    if (!isOpen && popNoteText) popNoteText.focus();
+                });
+            }
+
+            if (popNoteSave) {
+                popNoteSave.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const note = popNoteText ? popNoteText.value.trim() : "";
+                    createNewAnnotation(activePopoverColor || "yellow", note);
+                });
+            }
+
+            if (popCopyBtn) {
+                popCopyBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (activeSelectedText) {
+                        navigator.clipboard.writeText(`"${activeSelectedText}" (Libre-Library)`).then(() => {
+                            showToast("Quote copied to clipboard!");
+                            dismissAllPopovers();
+                        }).catch(() => {
+                            showToast("Clipboard access denied.");
+                        });
+                    }
+                });
+            }
+
+            if (popAskTarsBtn) {
+                popAskTarsBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    triggerTarsExplainer(activeSelectedText);
+                });
+            }
+
+            if (aiCardClose) {
+                aiCardClose.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (aiExplainerCard) aiExplainerCard.style.display = 'none';
+                });
+            }
+
+            if (aiAttachNoteBtn) {
+                aiAttachNoteBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    if (lastExplainedText && lastExplanationResult) {
+                        await createNewAnnotation("blue", "TARS AI: " + lastExplanationResult);
+                        dismissAllPopovers();
+                    }
+                });
+            }
+
+            if (aiOpenChatBtn) {
+                aiOpenChatBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const prompt = `Can you explain this excerpt in detail: "${lastExplainedText}"`;
+                    try {
+                        window.parent.postMessage({ type: 'OPEN_TARS_CHAT', message: prompt }, '*');
+                    } catch(e) {}
+                    window.open(`/chat?prompt=${encodeURIComponent(prompt)}`, '_blank');
+                });
+            }
+
+            document.querySelectorAll('#highlight-popover .hl-swatch').forEach(swatch => {
+                swatch.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const newColor = swatch.getAttribute('data-update-color');
+                    if (activeHighlightAnnotation && newColor) {
+                        updateAnnotationById(activeHighlightAnnotation.id, { color: newColor });
+                    }
+                });
+            });
+
+            if (hlSaveNoteBtn) {
+                hlSaveNoteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const note = hlEditNoteText ? hlEditNoteText.value.trim() : "";
+                    if (activeHighlightAnnotation) {
+                        updateAnnotationById(activeHighlightAnnotation.id, { note: note });
+                    }
+                });
+            }
+
+            if (hlDeleteBtn) {
+                hlDeleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (activeHighlightAnnotation) {
+                        deleteAnnotationById(activeHighlightAnnotation.id);
+                    }
+                });
+            }
+
+            if (drawerToggleBtn) {
+                drawerToggleBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    toggleAnnotationsDrawer();
+                });
+            }
+
+            if (drawerCloseBtn) {
+                drawerCloseBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (annotationsDrawer) annotationsDrawer.classList.remove('open');
+                });
+            }
+
+            document.querySelectorAll('.drawer-filter-bar .filter-pill').forEach(pill => {
+                pill.addEventListener('click', () => {
+                    document.querySelectorAll('.drawer-filter-bar .filter-pill').forEach(p => p.classList.remove('active'));
+                    pill.classList.add('active');
+                    currentFilter = pill.getAttribute('data-filter') || 'all';
+                    updateDrawerUI();
+                });
+            });
+
+            if (drawerSearchInput) {
+                drawerSearchInput.addEventListener('input', (e) => {
+                    currentSearch = e.target.value.trim();
+                    updateDrawerUI();
+                });
+            }
+
+            if (drawerExportBtn) {
+                drawerExportBtn.addEventListener('click', () => {
+                    window.location.href = `/api/annotations/${encodeURIComponent(bookId)}/export?user_id=${encodeURIComponent(userId)}`;
+                    showToast("Study guide download initiated!");
+                });
+            }
+
+            // Text selection listener for PDF
+            document.addEventListener('mouseup', function(e) {
+                if (selectionPopover && selectionPopover.contains(e.target)) return;
+                if (highlightPopover && highlightPopover.contains(e.target)) return;
+                if (aiExplainerCard && aiExplainerCard.contains(e.target)) return;
+
+                const selection = window.getSelection();
+                if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+                    return;
+                }
+
+                const text = selection.toString().trim();
+                if (!text) return;
+
+                const range = selection.getRangeAt(0);
+                const container = range.commonAncestorContainer.nodeType === 1 ?
+                    range.commonAncestorContainer.closest('.page-container') :
+                    range.commonAncestorContainer.parentElement.closest('.page-container');
+
+                if (!container) return;
+
+                const pageNum = parseInt(container.getAttribute('data-page-number'), 10);
+                const containerRect = container.getBoundingClientRect();
+                const clientRects = Array.from(range.getClientRects());
+
+                if (!clientRects.length) return;
+
+                // Normalize rects by dividing by currentScale
+                activeSelectionRects = clientRects.map(r => ({
+                    x: (r.left - containerRect.left) / currentScale,
+                    y: (r.top - containerRect.top) / currentScale,
+                    width: r.width / currentScale,
+                    height: r.height / currentScale
+                }));
+
+                activeSelectedText = text;
+                activeSelectionPage = pageNum;
+
+                const firstRect = clientRects[0];
+                const popWidth = 240;
+                const x = Math.max(12, Math.min(window.innerWidth - popWidth - 12, firstRect.left + (firstRect.width / 2) - (popWidth / 2)));
+                const y = Math.max(60, firstRect.top - 48);
+
+                dismissAllPopovers();
+                if (selectionPopover) {
+                    selectionPopover.style.left = `${x}px`;
+                    selectionPopover.style.top = `${y}px`;
+                    selectionPopover.style.display = 'flex';
+                    if (popNoteContainer) popNoteContainer.style.display = 'none';
+                    if (popNoteText) popNoteText.value = '';
+                }
+            });
+
+            // Dismiss popovers when clicking outside
+            document.addEventListener('click', (e) => {
+                if (selectionPopover && !selectionPopover.contains(e.target) && e.target !== selectionPopover) {
+                    const sel = window.getSelection();
+                    if (!sel || sel.isCollapsed) {
+                        selectionPopover.style.display = 'none';
+                    }
+                }
+                if (highlightPopover && !highlightPopover.contains(e.target) && e.target !== highlightPopover) {
+                    highlightPopover.style.display = 'none';
+                }
+                if (aiExplainerCard && !aiExplainerCard.contains(e.target) && e.target !== aiExplainerCard) {
+                    aiExplainerCard.style.display = 'none';
                 }
             });
 
@@ -781,6 +1840,34 @@
                         viewport: viewport,
                         transform: transform
                     }).promise;
+
+                    // Render PDF.js Text Layer for selectable text
+                    try {
+                        const textContent = await page.getTextContent();
+                        const textLayerDiv = document.createElement('div');
+                        textLayerDiv.className = 'textLayer';
+                        textLayerDiv.style.width = `${Math.floor(viewport.width)}px`;
+                        textLayerDiv.style.height = `${Math.floor(viewport.height)}px`;
+                        textLayerDiv.style.setProperty('--scale-factor', viewport.scale);
+                        container.appendChild(textLayerDiv);
+
+                        await pdfjsLib.renderTextLayer({
+                            textContentSource: textContent,
+                            container: textLayerDiv,
+                            viewport: viewport,
+                            textDivs: []
+                        }).promise;
+                    } catch(tErr) {
+                        console.warn(`[PDF Engine] Text layer render warning on page ${pageNum}:`, tErr);
+                    }
+
+                    // Render Annotation Layer for persistent highlights
+                    const annLayer = document.createElement('div');
+                    annLayer.className = 'annotation-layer';
+                    annLayer.id = `annotation-layer-${pageNum}`;
+                    container.appendChild(annLayer);
+                    renderPageHighlights(pageNum, annLayer);
+
                 } catch (err) {
                     console.error(`[PDF Engine] Error rendering page ${pageNum}:`, err);
                 }
@@ -896,6 +1983,9 @@
                 }
 
                 rebuildLayout();
+
+                // Load annotations from database
+                fetchBookAnnotations();
 
                 if (initialPage > 1) {
                     console.log(`[PDF Engine] Restoring saved page coordinate: ${initialPage}`);
