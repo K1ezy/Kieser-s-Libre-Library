@@ -131,6 +131,9 @@ class MongoManager:
     async def get_all_books(self, *args, **kwargs) -> List[Dict[str, Any]]:
         return await self.books.get_all_books(*args, **kwargs)
 
+    async def get_catalog_format_counts(self) -> Dict[str, int]:
+        return await self.books.get_catalog_format_counts()
+
     async def get_book_by_id(self, book_id: str) -> Optional[Dict[str, Any]]:
         return await self.books.get_book_by_id(book_id)
 

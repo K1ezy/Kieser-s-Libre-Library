@@ -19,8 +19,10 @@ def bottom_nav():
     ]
 
     # Dynamic 5th destination tailored to user persona
-    if user_role in ('admin', 'librarian'):
-        destinations.append(('/upload', 'Ingest', 'cloud_upload'))
+    if user_role == 'admin':
+        destinations.append(('/admin', 'Admin', 'admin_panel_settings'))
+    elif user_role == 'librarian':
+        destinations.append(('/librarian', 'Librarian', 'local_library'))
     elif user_role == 'faculty':
         destinations.append(('/requisitions', 'Requests', 'post_add'))
     else:  # student

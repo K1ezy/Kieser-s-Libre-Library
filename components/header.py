@@ -118,11 +118,12 @@ def header(drawer_reference=None):
                         ui.menu_item('Book Requisitions', on_click=lambda: ui.navigate.to('/requisitions')).props('prepend-icon=post_add').classes('text-xs font-medium')
                     
                     if is_librarian:
+                        ui.menu_item('Librarian Hub', on_click=lambda: ui.navigate.to('/librarian')).props('prepend-icon=local_library').classes('text-xs font-bold text-indigo-700')
                         ui.menu_item('Ingest & Upload', on_click=lambda: ui.navigate.to('/upload')).props('prepend-icon=cloud_upload').classes('text-xs font-medium')
                         ui.menu_item('Program Analytics', on_click=lambda: ui.navigate.to('/analytics')).props('prepend-icon=insights').classes('text-xs font-medium')
 
                     if user_role == 'admin':
-                        ui.menu_item('Admin Console', on_click=lambda: ui.navigate.to('/admin')).props('prepend-icon=admin_panel_settings').classes('text-xs font-bold text-amber-700')
+                        ui.menu_item('Admin IT Console', on_click=lambda: ui.navigate.to('/admin')).props('prepend-icon=admin_panel_settings').classes('text-xs font-bold text-amber-700')
 
                     ui.separator().classes('my-1')
                     def sign_out():

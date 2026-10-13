@@ -76,6 +76,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
             elif is_librarian:
                 # Librarian & Admin View: Operational Station & Catalog Ingestion
                 ui.label('LIBRARY OPERATIONS').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-4 mb-1 tracking-widest')
+                nav_link('Librarian Hub', 'local_library', '/librarian', badge_text='OPS')
                 nav_link('Entrance Terminal', 'qr_code_scanner', '/attendance')
                 nav_link('Book Requisitions', 'post_add', '/requisitions')
                 nav_link('Ingest & Upload', 'cloud_upload', '/upload')

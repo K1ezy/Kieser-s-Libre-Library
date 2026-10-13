@@ -67,6 +67,7 @@ import ui.pages.profile as profile
 import ui.pages.attendance as attendance
 import ui.pages.requisitions as requisitions
 import ui.pages.analytics as analytics
+import ui.pages.librarian as librarian
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -203,10 +204,24 @@ async def analytics_route():
     await analytics.analytics_page()
     FloatingChat()
 
+@ui.page('/librarian')
+async def librarian_route():
+    if not check_auth(): return
+    user_role = get_current_user_role()
+    if user_role not in ['admin', 'librarian']:
+        ui.notify("The Librarian Operations Console is restricted to Librarians and Administrators.", type='warning')
+        return ui.navigate.to('/')
+    app.storage.client['page_path'] = '/librarian'
+    apply_theme()
+    await librarian.librarian_dashboard()
+
 @ui.page('/admin')
 async def admin_route():
     if not check_auth(): return
     user_role = get_current_user_role()
+    if user_role == 'librarian':
+        ui.notify("Access restricted to IT Administrators. Redirecting to your Librarian Operations Console.", type='info')
+        return ui.navigate.to('/librarian')
     if user_role != 'admin':
         ui.notify("Access restricted. The Admin Console is reserved for System Administrators.", type='warning')
         return ui.navigate.to('/')

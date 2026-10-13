@@ -58,66 +58,49 @@ async def admin_dashboard():
         'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
     ):
         # Page Title Banner
-        with ui.column().classes('gap-1 mb-6 sm:mb-8'):
-            ui.label('Admin Console').classes('text-2xl sm:text-3xl font-black text-slate-900 tracking-tight')
-            ui.label('System metrics, OPDS catalog connectivity, and registered accounts management.').classes('text-xs sm:text-sm text-slate-500')
+        with ui.row().classes('w-full items-start justify-between gap-4 mb-6 sm:mb-8 flex-wrap'):
+            with ui.column().classes('gap-1'):
+                with ui.row().classes('items-center gap-2.5'):
+                    with ui.element('div').classes('p-2.5 rounded-2xl bg-rose-50 text-rose-600 border border-rose-100 shadow-sm'):
+                        ui.icon('admin_panel_settings', size='28px')
+                    with ui.column().classes('gap-0'):
+                        ui.label('Admin IT Governance Console').classes('text-2xl sm:text-3xl font-black text-slate-900 tracking-tight')
+                        ui.label('System security, database diagnostics, and Role-Based Access Control (RBAC) user administration.').classes('text-xs sm:text-sm text-slate-500')
+            with ui.row().classes('items-center gap-2'):
+                ui.element('span').classes('text-xs font-black uppercase tracking-wider bg-rose-50 text-rose-700 px-3 py-1 rounded-full border border-rose-200') \
+                    .text = '🛡️ Root Administrator'
+                ui.button('Open Librarian Hub', icon='local_library', on_click=lambda: ui.navigate.to('/librarian')) \
+                    .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-xs')
 
-        # Real-time Metrics Grid
+        # Real-time IT & Infrastructure Metrics Grid
         with ui.grid().classes('w-full grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6'):
             metric_cards = [
-                ("menu_book", "Total Books", str(stats.get("books", 0)), "text-indigo-600", "bg-indigo-50"),
-                ("people", "User Accounts", str(stats.get("users", len(clean_users))), "text-blue-600", "bg-blue-50"),
-                ("check_circle", "Study Tasks", str(stats.get("tasks", 0)), "text-emerald-600", "bg-emerald-50"),
-                ("style", "Flashcard Decks", str(stats.get("decks", 0)), "text-amber-600", "bg-amber-50"),
+                ("people", "Registered Accounts", str(stats.get("users", len(clean_users))), "Active RBAC Accounts", "text-blue-600", "bg-blue-50"),
+                ("menu_book", "Catalog Volumes", str(stats.get("books", 0)), "Synchronized Documents", "text-indigo-600", "bg-indigo-50"),
+                ("security", "Security Architecture", "Active", "256-Bit Cryptographic Guard", "text-emerald-600", "bg-emerald-50"),
+                ("dns", "Database Cluster", "Connected", "MongoDB Replicated Store", "text-purple-600", "bg-purple-50"),
             ]
-            for icon_name, label_text, val_text, text_color, bg_color in metric_cards:
+            for icon_name, label_text, val_text, sub_text, text_color, bg_color in metric_cards:
                 with ui.card().classes('p-3.5 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm'):
                     with ui.row().classes('items-center gap-2 mb-1.5'):
                         with ui.element('div').classes(f'p-1.5 rounded-xl {bg_color} {text_color}'):
                             ui.icon(icon_name, size='18px')
-                        ui.label(label_text).classes('text-[11px] font-bold text-slate-400 uppercase tracking-wider')
+                        ui.label(label_text).classes('text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate')
                     ui.label(val_text).classes('text-xl sm:text-2xl font-black text-slate-900')
+                    ui.label(sub_text).classes('text-[10px] sm:text-[11px] text-slate-500 font-medium')
 
-        # Institutional Core Services Hub (SRS Chapter 1 & 2 Modules)
-        with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm mb-6'):
-            with ui.row().classes('items-center gap-2 mb-3'):
-                ui.icon('hub', size='sm').classes('text-indigo-600')
-                ui.label('INSTITUTIONAL CORE SERVICES').classes('text-xs sm:text-sm font-black text-slate-900 uppercase tracking-widest')
-            with ui.grid().classes('w-full grid-cols-1 sm:grid-cols-3 gap-3'):
-                # Attendance
-                with ui.card().classes('p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100/80 cursor-pointer transition-all').on('click', lambda: ui.navigate.to('/attendance')):
-                    with ui.row().classes('items-center gap-2 mb-1'):
-                        ui.icon('qr_code_scanner', size='20px').classes('text-indigo-600')
-                        ui.label('Attendance Terminal').classes('text-sm font-bold text-slate-900')
-                    ui.label('Automated QR check-ins and daily visitor log summaries.').classes('text-[11px] text-slate-500')
+        # Cross-Link Banner to Dedicated Librarian Operations Console
+        with ui.card().classes('w-full p-4 sm:p-5 rounded-2xl sm:rounded-3xl bg-gradient-to-r from-indigo-50 to-slate-50 border border-indigo-100 shadow-xs mb-6'):
+            with ui.row().classes('w-full items-center justify-between gap-3 flex-wrap'):
+                with ui.row().classes('items-center gap-3 min-w-0 flex-1'):
+                    with ui.element('div').classes('p-2.5 rounded-2xl bg-indigo-600 text-white shrink-0'):
+                        ui.icon('local_library', size='22px')
+                    with ui.column().classes('gap-0.5 min-w-0 flex-1'):
+                        ui.label('Looking for Library Circulation & Collection Management?').classes('text-sm font-black text-slate-900')
+                        ui.label('Curricular requisitions (FM-LIBS-002), entrance attendance logs (FM-LIBS-009), and OPDS e-reader feeds are centralized in the Librarian Console.').classes('text-xs text-slate-500 leading-snug')
+                ui.button('Switch to Librarian Operations Console', icon='arrow_forward', on_click=lambda: ui.navigate.to('/librarian')) \
+                    .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-sm')
 
-                # Requisitions
-                with ui.card().classes('p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100/80 cursor-pointer transition-all').on('click', lambda: ui.navigate.to('/requisitions')):
-                    with ui.row().classes('items-center gap-2 mb-1'):
-                        ui.icon('post_add', size='20px').classes('text-purple-600')
-                        ui.label('Faculty Requisitions').classes('text-sm font-bold text-slate-900')
-                    ui.label('Curriculum textbook requests & procurement status tracker.').classes('text-[11px] text-slate-500')
-
-                # Analytics
-                with ui.card().classes('p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100/80 cursor-pointer transition-all').on('click', lambda: ui.navigate.to('/analytics')):
-                    with ui.row().classes('items-center gap-2 mb-1'):
-                        ui.icon('insights', size='20px').classes('text-emerald-600')
-                        ui.label('Program Analytics').classes('text-sm font-bold text-slate-900')
-                    ui.label('Program utilization charts & circulation reports.').classes('text-[11px] text-slate-500')
-
-        # OPDS E-Reader Catalog Link Card
-        with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm mb-6'):
-            with ui.row().classes('items-center gap-2 mb-2'):
-                ui.icon('wifi_tethering', size='sm').classes('text-indigo-600')
-                ui.label('OPDS E-READER CATALOG FEED').classes('text-sm sm:text-base font-black text-slate-900')
-            ui.label('Connect e-readers (Kobo, Kindle via KOReader) or mobile apps (Moon+ Reader, Apple Books) over Wi-Fi.').classes('text-xs text-slate-500 mb-3')
-            with ui.row().classes('w-full p-3 bg-slate-50 rounded-xl border border-slate-200 items-center justify-between gap-3 flex-wrap'):
-                opds_url_label = ui.label("http://<your-ip-or-ngrok>:8080/opds").classes('font-mono text-xs sm:text-sm font-bold text-slate-800 truncate flex-1 min-w-0')
-                ui.run_javascript(f'const el = document.getElementById("{opds_url_label.id}"); if(el) el.innerText = window.location.origin + "/opds";')
-                ui.button('Copy Catalog Feed URL', icon='content_copy', on_click=lambda: ui.run_javascript("""
-                    navigator.clipboard.writeText(window.location.origin + '/opds');
-                    alert('OPDS Catalog Feed URL copied! Enter this in your e-reader app.');
-                """)).props('unelevated rounded-xl color=indigo size=sm font-bold')
 
         # Registered Accounts Management Table (Role-Based Access Control)
         with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):

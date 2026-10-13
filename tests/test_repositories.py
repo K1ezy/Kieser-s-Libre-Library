@@ -65,6 +65,15 @@ class TestRepositoriesArchitecture(unittest.TestCase):
         self.assertEqual(repo.format_added_date("2024-01-15T00:00:00"), "2024-01-15")
         self.assertEqual(repo.format_added_date(None), "Recently")
 
+    def test_facade_delegates_catalog_format_counts(self):
+        """Facade methods delegate get_catalog_format_counts to BookRepository."""
+        self.manager.books.get_catalog_format_counts = AsyncMock(return_value={"total": 10, "epub": 6, "pdf": 4})
+        
+        import asyncio
+        result = asyncio.run(self.manager.get_catalog_format_counts())
+        self.manager.books.get_catalog_format_counts.assert_called_once()
+        self.assertEqual(result, {"total": 10, "epub": 6, "pdf": 4})
+
 
 if __name__ == '__main__':
     unittest.main()

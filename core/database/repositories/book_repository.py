@@ -27,6 +27,18 @@ class BookRepository(BaseRepository):
         except Exception:
             return 0
 
+    async def get_catalog_format_counts(self) -> Dict[str, int]:
+        """Returns catalog format breakdown counts (epub, pdf, total)."""
+        if self.db is None: return {"total": 0, "epub": 0, "pdf": 0}
+        try:
+            total = await self.db['books'].count_documents({})
+            epub = await self.db['books'].count_documents({"file_type": {"$regex": "epub", "$options": "i"}})
+            pdf = await self.db['books'].count_documents({"file_type": {"$regex": "pdf", "$options": "i"}})
+            return {"total": total, "epub": epub, "pdf": pdf}
+        except Exception as e:
+            logger.error(f"Format Counts Error: {e}")
+            return {"total": 0, "epub": 0, "pdf": 0}
+
     async def get_recent_books(self, limit: int = 5) -> List[Dict[str, Any]]:
         """Returns the N most recently added books with lightweight projection."""
         if self.db is None: return []
