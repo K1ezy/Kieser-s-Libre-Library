@@ -88,8 +88,8 @@ def book_card(
             'rounded-2xl overflow-hidden bg-white cursor-pointer flex flex-col'
         ).on('click', lambda: ui.navigate.to(target_url)):
             
-            # Cover Container (Fixed 2:3 aspect ratio adapted for mobile)
-            with ui.element('div').classes('w-full h-44 xs:h-48 sm:h-52 md:h-56 relative overflow-hidden bg-slate-100 flex items-center justify-center'):
+            # Cover Container (Fluid 2:3 aspect ratio perfectly adapted for any phone width)
+            with ui.element('div').classes('w-full aspect-[2/3] relative overflow-hidden bg-slate-100 flex items-center justify-center'):
                 ui.image(cover_url).classes('w-full h-full object-cover sm:group-hover:scale-105 sm:transition-transform') \
                     .props('loading=lazy')
                 

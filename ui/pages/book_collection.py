@@ -446,9 +446,9 @@ class BookCollection:
                                   on_change=lambda e: (self.state.update({'sort_by': e.value}), self.apply_filters_and_sort())) \
                             .props('outlined rounded-xl dense options-dense bg-color=slate-50').classes('w-full text-xs sm:text-sm font-medium')
 
-            # --- BOOKS GRID ---
+            # --- BOOKS GRID (Fluid Auto-Adjusting Layout across all mobile & desktop viewports) ---
             with ui.column().classes('w-full mb-8'):
-                with ui.grid().classes('w-full gap-3 sm:gap-4 md:gap-5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7') as self.grid_container:
+                with ui.element('div').classes('w-full fluid-book-grid') as self.grid_container:
                     pass
 
                 with ui.row().classes('w-full justify-center mt-6'):

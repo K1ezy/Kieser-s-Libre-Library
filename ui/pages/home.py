@@ -207,8 +207,7 @@ async def home_page():
                 ui.label("Upload books or research papers to begin building your personal collection.").classes('text-slate-500 text-xs mb-4 max-w-sm')
                 ui.button('Upload First Document', icon='cloud_upload', on_click=lambda: ui.navigate.to('/upload')) \
                     .props('unelevated rounded-xl color=indigo size=sm font-bold').classes('shadow-xs')
-        else:
-            with ui.grid().classes('w-full grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-3 sm:gap-4 md:gap-5 mb-8'):
+            with ui.element('div').classes('w-full fluid-book-grid mb-8'):
                 for book in recent_books:
                     book_card(book, action_target='book')
 

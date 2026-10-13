@@ -578,6 +578,96 @@ GLOBAL_THEME_STYLES = '''
         .libre-shortcuts-modal .footer-btn:hover {
             background: #4338ca;
         }
+
+        /* =========================================================================
+           MOBILE RESPONSIVENESS & ADAPTIVE VIEWPORT ENGINE
+           ========================================================================= */
+        /* 1. Fluid Book Catalog Grid: Exactly 2 fluid columns on 340-500px phones,
+           1 column on <340px, scaling cleanly to 3-6 columns on larger screens */
+        .fluid-book-grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fill, minmax(clamp(130px, 44vw, 195px), 1fr)) !important;
+            gap: clamp(10px, 2.5vw, 20px) !important;
+            width: 100% !important;
+        }
+        @media (max-width: 340px) {
+            .fluid-book-grid {
+                grid-template-columns: 1fr !important;
+            }
+        }
+
+        /* 2. Touch Target and Safe-Area Insets for Notches & Gesture Bars */
+        .safe-pb {
+            padding-bottom: max(16px, env(safe-area-inset-bottom, 16px)) !important;
+        }
+        .safe-pt {
+            padding-top: max(12px, env(safe-area-inset-top, 12px)) !important;
+        }
+        .safe-pl {
+            padding-left: max(12px, env(safe-area-inset-left, 12px)) !important;
+        }
+        .safe-pr {
+            padding-right: max(12px, env(safe-area-inset-right, 12px)) !important;
+        }
+
+        /* 3. Mobile Card-Stack Transformation for Tables on <768px */
+        @media (max-width: 768px) {
+            .mobile-card-table .q-table__middle {
+                overflow-x: hidden !important;
+            }
+            .mobile-card-table .q-table thead {
+                display: none !important;
+            }
+            .mobile-card-table .q-table tbody tr {
+                display: flex !important;
+                flex-direction: column !important;
+                margin-bottom: 12px !important;
+                border: 1px solid #e2e8f0 !important;
+                border-radius: 18px !important;
+                background-color: #ffffff !important;
+                padding: 14px 16px !important;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04) !important;
+            }
+            .mobile-card-table .q-table tbody td {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+                border-bottom: 1px solid #f1f5f9 !important;
+                padding: 8px 0 !important;
+                font-size: 13px !important;
+                min-height: 36px !important;
+            }
+            .mobile-card-table .q-table tbody td:last-child {
+                border-bottom: none !important;
+                padding-top: 10px !important;
+            }
+            .mobile-card-table .q-table tbody td::before {
+                content: attr(data-label);
+                font-weight: 700;
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                color: #64748b;
+            }
+        }
+
+        /* 4. Mobile Bottom-Sheet Transformation for Modals & Dialogs on <640px */
+        @media (max-width: 640px) {
+            .q-dialog__inner--minimized > div {
+                max-width: 100vw !important;
+                width: 100vw !important;
+                border-bottom-left-radius: 0 !important;
+                border-bottom-right-radius: 0 !important;
+                border-top-left-radius: 28px !important;
+                border-top-right-radius: 28px !important;
+                position: fixed !important;
+                bottom: 0 !important;
+                margin: 0 !important;
+                max-height: 85dvh !important;
+                overflow-y: auto !important;
+                padding-bottom: max(20px, env(safe-area-inset-bottom, 20px)) !important;
+            }
+        }
     </style>
     <script src="/static/js/keyboard_navigation.js" defer></script>
 '''

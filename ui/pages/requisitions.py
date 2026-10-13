@@ -260,53 +260,57 @@ async def requisitions_page():
 
     # Submission Dialog (Compliant with Form FM-LIBS-002)
     def open_requisition_dialog():
-        with ui.dialog() as req_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-xl p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 shadow-2xl'):
-            with ui.row().classes('w-full justify-between items-center mb-2'):
+        with ui.dialog() as req_dialog, ui.card().classes('w-full max-w-xl p-0 overflow-hidden rounded-t-3xl sm:rounded-3xl bg-white border border-slate-200 shadow-2xl flex flex-col max-h-[88dvh]'):
+            # Sticky Header
+            with ui.row().classes('w-full justify-between items-center p-4 sm:p-6 pb-3 border-b border-slate-100 shrink-0 bg-white'):
                 with ui.row().classes('items-center gap-2'):
                     ui.icon('post_add', size='md').classes('text-indigo-600')
-                    ui.label('Faculty Book Requisition Form').classes('text-lg sm:text-xl font-black text-slate-900')
-                    ui.element('span').classes('text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-002'
+                    ui.label('Faculty Book Requisition Form').classes('text-base sm:text-xl font-black text-slate-900')
+                    ui.element('span').classes('text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-002'
                 ui.button(icon='close', on_click=req_dialog.close).props('flat round dense size=sm color=grey')
 
-            ui.label('Submit textbook titles or reference materials to the library collection committee (CS 413 / Form FM-LIBS-002).').classes('text-xs text-slate-500 mb-4')
+            # Scrollable Form Body (Keyboard safe)
+            with ui.column().classes('w-full p-4 sm:p-6 overflow-y-auto flex-1 gap-1'):
+                ui.label('Submit textbook titles or reference materials to the library collection committee (CS 413 / Form FM-LIBS-002).').classes('text-xs text-slate-500 mb-3')
 
-            b_title = ui.input(label='Book / Resource Title *', placeholder='e.g., Software Engineering: A Practitioner\'s Approach') \
-                .classes('w-full mb-2').props('rounded outlined dense autofocus')
+                b_title = ui.input(label='Book / Resource Title *', placeholder='e.g., Software Engineering: A Practitioner\'s Approach') \
+                    .classes('w-full mb-2').props('rounded outlined dense autofocus')
 
-            with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
-                b_author = ui.input(label='Author *', placeholder='e.g., Roger S. Pressman') \
-                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
-                b_edition = ui.input(label='Edition', placeholder='e.g., 9th Edition') \
-                    .classes('w-full sm:w-36').props('rounded outlined dense')
+                with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
+                    b_author = ui.input(label='Author *', placeholder='e.g., Roger S. Pressman') \
+                        .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
+                    b_edition = ui.input(label='Edition', placeholder='e.g., 9th Edition') \
+                        .classes('w-full sm:w-36').props('rounded outlined dense')
 
-            with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
-                b_publisher = ui.input(label='Publisher', placeholder='e.g., McGraw-Hill Education') \
-                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
-                b_copyright = ui.input(label='Copyright Date / Year', placeholder='e.g., 2024') \
-                    .classes('w-full sm:w-36').props('rounded outlined dense')
+                with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
+                    b_publisher = ui.input(label='Publisher', placeholder='e.g., McGraw-Hill Education') \
+                        .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
+                    b_copyright = ui.input(label='Copyright Date / Year', placeholder='e.g., 2024') \
+                        .classes('w-full sm:w-36').props('rounded outlined dense')
 
-            with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
-                b_course_code = ui.input(label='Course Code *', placeholder='e.g., CS 413') \
-                    .classes('w-full sm:w-28').props('rounded outlined dense')
-                b_course_title = ui.input(label='Course Title *', placeholder='e.g., Software Engineering 2') \
-                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
+                with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
+                    b_course_code = ui.input(label='Course Code *', placeholder='e.g., CS 413') \
+                        .classes('w-full sm:w-28').props('rounded outlined dense')
+                    b_course_title = ui.input(label='Course Title *', placeholder='e.g., Software Engineering 2') \
+                        .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
 
-            with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
-                b_price = ui.number(label='Est. Unit Price (PHP)', value=0, min=0) \
-                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
-                b_copies = ui.number(label='Copies Requested *', value=1, min=1) \
-                    .classes('w-full sm:w-36').props('rounded outlined dense')
+                with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
+                    b_price = ui.number(label='Est. Unit Price (PHP)', value=0, min=0) \
+                        .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
+                    b_copies = ui.number(label='Copies Requested *', value=1, min=1) \
+                        .classes('w-full sm:w-36').props('rounded outlined dense')
 
-            with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
-                b_dept = ui.select(DEPARTMENTS, value=user_department, label='Department / Program') \
-                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense options-dense')
-                b_urgency = ui.select(URGENCY_LEVELS, value='Normal', label='Urgency Level') \
-                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense options-dense')
+                with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
+                    b_dept = ui.select(DEPARTMENTS, value=user_department, label='Department / Program') \
+                        .classes('flex-1 min-w-[140px]').props('rounded outlined dense options-dense')
+                    b_urgency = ui.select(URGENCY_LEVELS, value='Normal', label='Urgency Level') \
+                        .classes('flex-1 min-w-[140px]').props('rounded outlined dense options-dense')
 
-            b_justification = ui.textarea(label='Syllabus Justification / Reason for Acquisition', placeholder='Required for updated CS 413 syllabus reference and student laboratory projects.') \
-                .classes('w-full mb-4').props('rounded outlined dense rows=2')
+                b_justification = ui.textarea(label='Syllabus Justification / Reason for Acquisition', placeholder='Required for updated CS 413 syllabus reference and student laboratory projects.') \
+                    .classes('w-full mb-1').props('rounded outlined dense rows=2')
 
-            with ui.row().classes('w-full justify-end gap-2'):
+            # Sticky Action Footer
+            with ui.row().classes('w-full justify-end items-center gap-2 p-3 sm:p-4 px-4 sm:px-6 border-t border-slate-100 shrink-0 bg-slate-50/90'):
                 ui.button('Cancel', on_click=req_dialog.close).props('flat rounded-xl color=grey size=sm font-bold')
                 
                 async def submit_form():
