@@ -120,7 +120,9 @@ def header(drawer_reference=None):
                     if is_librarian:
                         ui.menu_item('Ingest & Upload', on_click=lambda: ui.navigate.to('/upload')).props('prepend-icon=cloud_upload').classes('text-xs font-medium')
                         ui.menu_item('Program Analytics', on_click=lambda: ui.navigate.to('/analytics')).props('prepend-icon=insights').classes('text-xs font-medium')
-                        ui.menu_item('Admin Console', on_click=lambda: ui.navigate.to('/admin')).props('prepend-icon=admin_panel_settings').classes('text-xs font-medium text-indigo-700 font-bold')
+
+                    if user_role == 'admin':
+                        ui.menu_item('Admin Console', on_click=lambda: ui.navigate.to('/admin')).props('prepend-icon=admin_panel_settings').classes('text-xs font-bold text-amber-700')
 
                     ui.separator().classes('my-1')
                     def sign_out():

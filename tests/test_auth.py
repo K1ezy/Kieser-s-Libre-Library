@@ -77,15 +77,23 @@ class TestAuth(unittest.TestCase):
             self.assertTrue(has_role(["faculty", "librarian", "admin"]))
             self.assertFalse(has_role(["admin"]))
 
-            # 4. Librarian role
+            # 4. Librarian role (Library Operations, Book Management & Deletion, but NOT Admin Console)
             mock_user_dict['role'] = 'LIBRARIAN'
             self.assertEqual(get_current_user_role(), "librarian")
-            self.assertTrue(has_role(["librarian", "admin"]))
+            self.assertTrue(has_role(["librarian", "admin"]))  # Can manage/delete books
+            self.assertFalse(has_role(["admin"]))             # Cannot access Admin Console / IT Gov
 
-            # 5. Admin role
+            # 5. Admin role (Full System Governance + Library Operations)
             mock_user_dict['role'] = 'admin'
             self.assertEqual(get_current_user_role(), "admin")
-            self.assertTrue(has_role(["admin"]))
+            self.assertTrue(has_role(["librarian", "admin"]))  # Can manage/delete books
+            self.assertTrue(has_role(["admin"]))              # Can access Admin Console / IT Gov
+
+            # 6. Student role (Read/Study, strictly forbidden from book deletion and admin console)
+            mock_user_dict['role'] = 'student'
+            self.assertEqual(get_current_user_role(), "student")
+            self.assertFalse(has_role(["librarian", "admin"])) # Cannot delete books
+            self.assertFalse(has_role(["admin"]))             # Cannot access Admin Console
 
 if __name__ == "__main__":
     unittest.main()

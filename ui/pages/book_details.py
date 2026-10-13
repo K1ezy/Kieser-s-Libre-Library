@@ -14,6 +14,7 @@ from core.database.mongo_manager import mongo_db
 from core.config import settings
 from core.ai_engine.llm_engine import tars_engine
 from core.utils.text_extractor import extract_text_from_file
+from core.auth.jwt_handler import get_current_user_role
 
 logger = logging.getLogger("BOOK_DETAILS")
 
@@ -483,6 +484,8 @@ class BookDetailsPage:
         is_favorite = bool(self.book.get('is_favorite', False))
 
         user_id = app.storage.user.get('user_id') or app.storage.user.get('token') or 'guest'
+        user_role = get_current_user_role()
+        can_manage_catalog = user_role in ('admin', 'librarian')
 
         # -------------------------------------------------------------
         # 2. DIALOGS (Cover Lightbox, Edit Metadata, Delete Confirmation)
@@ -503,8 +506,11 @@ class BookDetailsPage:
                     ui.button('Close', on_click=cover_dialog.close).props('unelevated rounded-xl size=sm color=indigo font-bold')
             cover_dialog.open()
 
-        # Edit Metadata Dialog
+        # Edit Metadata Dialog (Librarian & Admin Restricted)
         def open_edit_metadata_dialog():
+            if not can_manage_catalog:
+                ui.notify("Librarian or Administrator privileges required to edit book metadata.", type='warning')
+                return
             with ui.dialog() as edit_dialog, ui.card().classes(
                 'w-[calc(100vw-2rem)] max-w-2xl p-5 sm:p-6 bg-white rounded-3xl shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col'
             ):
@@ -536,6 +542,10 @@ class BookDetailsPage:
                     ui.button('Cancel', on_click=edit_dialog.close).props('flat rounded-xl color=grey font-bold size=sm')
                     
                     async def save_metadata():
+                        if get_current_user_role() not in ('admin', 'librarian'):
+                            ui.notify("Unauthorized. Only Librarians and Administrators can edit metadata.", type='negative')
+                            edit_dialog.close()
+                            return
                         new_title = title_input.value.strip() or title
                         new_author = author_input.value.strip() or 'Unknown'
                         new_pub = pub_input.value.strip()
@@ -569,8 +579,11 @@ class BookDetailsPage:
 
             edit_dialog.open()
 
-        # Delete Confirmation Dialog
+        # Delete Confirmation Dialog (Librarian & Admin Restricted)
         def open_delete_dialog():
+            if not can_manage_catalog:
+                ui.notify("Librarian or Administrator privileges required to delete books.", type='warning')
+                return
             with ui.dialog() as del_dialog, ui.card().classes('p-5 sm:p-6 bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200'):
                 with ui.row().classes('items-center gap-3 text-red-600 mb-2'):
                     with ui.element('div').classes('p-2.5 rounded-2xl bg-red-50 text-red-600 border border-red-100'):
@@ -586,6 +599,10 @@ class BookDetailsPage:
                     ui.button('Cancel', on_click=del_dialog.close).props('flat rounded-xl color=grey font-bold size=sm')
                     
                     async def do_delete():
+                        if get_current_user_role() not in ('admin', 'librarian'):
+                            ui.notify("Unauthorized. Only Librarians and Administrators can delete books.", type='negative')
+                            del_dialog.close()
+                            return
                         delete_btn.props('loading')
                         success = await mongo_db.delete_book(self.book_id)
                         del_dialog.close()
@@ -738,11 +755,12 @@ class BookDetailsPage:
                     self.reading_card_container = ui.column().classes('w-full')
                     self.render_reading_card()
 
-                    # 4. UTILITY & DANGER ACTIONS
-                    with ui.row().classes('w-full justify-center pt-1'):
-                        ui.button('Remove Document', icon='delete_outline', on_click=open_delete_dialog)\
-                            .props('flat dense size=sm color=red-7')\
-                            .classes('font-bold hover:bg-red-50 rounded-xl px-3 py-1 text-xs')
+                    # 4. UTILITY & DANGER ACTIONS (Librarian & Admin Restricted)
+                    if can_manage_catalog:
+                        with ui.row().classes('w-full justify-center pt-1'):
+                            ui.button('Remove Document', icon='delete_outline', on_click=open_delete_dialog)\
+                                .props('flat dense size=sm color=red-7')\
+                                .classes('font-bold hover:bg-red-50 rounded-xl px-3 py-1 text-xs')
 
                 # =====================================================
                 # RIGHT COLUMN: METADATA SPECS, SYNOPSIS & AI TOOLS
@@ -765,16 +783,17 @@ class BookDetailsPage:
                                     .classes(f'border rounded-xl p-2 {fav_bg} shadow-xs hover:scale-105 transition-transform'):
                                     ui.tooltip('Favorited' if is_favorite else 'Add to Favorites')
 
-                                # Edit Metadata Button
-                                with ui.button('Edit Metadata', icon='edit', on_click=open_edit_metadata_dialog)\
-                                    .props('flat dense size=sm color=indigo')\
-                                    .classes('bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold rounded-xl px-3 py-1.5 shadow-xs hover:bg-indigo-100'):
-                                    ui.tooltip('Edit Title, Author, Tags, and Info')
+                                # Edit Metadata Button (Librarian & Admin Restricted)
+                                if can_manage_catalog:
+                                    with ui.button('Edit Metadata', icon='edit', on_click=open_edit_metadata_dialog)\
+                                        .props('flat dense size=sm color=indigo')\
+                                        .classes('bg-indigo-50 border border-indigo-200 text-indigo-700 font-bold rounded-xl px-3 py-1.5 shadow-xs hover:bg-indigo-100'):
+                                        ui.tooltip('Edit Title, Author, Tags, and Info')
 
                         # Author with inline edit clue
                         with ui.row().classes('items-center gap-2'):
                             ui.label(f"by {author_name}").classes('text-base sm:text-xl text-indigo-600 font-bold')
-                            if author_name == "Unknown":
+                            if author_name == "Unknown" and can_manage_catalog:
                                 ui.button('Set Author', icon='edit', on_click=open_edit_metadata_dialog)\
                                     .props('flat dense size=xs color=grey-7')\
                                     .classes('text-xs font-semibold underline text-slate-500 hover:text-indigo-600')

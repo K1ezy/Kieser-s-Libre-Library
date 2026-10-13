@@ -82,12 +82,12 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
                 nav_link('Program Analytics', 'insights', '/analytics')
 
             # -------------------------------------------------------------
-            # SECTION 4: ADMINISTRATION (Librarian & Admin Only)
+            # SECTION 4: SYSTEM GOVERNANCE (System Administrator Only)
             # -------------------------------------------------------------
-            if is_librarian:
+            if is_admin:
                 ui.separator().classes('my-2 opacity-60')
-                ui.label('GOVERNANCE').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mb-1 tracking-widest')
-                nav_link('Admin Console', 'admin_panel_settings', '/admin')
+                ui.label('SYSTEM GOVERNANCE').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mb-1 tracking-widest')
+                nav_link('Admin Console', 'admin_panel_settings', '/admin', badge_text='IT GOV')
 
         # 3. FOOTER: USER PROFILE & ROLE BADGE
         user_name = app.storage.user.get('username') or 'Account'

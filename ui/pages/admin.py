@@ -7,6 +7,7 @@ from components.header import header
 from components.bottom_nav import bottom_nav
 from core.database.mongo_manager import mongo_db
 from core.config import settings
+from core.auth.jwt_handler import get_current_user_role
 
 logger = logging.getLogger("ADMIN_UI")
 
@@ -14,8 +15,8 @@ logger = logging.getLogger("ADMIN_UI")
 async def admin_dashboard():
     """Admin Console Dashboard for Libre-Library."""
     app.storage.client['page_path'] = '/admin'
-    if app.storage.user.get('role') != 'admin':
-        ui.notify('Admins only.', type='negative')
+    if get_current_user_role() != 'admin':
+        ui.notify('System Administrator privileges required.', type='negative')
         ui.navigate.to('/')
         return
 

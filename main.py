@@ -207,8 +207,8 @@ async def analytics_route():
 async def admin_route():
     if not check_auth(): return
     user_role = get_current_user_role()
-    if user_role not in ['admin', 'librarian']:
-        ui.notify("Administrator or Librarian access required.", type='warning')
+    if user_role != 'admin':
+        ui.notify("Access restricted. The Admin Console is reserved for System Administrators.", type='warning')
         return ui.navigate.to('/')
     app.storage.client['page_path'] = '/admin'
     apply_theme()

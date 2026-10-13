@@ -7,6 +7,7 @@ from components.header import header
 from components.bottom_nav import bottom_nav
 from components.book_card import book_card
 from core.database.mongo_manager import mongo_db
+from core.auth.jwt_handler import get_current_user_role
 
 logger = logging.getLogger("LIBRE_LIBRARY_COLLECTION")
 
@@ -301,8 +302,8 @@ class BookCollection:
                     )).props('flat color=indigo size=sm').classes('mt-2 font-bold')
                 return
 
-            is_admin = app.storage.user.get('role') in ('admin', 'librarian')
-            delete_cb = self.prompt_delete if is_admin else None
+            can_delete = get_current_user_role() in ('admin', 'librarian')
+            delete_cb = self.prompt_delete if can_delete else None
 
             for book in batch:
                 b_id = book.get('id')
@@ -322,7 +323,7 @@ class BookCollection:
 
     def prompt_delete(self, book_id: str, title: str):
         """Shows deletion confirmation dialog (admin/librarian restricted)."""
-        if app.storage.user.get('role') not in ('admin', 'librarian'):
+        if get_current_user_role() not in ('admin', 'librarian'):
             ui.notify("Administrator or Librarian privileges required to delete books.", type='warning')
             return
 
@@ -335,8 +336,8 @@ class BookCollection:
 
                 async def confirm():
                     confirm_btn.props('loading')
-                    if app.storage.user.get('role') != 'admin':
-                        ui.notify("Administrator privileges required to delete books.", type='negative')
+                    if get_current_user_role() not in ('admin', 'librarian'):
+                        ui.notify("Administrator or Librarian privileges required to delete books.", type='negative')
                         dialog.close()
                         return
                     success = await mongo_db.delete_book(book_id)
