@@ -30,7 +30,7 @@ from core.database.mongo_manager import mongo_db
 from core.config import settings
 
 
-async def bootstrap_admin(username: str, email: str, password: str, setup_secret: str = None) -> bool:
+async def bootstrap_admin(username: str, email: str, password: str, setup_secret: str = None, role: str = "admin") -> bool:
     # Optional setup-secret check if configured
     configured_secret = getattr(settings, 'ADMIN_SETUP_SECRET', None)
     if configured_secret and setup_secret != configured_secret:
@@ -39,6 +39,11 @@ async def bootstrap_admin(username: str, email: str, password: str, setup_secret
 
     clean_user = username.strip()
     clean_email = email.strip().lower()
+    target_role = (role or "admin").strip().lower()
+
+    if target_role not in ('admin', 'librarian', 'faculty', 'student'):
+        print(f"❌ Error: Invalid role '{target_role}'. Must be admin, librarian, faculty, or student.")
+        return False
 
     if len(clean_user) < 3:
         print("❌ Error: Username must be at least 3 characters.")
@@ -68,64 +73,64 @@ async def bootstrap_admin(username: str, email: str, password: str, setup_secret
     hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
 
     if existing:
-        # Promote and update password safely
-        user_id = existing.get("id") or str(existing.get("_id"))
+        # Update user role and password safely
         await mongo_db.db['users'].update_one(
             {"_id": existing["_id"]},
             {"$set": {
-                "role": "admin",
+                "role": target_role,
                 "hashed_password": hashed,
                 "email": clean_email,
                 "username": clean_user,
                 "updated_at": time.time()
             }}
         )
-        print(f"✅ Existing user '{clean_user}' ({clean_email}) updated and promoted to ADMIN.")
+        print(f"✅ Existing user '{clean_user}' ({clean_email}) updated and role set to {target_role.upper()}.")
         return True
     else:
-        # Create fresh admin user
+        # Create fresh user account with target role
         user_doc = {
             "id": str(uuid.uuid4()),
             "username": clean_user,
             "email": clean_email,
             "hashed_password": hashed,
-            "role": "admin",
+            "role": target_role,
             "type": "account",
             "created_at": time.time(),
             "last_login": None
         }
         await mongo_db.db['users'].insert_one(user_doc)
-        print(f"✅ Created fresh Administrator account: '{clean_user}' ({clean_email}) [Role: ADMIN].")
+        print(f"✅ Created fresh account: '{clean_user}' ({clean_email}) [Role: {target_role.upper()}].")
         return True
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Libre-Library Secure Admin Bootstrap Tool")
-    parser.add_argument("--username", help="Admin username")
-    parser.add_argument("--email", help="Admin email address")
-    parser.add_argument("--password", help="Admin password (leave blank for interactive prompt)")
+    parser = argparse.ArgumentParser(description="Libre-Library Account Bootstrap & Provisioning Tool")
+    parser.add_argument("--username", help="Account username")
+    parser.add_argument("--email", help="Account email address")
+    parser.add_argument("--password", help="Account password (leave blank for interactive prompt)")
+    parser.add_argument("--role", default="admin", choices=["admin", "librarian", "faculty", "student"], help="Role to assign (default: admin)")
     parser.add_argument("--setup-secret", help="Optional setup secret")
 
     args = parser.parse_args()
 
     username = args.username
     if not username:
-        username = input("Enter Admin Username: ").strip()
+        username = input("Enter Username: ").strip()
 
     email = args.email
     if not email:
-        email = input("Enter Admin Email: ").strip()
+        email = input("Enter Email: ").strip()
 
     password = args.password
     if not password:
-        password = getpass.getpass("Enter Admin Password (min 8 chars): ").strip()
-        confirm = getpass.getpass("Confirm Admin Password: ").strip()
+        password = getpass.getpass("Enter Password (min 8 chars): ").strip()
+        confirm = getpass.getpass("Confirm Password: ").strip()
         if password != confirm:
             print("❌ Error: Passwords do not match.")
             sys.exit(1)
 
     import asyncio
-    success = asyncio.run(bootstrap_admin(username, email, password, args.setup_secret))
+    success = asyncio.run(bootstrap_admin(username, email, password, args.setup_secret, role=args.role))
     sys.exit(0 if success else 1)
 
 
