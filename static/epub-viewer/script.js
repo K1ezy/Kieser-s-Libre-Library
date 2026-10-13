@@ -231,12 +231,27 @@
             } catch (err) {}
         });
 
-        // Fast CFI Restoration
-        book.ready.then(() => book.locations.generate(1000)).then(() => {
-            if (isRestoring && !initialCfi && initialPage > 1 && totalPages > 1) {
+        // Instant Spine / Lazy CFI Restoration (Non-blocking)
+        book.ready.then(() => {
+            if (isRestoring && !initialCfi && initialPage > 1 && totalPages > 1 && book.spine && book.spine.length) {
                 const fraction = Math.max(0, Math.min(1, (initialPage - 1) / (totalPages - 1)));
-                const cfi = book.locations.cfiFromPercentage(fraction);
-                if (cfi) rendition.display(cfi);
+                const spineIdx = Math.min(book.spine.length - 1, Math.floor(fraction * book.spine.length));
+                const item = book.spine.get(spineIdx);
+                if (item && item.href) {
+                    rendition.display(item.href).catch(() => {});
+                }
+            }
+
+            // Generate precise CFI locations asynchronously during idle time without blocking UI
+            const generateLocationsAsync = () => {
+                if (book && book.locations) {
+                    book.locations.generate(1600).catch(() => {});
+                }
+            };
+            if ('requestIdleCallback' in window) {
+                window.requestIdleCallback(generateLocationsAsync, { timeout: 3000 });
+            } else {
+                setTimeout(generateLocationsAsync, 1000);
             }
         }).catch(() => {});
 

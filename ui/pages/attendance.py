@@ -62,10 +62,13 @@ async def attendance_page():
         stats_container = ui.row().classes('w-full grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6')
 
         async def refresh_stats():
+            import asyncio
             stats_container.clear()
-            today_logs = await mongo_db.get_today_attendance_logs(limit=500)
-            active_count = await mongo_db.get_active_checked_in_count()
-            total_all = await mongo_db.get_total_visitors_count()
+            today_logs, active_count, total_all = await asyncio.gather(
+                mongo_db.get_today_attendance_logs(limit=500),
+                mongo_db.get_active_checked_in_count(),
+                mongo_db.get_total_visitors_count()
+            )
 
             with stats_container:
                 stat_cards = [

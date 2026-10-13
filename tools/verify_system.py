@@ -106,9 +106,33 @@ async def run_verification():
     search_res = await mongo_db.search_books("Freddy", limit=10)
     t_search = (time.perf_counter() - t_start) * 1000
 
+    t_start = time.perf_counter()
+    format_counts = await mongo_db.get_catalog_format_counts()
+    t_formats = (time.perf_counter() - t_start) * 1000
+
+    # Test TTL cache speedup
+    t_start = time.perf_counter()
+    format_counts_cached = await mongo_db.get_catalog_format_counts()
+    t_formats_cached = (time.perf_counter() - t_start) * 1000
+
+    # Test batch book retrieval
+    test_ids = [b.get("id") for b in recent_books[:5] if b.get("id")]
+    t_start = time.perf_counter()
+    batch_map = await mongo_db.get_books_by_ids(test_ids)
+    t_batch = (time.perf_counter() - t_start) * 1000
+
+    # Test parallel stats
+    t_start = time.perf_counter()
+    diag_stats = await mongo_db.get_system_diagnostics()
+    t_diag = (time.perf_counter() - t_start) * 1000
+
     results["performance"].append(("MongoDB Count Query", f"{t_count:.2f} ms", f"{total_books} total catalog books indexed"))
     results["performance"].append(("MongoDB Recent Fetch (Limit 20)", f"{t_recent:.2f} ms", f"Retrieved {len(recent_books)} books"))
     results["performance"].append(("MongoDB Regex Search Index", f"{t_search:.2f} ms", f"Retrieved {len(search_res)} hits"))
+    results["performance"].append(("Format Breakdown (Parallel DB)", f"{t_formats:.2f} ms", f"Total: {format_counts.get('total')}, EPUB: {format_counts.get('epub')}, PDF: {format_counts.get('pdf')}"))
+    results["performance"].append(("Format Breakdown (TTL Cached)", f"{t_formats_cached:.3f} ms", f"In-memory cached response"))
+    results["performance"].append(("Batch Book Lookup (5 Books)", f"{t_batch:.2f} ms", f"Retrieved {len(batch_map)} books in 1 query"))
+    results["performance"].append(("System Diagnostics (Parallel)", f"{t_diag:.2f} ms", f"Users: {diag_stats.get('users')}, Books: {diag_stats.get('books')}"))
 
     # B. HTTP Endpoint Latency (Local Server)
     async with httpx.AsyncClient(timeout=4.0) as client:

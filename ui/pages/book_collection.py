@@ -93,28 +93,32 @@ class BookCollection:
         if 'search_filter' in app.storage.client:
             self.state['search_term'] = app.storage.client.pop('search_filter')
 
+        import asyncio
+        catalog_proj = {
+            "_id": 0, "id": 1, "title": 1, "display_author": 1, "authors": 1,
+            "file_type": 1, "formats": 1, "cover_image": 1, "custom_shelf": 1,
+            "added_at": 1, "created_at": 1, "is_favorite": 1
+        }
+
         try:
             uid = app.storage.user.get('user_id') or app.storage.user.get('token')
+            tasks = [mongo_db.get_all_books(limit=2000, sort_by='newest', projection=catalog_proj)]
             if uid:
-                try:
-                    prog_list = await mongo_db.get_reading_history(uid, limit=1000)
-                    self.user_progress = {p.get('book_id'): p for p in prog_list if p.get('book_id')}
-                except Exception:
-                    self.user_progress = {}
+                tasks.append(mongo_db.get_reading_history(uid, limit=1000))
+                tasks.append(mongo_db.get_favorite_books(limit=1000))
 
-                try:
-                    fav_docs = await mongo_db.get_favorite_books(limit=1000)
-                    self.user_favorites = {b.get('id') for b in fav_docs if b.get('id')}
-                except Exception:
-                    self.user_favorites = set()
-
-            catalog_proj = {
-                "_id": 0, "id": 1, "title": 1, "display_author": 1, "authors": 1,
-                "file_type": 1, "formats": 1, "cover_image": 1, "custom_shelf": 1,
-                "added_at": 1, "created_at": 1, "is_favorite": 1
-            }
-            all_books = await mongo_db.get_all_books(limit=2000, sort_by='newest', projection=catalog_proj)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            all_books = results[0] if isinstance(results[0], list) else []
             self.books = all_books or []
+
+            if uid and len(results) >= 3:
+                prog_list = results[1] if isinstance(results[1], list) else []
+                fav_docs = results[2] if isinstance(results[2], list) else []
+                self.user_progress = {p.get('book_id'): p for p in prog_list if p.get('book_id')}
+                self.user_favorites = {b.get('id') for b in fav_docs if b.get('id')}
+            else:
+                self.user_progress = {}
+                self.user_favorites = set()
 
             # Extract distinct shelves
             shelves = set()

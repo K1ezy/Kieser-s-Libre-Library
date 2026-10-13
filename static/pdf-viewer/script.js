@@ -132,9 +132,23 @@
     function setScale(newScale) {
         currentScale = Math.max(0.6, Math.min(3.0, newScale));
         renderedPages.clear();
+
+        const viewerRect = viewerContainer ? viewerContainer.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+
         pageContainers.forEach(container => {
             const pageNum = parseInt(container.getAttribute('data-page-number'), 10);
-            renderPage(pageNum, container);
+            const rect = container.getBoundingClientRect();
+            const isVisible = (rect.bottom >= viewerRect.top - 250 && rect.top <= viewerRect.bottom + 250);
+
+            if (isVisible) {
+                renderPage(pageNum, container);
+            } else {
+                const canvas = container.querySelector('.pdf-canvas');
+                if (canvas && canvas._renderTask) {
+                    try { canvas._renderTask.cancel(); } catch(e) {}
+                    canvas._renderTask = null;
+                }
+            }
         });
     }
 
@@ -162,11 +176,16 @@
     function prevPage() { scrollToPage(currentPage - 1); }
 
     // 6. Virtualized Page Rendering Pipeline
-    function createPageSkeleton(pageNum) {
+    function createPageSkeleton(pageNum, estWidth, estHeight) {
         const container = document.createElement('div');
         container.className = 'page-container';
         container.setAttribute('data-page-number', pageNum);
         container.id = `pdf-page-${pageNum}`;
+        if (estWidth && estHeight) {
+            container.style.width = `${estWidth}px`;
+            container.style.height = `${estHeight}px`;
+            container.style.minHeight = `${estHeight}px`;
+        }
 
         const canvas = document.createElement('canvas');
         canvas.className = 'pdf-canvas';
@@ -180,7 +199,6 @@
         container.appendChild(canvas);
         container.appendChild(textLayer);
         container.appendChild(annLayer);
-        pdfViewer.appendChild(container);
         pageContainers.push(container);
 
         bindTextSelectionOnContainer(container, pageNum);
@@ -193,6 +211,12 @@
         const textLayer = container.querySelector('.textLayer');
         if (!canvas) return;
 
+        // Cancel previous active render task on this canvas if any
+        if (canvas._renderTask) {
+            try { canvas._renderTask.cancel(); } catch(e) {}
+            canvas._renderTask = null;
+        }
+
         try {
             const page = await pdfDoc.getPage(pageNum);
             const viewport = page.getViewport({ scale: currentScale });
@@ -203,7 +227,10 @@
             container.style.height = `${viewport.height}px`;
 
             const ctx = canvas.getContext('2d');
-            await page.render({ canvasContext: ctx, viewport }).promise;
+            const renderTask = page.render({ canvasContext: ctx, viewport });
+            canvas._renderTask = renderTask;
+            await renderTask.promise;
+            canvas._renderTask = null;
 
             if (textLayer) {
                 textLayer.innerHTML = '';
@@ -224,7 +251,9 @@
                 window.AnnotationManager.renderHighlightsForPage(pageNum, container);
             }
         } catch(e) {
-            console.error(`[PDF Render] Error page ${pageNum}:`, e);
+            if (e && e.name !== 'RenderingCancelledException') {
+                console.error(`[PDF Render] Error page ${pageNum}:`, e);
+            }
         }
     }
 
@@ -275,7 +304,7 @@
                 pop.style.top = `${y}px`;
                 pop.style.display = 'flex';
                 if (noteBox) noteBox.style.display = 'none';
-                if (noteInput) noteInput.value = '';
+                if (noteText) noteText.value = '';
             }
         });
     }
@@ -393,21 +422,33 @@
 
     pdfjsLib.getDocument({ url: fileUrl, cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/', cMapPacked: true })
         .promise
-        .then(doc => {
+        .then(async doc => {
             pdfDoc = doc;
             totalPages = doc.numPages;
             if (loaderDiv) loaderDiv.style.display = 'none';
             ProgressSync.updateHud(currentPage, totalPages);
 
+            let estWidth = 700;
+            let estHeight = 900;
+            try {
+                const firstPage = await doc.getPage(1);
+                const fpViewport = firstPage.getViewport({ scale: currentScale });
+                estWidth = fpViewport.width;
+                estHeight = fpViewport.height;
+            } catch(e) {}
+
+            const fragment = document.createDocumentFragment();
             for (let i = 1; i <= totalPages; i++) {
-                const skeleton = createPageSkeleton(i);
+                const skeleton = createPageSkeleton(i, estWidth, estHeight);
+                fragment.appendChild(skeleton);
                 observer.observe(skeleton);
             }
+            if (pdfViewer) pdfViewer.appendChild(fragment);
 
             window.AnnotationManager.fetchAnnotations();
 
             if (initialPage > 1) {
-                setTimeout(() => scrollToPage(initialPage), 250);
+                setTimeout(() => scrollToPage(initialPage), 150);
             }
         })
         .catch(err => {

@@ -1,6 +1,7 @@
 import re
 import time
 import uuid
+import asyncio
 import logging
 from typing import Optional, List, Dict, Any
 
@@ -148,29 +149,29 @@ class UserRepository(BaseRepository):
             return 0
 
     async def get_library_stats(self, user_id: Optional[str] = None) -> Dict[str, Any]:
-        """Calculates real-time library, study and task completion statistics."""
+        """Calculates real-time library, study and task completion statistics with parallel counts."""
         if self.db is None: return {"books": 0, "tasks_done": 0, "total_tasks": 0, "reading_count": 0}
         try:
-            book_count = await self.db['books'].count_documents({})
-            
             task_filter: Dict[str, Any] = {"$or": [{"completed": True}, {"status": "done"}]}
             total_filter: Dict[str, Any] = {}
+            reading_q: Dict[str, Any] = {}
             if user_id:
                 task_filter["user_id"] = user_id
                 total_filter["user_id"] = user_id
+                reading_q["user_id"] = user_id
 
-            done_tasks = await self.db['tasks'].count_documents(task_filter)
+            book_count, done_tasks, total_tasks, reading_count = await asyncio.gather(
+                self.db['books'].count_documents({}),
+                self.db['tasks'].count_documents(task_filter),
+                self.db['tasks'].count_documents(total_filter),
+                self.db['reading_progress'].count_documents(reading_q)
+            )
+
             if done_tasks == 0 and not user_id:
                 done_tasks = await self.db['planner'].count_documents({"status": "done"})
 
-            total_tasks = await self.db['tasks'].count_documents(total_filter)
             if total_tasks == 0 and not user_id:
                 total_tasks = await self.db['planner'].count_documents({})
-
-            reading_count = 0
-            if 'reading_progress' in await self.db.list_collection_names():
-                reading_q = {"user_id": user_id} if user_id else {}
-                reading_count = await self.db['reading_progress'].count_documents(reading_q)
 
             return {
                 "books": book_count,
@@ -205,14 +206,16 @@ class UserRepository(BaseRepository):
             return False
 
     async def get_system_diagnostics(self) -> Dict[str, Any]:
-        """Provides holistic system diagnostic metrics for the Admin Console."""
+        """Provides holistic system diagnostic metrics for the Admin Console via parallel counts."""
         if self.db is None: return {}
         try:
-            user_count = await self.db['users'].count_documents({"type": "account"})
-            book_count = await self.db['books'].count_documents({})
-            task_count = await self.db['tasks'].count_documents({})
-            deck_count = await self.db['decks'].count_documents({})
-            chat_count = await self.db['chat_history'].count_documents({})
+            user_count, book_count, task_count, deck_count, chat_count = await asyncio.gather(
+                self.db['users'].count_documents({"type": "account"}),
+                self.db['books'].count_documents({}),
+                self.db['tasks'].count_documents({}),
+                self.db['decks'].count_documents({}),
+                self.db['chat_history'].count_documents({})
+            )
             return {
                 "users": user_count,
                 "books": book_count,

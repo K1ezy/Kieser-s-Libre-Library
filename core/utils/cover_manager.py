@@ -373,6 +373,19 @@ class CoverManager:
         results = {"total": 0, "success": 0, "failed": 0, "skipped": 0}
         candidate_folders: List[Path] = []
 
+        # Optimization: Pre-fetch IDs of books that actually have missing covers/types to avoid N update queries on startup
+        missing_ids = set()
+        if sync_mongodb and mongo_db.db is not None:
+            try:
+                missing_cursor = mongo_db.db['books'].find(
+                    {"$or": [{"cover_image": None}, {"cover_image": "/static/default_cover.svg"}, {"file_type": "UNKNOWN"}, {"file_type": None}]},
+                    {"id": 1}
+                )
+                missing_docs = await missing_cursor.to_list(length=1000)
+                missing_ids = {d['id'] for d in missing_docs if d.get('id')}
+            except Exception as e:
+                logger.debug(f"Failed to fetch missing cover candidates: {e}")
+
         for folder in sorted(base_dir.iterdir()):
             if not folder.is_dir():
                 continue
@@ -390,8 +403,8 @@ class CoverManager:
 
             if cover.exists() and cover.stat().st_size > 500:
                 results["skipped"] += 1
-                # Sync MongoDB record if cover_image or file_type is missing
-                if sync_mongodb and mongo_db.db is not None:
+                # Sync MongoDB record only if this specific book was identified as missing fields
+                if sync_mongodb and mongo_db.db is not None and book_id in missing_ids:
                     try:
                         sync_fields = {"cover_image": f"/static_books/{book_id}/cover.jpg"}
                         if content_file:
@@ -400,9 +413,10 @@ class CoverManager:
                             sync_fields["file_type"] = file_type_str
 
                         await mongo_db.db['books'].update_one(
-                            {"id": book_id, "$or": [{"cover_image": None}, {"cover_image": "/static/default_cover.svg"}, {"file_type": "UNKNOWN"}, {"file_type": None}]},
+                            {"id": book_id},
                             {"$set": sync_fields}
                         )
+                        missing_ids.discard(book_id)
                     except Exception as sync_err:
                         logger.debug(f"Sync check notice for {book_id}: {sync_err}")
             else:

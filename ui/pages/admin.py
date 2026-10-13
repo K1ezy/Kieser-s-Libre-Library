@@ -22,9 +22,12 @@ async def admin_dashboard():
     drawer = sidebar()
     header(drawer_reference=drawer)
 
-    # Fetch system diagnostics
-    stats = await mongo_db.get_system_diagnostics()
-    raw_users = await mongo_db.get_all_users()
+    # Fetch system diagnostics concurrently
+    import asyncio
+    stats, raw_users = await asyncio.gather(
+        mongo_db.get_system_diagnostics(),
+        mongo_db.get_all_users()
+    )
 
     # Sanitize user rows to ensure strict JSON serializability (no BSON ObjectId)
     def format_users(user_list):

@@ -24,13 +24,16 @@ async def librarian_dashboard():
     header(drawer_reference=drawer)
     FloatingChat()
 
-    # Load live operational metrics in parallel
-    format_counts = await mongo_db.get_catalog_format_counts()
-    req_counts = await mongo_db.get_requisition_status_counts()
-    pending_reqs = await mongo_db.get_requisitions(status='Pending Review', limit=4)
-    active_visitors = await mongo_db.get_active_checked_in_count()
-    today_logs = await mongo_db.get_today_attendance_logs(limit=100)
-    recent_books = await mongo_db.books.get_recent_books(limit=4)
+    # Load live operational metrics concurrently in a single wave
+    import asyncio
+    format_counts, req_counts, pending_reqs, active_visitors, today_logs, recent_books = await asyncio.gather(
+        mongo_db.get_catalog_format_counts(),
+        mongo_db.get_requisition_status_counts(),
+        mongo_db.get_requisitions(status='Pending Review', limit=4),
+        mongo_db.get_active_checked_in_count(),
+        mongo_db.get_today_attendance_logs(limit=100),
+        mongo_db.books.get_recent_books(limit=4)
+    )
 
     total_books = format_counts.get('total', 0)
     epub_count = format_counts.get('epub', 0)

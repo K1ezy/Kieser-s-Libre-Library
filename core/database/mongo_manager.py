@@ -140,6 +140,9 @@ class MongoManager:
     async def get_book_details(self, book_id: str) -> Optional[Dict[str, Any]]:
         return await self.books.get_book_details(book_id)
 
+    async def get_books_by_ids(self, book_ids: List[str], projection: Optional[Dict[str, int]] = None) -> Dict[str, Dict[str, Any]]:
+        return await self.books.get_books_by_ids(book_ids, projection=projection)
+
     async def add_book_metadata(self, book_data: dict) -> bool:
         return await self.books.add_book_metadata(book_data)
 

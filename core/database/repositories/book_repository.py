@@ -1,4 +1,5 @@
 import re
+import time
 import shutil
 import asyncio
 import logging
@@ -19,22 +20,49 @@ class BookRepository(BaseRepository):
     shelving, reading statuses, and physical book file resolution.
     """
 
+    _format_counts_cache: Optional[Dict[str, int]] = None
+    _format_counts_cache_time: float = 0.0
+    _total_count_cache: Optional[int] = None
+    _total_count_cache_time: float = 0.0
+    CACHE_TTL: float = 60.0  # seconds
+
+    def invalidate_cache(self):
+        """Clears in-memory catalog statistic caches."""
+        self._format_counts_cache = None
+        self._format_counts_cache_time = 0.0
+        self._total_count_cache = None
+        self._total_count_cache_time = 0.0
+
     async def get_total_book_count(self) -> int:
-        """Returns the total number of books in the collection."""
+        """Returns the total number of books in the collection with TTL caching."""
         if self.db is None: return 0
+        now = time.time()
+        if self._total_count_cache is not None and (now - self._total_count_cache_time) < self.CACHE_TTL:
+            return self._total_count_cache
         try:
-            return await self.db['books'].count_documents({})
+            count = await self.db['books'].count_documents({})
+            self._total_count_cache = count
+            self._total_count_cache_time = now
+            return count
         except Exception:
             return 0
 
     async def get_catalog_format_counts(self) -> Dict[str, int]:
-        """Returns catalog format breakdown counts (epub, pdf, total)."""
+        """Returns catalog format breakdown counts (epub, pdf, total) with parallel counts and TTL caching."""
         if self.db is None: return {"total": 0, "epub": 0, "pdf": 0}
+        now = time.time()
+        if self._format_counts_cache is not None and (now - self._format_counts_cache_time) < self.CACHE_TTL:
+            return self._format_counts_cache.copy()
         try:
-            total = await self.db['books'].count_documents({})
-            epub = await self.db['books'].count_documents({"file_type": {"$regex": "epub", "$options": "i"}})
-            pdf = await self.db['books'].count_documents({"file_type": {"$regex": "pdf", "$options": "i"}})
-            return {"total": total, "epub": epub, "pdf": pdf}
+            total, epub, pdf = await asyncio.gather(
+                self.db['books'].count_documents({}),
+                self.db['books'].count_documents({"file_type": {"$regex": "epub", "$options": "i"}}),
+                self.db['books'].count_documents({"file_type": {"$regex": "pdf", "$options": "i"}})
+            )
+            res = {"total": total, "epub": epub, "pdf": pdf}
+            self._format_counts_cache = res
+            self._format_counts_cache_time = now
+            return res
         except Exception as e:
             logger.error(f"Format Counts Error: {e}")
             return {"total": 0, "epub": 0, "pdf": 0}
@@ -144,6 +172,37 @@ class BookRepository(BaseRepository):
         """Alias for get_book_by_id."""
         return await self.get_book_by_id(book_id)
 
+    async def get_books_by_ids(self, book_ids: List[str], projection: Optional[Dict[str, int]] = None) -> Dict[str, Dict[str, Any]]:
+        """
+        Batches multiple book lookups into a single indexed query.
+        Returns a dictionary mapping book id to book document.
+        """
+        if self.db is None or not book_ids:
+            return {}
+        try:
+            clean_ids = [str(bid).strip() for bid in book_ids if bid]
+            if not clean_ids:
+                return {}
+            or_conditions: List[Dict[str, Any]] = [{"id": {"$in": clean_ids}}]
+            valid_obj_ids = [ObjectId(bid) for bid in clean_ids if ObjectId.is_valid(bid)]
+            if valid_obj_ids:
+                or_conditions.append({"_id": {"$in": valid_obj_ids}})
+
+            cursor = self.db['books'].find({"$or": or_conditions}, projection)
+            docs = await cursor.to_list(length=len(clean_ids) * 2)
+            result = {}
+            for doc in docs:
+                c_doc = self.clean_doc(doc)
+                if c_doc:
+                    if 'id' in c_doc:
+                        result[str(c_doc['id'])] = c_doc
+                    if '_id' in c_doc:
+                        result[str(c_doc['_id'])] = c_doc
+            return result
+        except Exception as e:
+            logger.error(f"Batch Get Books Error: {e}")
+            return {}
+
     async def add_book_metadata(self, book_data: dict) -> bool:
         """Updates or inserts book metadata."""
         if self.db is None: return False
@@ -154,6 +213,7 @@ class BookRepository(BaseRepository):
                 {"$set": book_data},
                 upsert=True
             )
+            self.invalidate_cache()
             return True
         except Exception as e:
             logger.error(f"Add Book Metadata Error: {e}")
@@ -167,6 +227,7 @@ class BookRepository(BaseRepository):
                 {"id": book_id},
                 {"$set": updates}
             )
+            self.invalidate_cache()
             return res.modified_count > 0 or res.matched_count > 0
         except Exception as e:
             logger.error(f"Update Book Metadata Error: {e}")
@@ -230,6 +291,7 @@ class BookRepository(BaseRepository):
             )
 
             logger.info(f"Book deleted successfully in optimized workflow: {book_id}")
+            self.invalidate_cache()
             return True
 
         except Exception as e:

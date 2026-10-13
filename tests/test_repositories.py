@@ -74,6 +74,24 @@ class TestRepositoriesArchitecture(unittest.TestCase):
         self.manager.books.get_catalog_format_counts.assert_called_once()
         self.assertEqual(result, {"total": 10, "epub": 6, "pdf": 4})
 
+    def test_facade_delegates_get_books_by_ids(self):
+        """Facade methods delegate get_books_by_ids to BookRepository."""
+        self.manager.books.get_books_by_ids = AsyncMock(return_value={"b1": {"id": "b1", "title": "B1"}})
+        
+        import asyncio
+        result = asyncio.run(self.manager.get_books_by_ids(["b1"]))
+        self.manager.books.get_books_by_ids.assert_called_once_with(["b1"], projection=None)
+        self.assertEqual(result["b1"]["title"], "B1")
+
+    def test_book_repository_cache_invalidation(self):
+        """Verifies BookRepository TTL cache clearing on invalidate_cache()."""
+        repo = BookRepository(self.mock_db)
+        repo._format_counts_cache = {"total": 10, "epub": 6, "pdf": 4}
+        repo._total_count_cache = 10
+        repo.invalidate_cache()
+        self.assertIsNone(repo._format_counts_cache)
+        self.assertIsNone(repo._total_count_cache)
+
 
 if __name__ == '__main__':
     unittest.main()

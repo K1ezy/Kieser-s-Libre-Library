@@ -95,31 +95,43 @@ async def home_page():
     drawer = sidebar()
     header(drawer_reference=drawer)
 
-    try:
-        total_books = await mongo_db.get_total_book_count()
-        recent_books = await mongo_db.get_recent_books(limit=14)
-    except Exception:
-        total_books, recent_books = 0, []
-
+    import asyncio
     uid = app.storage.user.get('user_id') or app.storage.user.get('token')
     user_name = app.storage.user.get('username') or app.storage.user.get('name') or ''
+    total_books, recent_books = 0, []
     active_reading_items = []
-    if uid:
-        try:
-            raw_history = await mongo_db.progress.get_reading_history(uid, limit=10)
+
+    try:
+        tasks = [
+            mongo_db.get_total_book_count(),
+            mongo_db.get_recent_books(limit=14)
+        ]
+        if uid:
+            tasks.append(mongo_db.progress.get_reading_history(uid, limit=8))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        total_books = results[0] if isinstance(results[0], int) else 0
+        recent_books = results[1] if isinstance(results[1], list) else []
+        raw_history = results[2] if len(results) > 2 and isinstance(results[2], list) else []
+
+        if raw_history:
+            b_ids = [item.get('book_id') for item in raw_history if item.get('book_id')]
+            books_map = await mongo_db.get_books_by_ids(b_ids) if b_ids else {}
+
             for item in raw_history:
                 b_id = item.get('book_id')
-                if b_id:
-                    b_doc = await mongo_db.get_book_details(b_id)
-                    if b_doc:
-                        b_doc['progress_percent'] = item.get('progress_percent', 0)
-                        b_doc['current_page'] = item.get('current_page', 1)
-                        b_doc['total_pages'] = item.get('total_pages', 1)
-                        active_reading_items.append(b_doc)
+                b_doc = books_map.get(b_id)
+                if b_doc:
+                    b_copy = dict(b_doc)
+                    b_copy['progress_percent'] = item.get('progress_percent', 0)
+                    b_copy['current_page'] = item.get('current_page', 1)
+                    b_copy['total_pages'] = item.get('total_pages', 1)
+                    active_reading_items.append(b_copy)
                 if len(active_reading_items) >= 2:
                     break
-        except Exception:
-            active_reading_items = []
+    except Exception:
+        total_books, recent_books = 0, []
+        active_reading_items = []
 
     # System Status values
     is_tars_online = tars_engine.is_available

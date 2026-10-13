@@ -45,8 +45,11 @@ class UserProfile:
     async def load_data(self):
         """Loads profile and stats strictly isolated to the current user."""
         user_id = app.storage.user.get('user_id')
-        self.profile_data = await mongo_db.get_user_profile(user_id=user_id)
-        self.stats = await mongo_db.get_library_stats(user_id=user_id)
+        import asyncio
+        self.profile_data, self.stats = await asyncio.gather(
+            mongo_db.get_user_profile(user_id=user_id),
+            mongo_db.get_library_stats(user_id=user_id)
+        )
         self.render_content.refresh()
 
     async def save_changes(self):
