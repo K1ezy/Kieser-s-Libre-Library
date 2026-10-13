@@ -5,7 +5,6 @@ from nicegui import ui, app
 
 from components.sidebar import sidebar
 from components.header import header
-from components.bottom_nav import bottom_nav
 from core.database.mongo_manager import mongo_db
 
 STATUS_BADGES = {
@@ -30,7 +29,6 @@ async def requisitions_page():
 
     drawer = sidebar()
     header(drawer_reference=drawer)
-    bottom_nav()
 
     # User context
     user_id = app.storage.user.get('user_id') or "guest"
@@ -46,8 +44,8 @@ async def requisitions_page():
     current_status_filter = {'val': 'All'}
 
     with ui.column().classes(
-        'w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
+        'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16'
     ):
         # Header Banner
         with ui.row().classes('w-full items-center justify-between gap-4 mb-6 flex-wrap'):

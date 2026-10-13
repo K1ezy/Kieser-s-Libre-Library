@@ -4,7 +4,6 @@ import logging
 
 from components.sidebar import sidebar
 from components.header import header
-from components.bottom_nav import bottom_nav
 from components.chat_floating import FloatingChat
 from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import get_current_user_role
@@ -23,7 +22,6 @@ async def librarian_dashboard():
 
     drawer = sidebar()
     header(drawer_reference=drawer)
-    bottom_nav()
     FloatingChat()
 
     # Load live operational metrics in parallel
@@ -40,8 +38,8 @@ async def librarian_dashboard():
     pending_count = req_counts.get('Pending Review', 0)
 
     with ui.column().classes(
-        'w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
+        'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16'
     ):
         # 1. Page Title Banner
         with ui.row().classes('w-full items-start justify-between gap-4 mb-6 flex-wrap'):

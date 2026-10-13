@@ -1,7 +1,6 @@
 from nicegui import ui, app
 from components.sidebar import sidebar
 from components.header import header
-from components.bottom_nav import bottom_nav
 from components.book_card import book_card, has_disk_cover, get_format_color
 from core.database.mongo_manager import mongo_db
 from core.ai_engine.llm_engine import tars_engine
@@ -95,7 +94,6 @@ async def home_page():
     
     drawer = sidebar()
     header(drawer_reference=drawer)
-    bottom_nav()
 
     try:
         total_books = await mongo_db.get_total_book_count()
@@ -131,22 +129,23 @@ async def home_page():
 
     greeting_str = f"{get_greeting()}, {user_name}" if user_name else f"{get_greeting()}"
 
-    with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] md:pt-24 px-3 sm:px-6 md:px-10 max-w-[1700px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
+    with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] md:pt-24 px-3 sm:px-6 md:px-10 max-w-[1700px] mx-auto pb-16'):
         
         # 1. Compact Welcome Header (Personal Dashboard)
-        with ui.row().classes(
-            'w-full justify-between items-center mb-5 sm:mb-6 gap-4 p-4 sm:p-6 bg-gradient-to-r '
-            'from-slate-900 via-indigo-950 to-slate-900 rounded-2xl sm:rounded-3xl shadow-md text-white'
+        with ui.element('div').classes(
+            'w-full flex flex-col md:flex-row justify-between items-start md:items-center min-h-fit '
+            'mb-5 sm:mb-6 gap-4 p-4 sm:p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 '
+            'rounded-2xl sm:rounded-3xl shadow-md text-white'
         ):
-            with ui.row().classes('items-center gap-3.5 min-w-0'):
+            with ui.row().classes('items-center gap-3.5 min-w-0 flex-1'):
                 with ui.element('div').classes('p-2.5 sm:p-3 rounded-2xl bg-white/10 border border-white/20 text-white shadow-inner shrink-0'):
                     ui.icon('local_library', size='sm')
                 with ui.column().classes('gap-0.5 min-w-0'):
-                    ui.label(f"{greeting_str}!").classes('text-xl sm:text-2xl md:text-3xl font-black text-white tracking-tight leading-tight')
+                    ui.label(f"{greeting_str}!").classes('text-lg sm:text-2xl md:text-3xl font-black text-white tracking-tight leading-tight break-words')
                     ui.label('Welcome to your personal learning & reading workspace.').classes('text-xs sm:text-sm text-slate-300 font-medium')
 
             # Multi-tier System Health Indicator (Transparent Operational Diagnostics)
-            with ui.row().classes('items-center gap-2 shrink-0 flex-wrap'):
+            with ui.element('div').classes('flex flex-wrap items-center gap-2 shrink-0 w-full md:w-auto'):
                 ui.link(f"{total_books} Books Cataloged", '/books').classes(
                     'no-underline text-xs font-bold px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-white transition-colors'
                 )
@@ -207,6 +206,7 @@ async def home_page():
                 ui.label("Upload books or research papers to begin building your personal collection.").classes('text-slate-500 text-xs mb-4 max-w-sm')
                 ui.button('Upload First Document', icon='cloud_upload', on_click=lambda: ui.navigate.to('/upload')) \
                     .props('unelevated rounded-xl color=indigo size=sm font-bold').classes('shadow-xs')
+        else:
             with ui.element('div').classes('w-full fluid-book-grid mb-8'):
                 for book in recent_books:
                     book_card(book, action_target='book')

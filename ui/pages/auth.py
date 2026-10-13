@@ -80,14 +80,14 @@ async def login_page():
             with ui.card().classes('w-full max-w-md p-5 sm:p-8 shadow-xl md:shadow-none border border-slate-200/80 md:border-none bg-white md:bg-transparent rounded-2xl sm:rounded-3xl'):
                 with ui.column().classes('w-full mb-4 sm:mb-6'):
                     ui.label('Welcome Back').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-1')
-                    ui.label('Sign in with your email or username').classes('text-xs sm:text-sm text-slate-500')
+                    ui.label('Sign in with your email, username, or institutional ID').classes('text-xs sm:text-sm text-slate-500')
 
-                # Identifier Field (Email or Username)
-                identifier = ui.input(placeholder='Email or Username') \
+                # Identifier Field (Email, Username, or Institutional ID)
+                identifier = ui.input(placeholder='Email, Username, or Institutional ID') \
                     .classes(INPUT_CLASSES) \
                     .props('rounded outlined dense autocomplete="username" autocapitalize="none" spellcheck="false"')
                 with identifier.add_slot('prepend'):
-                    ui.icon('person').classes('text-indigo-500 opacity-70')
+                    ui.icon('badge').classes('text-indigo-500 opacity-70')
 
                 # Password Field
                 pwd = ui.input(placeholder='Password', password=True) \
@@ -102,12 +102,12 @@ async def login_page():
                     clean_pwd = (pwd.value or '').strip()
 
                     if not clean_id or not clean_pwd:
-                        ui.notify('Please fill in both email/username and password.', type='warning')
+                        ui.notify('Please fill in both identifier (email/username/ID) and password.', type='warning')
                         return
 
                     users = await mongo_db.get_users_by_identifier(clean_id)
                     if not users:
-                        ui.notify('No account found with this email or username.', type='negative')
+                        ui.notify('No account found matching this email, username, or institutional ID.', type='negative')
                         return
 
                     matched_user = None
@@ -127,7 +127,7 @@ async def login_page():
                         token = create_access_token({"sub": matched_user['id'], "role": matched_user.get('role', 'user')})
                         set_user_session(matched_user, token)
                         await mongo_db.update_user_last_login(matched_user['id'])
-                        ui.notify(f"Welcome back, {matched_user.get('username', 'User')}!", type='positive')
+                        ui.notify(f"Welcome back, {matched_user.get('name') or matched_user.get('username', 'User')}!", type='positive')
                         ui.navigate.to('/')
                     else:
                         ui.notify('Invalid credentials. Please verify your password.', type='negative')
@@ -181,46 +181,116 @@ async def signup_page():
             with ui.card().classes('w-full max-w-md p-5 sm:p-8 shadow-xl md:shadow-none border border-slate-200/80 md:border-none bg-white md:bg-transparent rounded-2xl sm:rounded-3xl'):
                 with ui.column().classes('w-full mb-4 sm:mb-6'):
                     ui.label('Create Account').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-1')
-                    ui.label('Get started with your free digital library').classes('text-xs sm:text-sm text-slate-500')
+                    ui.label('Institutional registration across academic roles').classes('text-xs sm:text-sm text-slate-500')
+
+                # Full Legal Name Field
+                fullname = ui.input(placeholder='Full Legal Name *') \
+                    .classes(INPUT_CLASSES) \
+                    .props('rounded outlined dense autocomplete="name"')
+                with fullname.add_slot('prepend'):
+                    ui.icon('badge').classes('text-indigo-500 opacity-70')
 
                 # Username Field
-                username = ui.input(placeholder='Username') \
+                username = ui.input(placeholder='Username *') \
                     .classes(INPUT_CLASSES) \
                     .props('rounded outlined dense autocomplete="username" autocapitalize="none" spellcheck="false"')
                 with username.add_slot('prepend'):
                     ui.icon('person_outline').classes('text-indigo-500 opacity-70')
 
                 # Email Field
-                email = ui.input(placeholder='Email Address') \
+                email = ui.input(placeholder='Institutional Email Address *') \
                     .classes(INPUT_CLASSES) \
                     .props('rounded outlined dense autocomplete="email" autocapitalize="none" spellcheck="false"')
                 with email.add_slot('prepend'):
                     ui.icon('alternate_email').classes('text-indigo-500 opacity-70')
 
                 # Password Field
-                pwd = ui.input(placeholder='Password (min 6 characters)', password=True) \
+                pwd = ui.input(placeholder='Password (min 6 characters) *', password=True) \
                     .classes(INPUT_CLASSES) \
                     .props('rounded outlined dense autocomplete="new-password"')
                 with pwd.add_slot('prepend'):
                     ui.icon('lock_outline').classes('text-indigo-500 opacity-70')
                 create_password_toggle(pwd)
 
-                # Academic Role Selection (SRS Ch. 2 FR 7 RBAC)
-                role_select = ui.select(
-                    {'student': '🎓 Student Account', 'faculty': '👨‍🏫 Faculty Member'},
-                    value='student',
-                    label='Academic Affiliation'
-                ).props('rounded outlined dense bg-color=white').classes(INPUT_CLASSES)
-
                 # Confirm Password Field
-                confirm_pwd = ui.input(placeholder='Confirm Password', password=True) \
-                    .classes('w-full mb-6') \
+                confirm_pwd = ui.input(placeholder='Confirm Password *', password=True) \
+                    .classes(INPUT_CLASSES) \
                     .props('rounded outlined dense autocomplete="new-password"')
                 with confirm_pwd.add_slot('prepend'):
                     ui.icon('lock_reset').classes('text-indigo-500 opacity-70')
                 create_password_toggle(confirm_pwd)
 
+                # 4-Tier Institutional Role Selection
+                role_select = ui.select(
+                    {
+                        'student': '🎓 Student (Undergraduate / Graduate)',
+                        'faculty': '👨‍🏫 Faculty Member / Professor',
+                        'librarian': '📚 Librarian / Library Staff',
+                        'admin': '🛡️ System Administrator',
+                    },
+                    value='student',
+                    label='Institutional Role *'
+                ).props('rounded outlined dense bg-color=white options-dense').classes(INPUT_CLASSES)
+
+                # Dynamic Role Elements Container
+                dynamic_container = ui.column().classes('w-full gap-0 mb-3')
+                role_inputs = {}
+
+                def render_role_fields():
+                    dynamic_container.clear()
+                    role_inputs.clear()
+                    current_role = role_select.value or 'student'
+                    with dynamic_container:
+                        if current_role == 'student':
+                            role_inputs['id'] = ui.input(placeholder='Student ID Number * (e.g., 2024-00123)') \
+                                .classes(INPUT_CLASSES).props('rounded outlined dense')
+                            with role_inputs['id'].add_slot('prepend'):
+                                ui.icon('pin').classes('text-indigo-500 opacity-70')
+
+                            with ui.row().classes('w-full gap-2 mb-2'):
+                                role_inputs['program'] = ui.select(
+                                    ["BSCS", "BSIT", "BSED", "BEED", "BSBA", "BSHM", "Crim", "Nursing", "GENERAL"],
+                                    value='BSCS', label='Program / Course *'
+                                ).props('rounded outlined dense options-dense').classes('flex-1')
+
+                                role_inputs['year_level'] = ui.select(
+                                    ["1st Year", "2nd Year", "3rd Year", "4th Year", "Graduate"],
+                                    value='1st Year', label='Year Level *'
+                                ).props('rounded outlined dense options-dense').classes('w-32')
+
+                        elif current_role == 'faculty':
+                            role_inputs['id'] = ui.input(placeholder='Faculty / Employee ID Number * (e.g., FAC-2024-001)') \
+                                .classes(INPUT_CLASSES).props('rounded outlined dense')
+                            with role_inputs['id'].add_slot('prepend'):
+                                ui.icon('badge').classes('text-emerald-500 opacity-70')
+
+                            role_inputs['department'] = ui.input(placeholder='Department * (e.g., College of Computer Studies)') \
+                                .classes(INPUT_CLASSES).props('rounded outlined dense')
+                            with role_inputs['department'].add_slot('prepend'):
+                                ui.icon('business').classes('text-emerald-500 opacity-70')
+
+                        elif current_role == 'librarian':
+                            role_inputs['id'] = ui.input(placeholder='Staff ID Number * (e.g., LIB-2024-001)') \
+                                .classes(INPUT_CLASSES).props('rounded outlined dense')
+                            with role_inputs['id'].add_slot('prepend'):
+                                ui.icon('local_library').classes('text-blue-500 opacity-70')
+
+                            role_inputs['branch'] = ui.input(placeholder='Library Branch / Section * (e.g., Main Campus / Circulation)') \
+                                .classes(INPUT_CLASSES).props('rounded outlined dense')
+                            with role_inputs['branch'].add_slot('prepend'):
+                                ui.icon('location_on').classes('text-blue-500 opacity-70')
+
+                        elif current_role == 'admin':
+                            role_inputs['id'] = ui.input(placeholder='Admin ID / Employee Code * (e.g., ADM-ROOT-001)') \
+                                .classes(INPUT_CLASSES).props('rounded outlined dense')
+                            with role_inputs['id'].add_slot('prepend'):
+                                ui.icon('security').classes('text-purple-500 opacity-70')
+
+                role_select.on_value_change(render_role_fields)
+                render_role_fields()
+
                 async def try_signup():
+                    clean_fullname = (fullname.value or '').strip()
                     clean_username = (username.value or '').strip()
                     clean_email = (email.value or '').strip().lower()
                     clean_pwd = (pwd.value or '').strip()
@@ -228,8 +298,8 @@ async def signup_page():
                     chosen_role = (role_select.value or 'student').strip().lower()
 
                     # Validations
-                    if not clean_username or not clean_email or not clean_pwd or not clean_confirm:
-                        ui.notify("All fields are required.", type='warning')
+                    if not clean_fullname or not clean_username or not clean_email or not clean_pwd or not clean_confirm:
+                        ui.notify("All core account fields are required (*).", type='warning')
                         return
 
                     if len(clean_username) < 3:
@@ -248,6 +318,24 @@ async def signup_page():
                         ui.notify("Passwords do not match.", type='warning')
                         return
 
+                    # Role-specific validations
+                    inst_id = (role_inputs.get('id').value or '').strip() if 'id' in role_inputs else ''
+                    if not inst_id:
+                        ui.notify("Institutional ID number is required.", type='warning')
+                        return
+
+                    prog_val = role_inputs.get('program').value if 'program' in role_inputs else None
+                    year_val = role_inputs.get('year_level').value if 'year_level' in role_inputs else None
+                    dept_val = (role_inputs.get('department').value or '').strip() if 'department' in role_inputs else None
+                    branch_val = (role_inputs.get('branch').value or '').strip() if 'branch' in role_inputs else None
+
+                    if chosen_role == 'faculty' and not dept_val:
+                        ui.notify("Faculty department is required.", type='warning')
+                        return
+                    if chosen_role == 'librarian' and not branch_val:
+                        ui.notify("Library branch / section is required.", type='warning')
+                        return
+
                     # Case-insensitive collision checks
                     if await mongo_db.get_user_by_email(clean_email):
                         ui.notify("An account with this email already exists.", type='negative')
@@ -257,11 +345,27 @@ async def signup_page():
                         ui.notify("This username is already taken. Please choose another.", type='negative')
                         return
 
+                    if await mongo_db.get_user_by_identifier(inst_id):
+                        ui.notify("This institutional ID is already registered to an account.", type='negative')
+                        return
+
                     hashed = bcrypt.hashpw(clean_pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
                     users = await mongo_db.get_all_users()
                     role = "admin" if not users else chosen_role
 
-                    created = await mongo_db.create_user(clean_username, clean_email, hashed, role)
+                    created = await mongo_db.create_user(
+                        clean_username,
+                        clean_email,
+                        hashed,
+                        role=role,
+                        name=clean_fullname,
+                        institutional_id=inst_id,
+                        program=prog_val,
+                        year_level=year_val,
+                        department=dept_val,
+                        branch=branch_val,
+                        admin_code=inst_id if role == 'admin' else None
+                    )
                     if not created:
                         ui.notify("Registration failed. Please try again.", type='negative')
                         return
@@ -270,7 +374,7 @@ async def signup_page():
                     token = create_access_token({"sub": created['id'], "role": created['role']})
                     set_user_session(created, token)
                     await mongo_db.update_user_last_login(created['id'])
-                    ui.notify(f"Welcome to Libre Library, {created['username']}!", type='positive')
+                    ui.notify(f"Welcome to Libre Library, {created.get('name') or created['username']}!", type='positive')
                     ui.navigate.to('/')
 
                 # Bind Enter Key

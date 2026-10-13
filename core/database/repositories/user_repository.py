@@ -15,22 +15,30 @@ class UserRepository(BaseRepository):
     """
 
     async def get_user_profile(self, user_id: Optional[str] = None) -> Dict[str, Any]:
-        """Gets user profile strictly isolated by user ID."""
+        """Gets user profile strictly isolated by user ID with institutional ID, avatar, and cover."""
         if self.db is None: return {}
         try:
             if user_id:
                 user = await self.db['users'].find_one({"id": user_id, "type": "account"})
                 if user:
+                    inst_id = user.get("institutional_id") or user.get("student_id") or user.get("employee_id") or user.get("staff_id") or user.get("admin_id") or f"2024-{str(user_id)[:5].upper()}"
                     return {
                         "id": user_id,
                         "name": user.get("name") or user.get("username", "Library User"),
                         "username": user.get("username", "user"),
                         "email": user.get("email", ""),
                         "role": user.get("role", "student"),
-                        "student_id": user.get("student_id") or f"2024-{str(user_id)[:5].upper()}",
+                        "institutional_id": inst_id,
+                        "student_id": inst_id,
                         "program": user.get("program") or "BSCS",
+                        "year_level": user.get("year_level") or "1st Year",
+                        "department": user.get("department") or "",
+                        "branch": user.get("branch") or "",
+                        "admin_code": user.get("admin_code") or "",
                         "headline": user.get("headline", "Student / Researcher"),
                         "bio": user.get("bio", "Exploring knowledge with Libre-Library."),
+                        "avatar_url": user.get("avatar_url") or "",
+                        "cover_url": user.get("cover_url") or "",
                         "joined_at": user.get("created_at", time.time())
                     }
             return {
@@ -38,10 +46,17 @@ class UserRepository(BaseRepository):
                 "username": "user",
                 "email": "",
                 "role": "student",
+                "institutional_id": "2024-00001",
                 "student_id": "2024-00001",
                 "program": "BSCS",
+                "year_level": "1st Year",
+                "department": "",
+                "branch": "",
+                "admin_code": "",
                 "headline": "Student / Researcher",
                 "bio": "Exploring knowledge with Libre-Library.",
+                "avatar_url": "",
+                "cover_url": "",
                 "joined_at": time.time()
             }
         except Exception: return {}
@@ -52,8 +67,14 @@ class UserRepository(BaseRepository):
         name: str,
         bio: str,
         headline: Optional[str] = None,
+        institutional_id: Optional[str] = None,
         student_id: Optional[str] = None,
-        program: Optional[str] = None
+        program: Optional[str] = None,
+        year_level: Optional[str] = None,
+        department: Optional[str] = None,
+        branch: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+        cover_url: Optional[str] = None
     ) -> bool:
         """
         Updates profile strictly isolated to the specified user account.
@@ -67,10 +88,23 @@ class UserRepository(BaseRepository):
             }
             if headline is not None:
                 updates["headline"] = headline.strip()
-            if student_id is not None:
-                updates["student_id"] = student_id.strip()
+            effective_id = institutional_id or student_id
+            if effective_id is not None:
+                clean_id = effective_id.strip()
+                updates["institutional_id"] = clean_id
+                updates["student_id"] = clean_id
             if program is not None:
                 updates["program"] = program.strip().upper()
+            if year_level is not None:
+                updates["year_level"] = year_level.strip()
+            if department is not None:
+                updates["department"] = department.strip()
+            if branch is not None:
+                updates["branch"] = branch.strip()
+            if avatar_url is not None:
+                updates["avatar_url"] = avatar_url.strip()
+            if cover_url is not None:
+                updates["cover_url"] = cover_url.strip()
 
             result = await self.db['users'].update_one(
                 {"id": user_id, "type": "account"},
@@ -79,6 +113,30 @@ class UserRepository(BaseRepository):
             return result.modified_count > 0 or result.matched_count > 0
         except Exception as e:
             logger.error(f"Update User Profile Error: {e}")
+            return False
+
+    async def update_user_media(
+        self,
+        user_id: str,
+        avatar_url: Optional[str] = None,
+        cover_url: Optional[str] = None
+    ) -> bool:
+        """Updates avatar_url or cover_url for user profile."""
+        if self.db is None or not user_id: return False
+        try:
+            updates = {}
+            if avatar_url is not None:
+                updates["avatar_url"] = avatar_url
+            if cover_url is not None:
+                updates["cover_url"] = cover_url
+            if not updates: return False
+            result = await self.db['users'].update_one(
+                {"id": user_id, "type": "account"},
+                {"$set": updates}
+            )
+            return result.modified_count > 0 or result.matched_count > 0
+        except Exception as e:
+            logger.error(f"Update User Media Error: {e}")
             return False
 
     async def get_total_user_count(self) -> int:
@@ -166,8 +224,24 @@ class UserRepository(BaseRepository):
             logger.error(f"System Diagnostics Error: {e}")
             return {}
 
-    async def create_user(self, username: str, email: str, hashed_password: str, role: str = "user") -> Optional[Dict[str, Any]]:
-        """Creates a new user account with normalized email, username, and password hash."""
+    async def create_user(
+        self,
+        username: str,
+        email: str,
+        hashed_password: str,
+        role: str = "student",
+        institutional_id: Optional[str] = None,
+        program: Optional[str] = None,
+        year_level: Optional[str] = None,
+        department: Optional[str] = None,
+        branch: Optional[str] = None,
+        admin_code: Optional[str] = None,
+        name: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+        cover_url: Optional[str] = None,
+        **kwargs
+    ) -> Optional[Dict[str, Any]]:
+        """Creates a new user account with normalized credentials and role-specific institutional IDs."""
         if self.db is None: return None
         try:
             clean_username = username.strip()
@@ -185,12 +259,28 @@ class UserRepository(BaseRepository):
                 logger.warning(f"Attempted to create duplicate user for username: {clean_username}")
                 return None
 
+            clean_inst_id = (institutional_id or kwargs.get('student_id') or kwargs.get('employee_id') or '').strip()
+            user_id = str(uuid.uuid4())
+            if not clean_inst_id:
+                clean_inst_id = f"2024-{user_id[:5].upper()}"
+
             user = {
-                "id": str(uuid.uuid4()),
+                "id": user_id,
                 "username": clean_username,
                 "email": clean_email,
                 "hashed_password": hp_str,
                 "role": role,
+                "name": (name or clean_username).strip(),
+                "institutional_id": clean_inst_id,
+                "student_id": clean_inst_id,
+                "employee_id": clean_inst_id if role in ("faculty", "librarian", "admin") else "",
+                "program": (program or kwargs.get('course') or '').strip(),
+                "year_level": (year_level or '').strip(),
+                "department": (department or '').strip(),
+                "branch": (branch or '').strip(),
+                "admin_code": (admin_code or '').strip(),
+                "avatar_url": (avatar_url or '').strip(),
+                "cover_url": (cover_url or '').strip(),
                 "created_at": time.time(),
                 "last_login": None,
                 "type": "account"
@@ -215,7 +305,7 @@ class UserRepository(BaseRepository):
 
     async def get_user_by_identifier(self, identifier: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieves a user by email or username (case-insensitive & trimmed).
+        Retrieves a user by email, username, or institutional ID (student ID, employee ID, staff ID, admin code).
         Returns the primary user record.
         """
         if self.db is None or not identifier: return None
@@ -225,7 +315,13 @@ class UserRepository(BaseRepository):
             doc = await self.db['users'].find_one({
                 "$or": [
                     {"email": regex},
-                    {"username": regex}
+                    {"username": regex},
+                    {"institutional_id": regex},
+                    {"student_id": regex},
+                    {"employee_id": regex},
+                    {"staff_id": regex},
+                    {"admin_id": regex},
+                    {"admin_code": regex}
                 ],
                 "type": "account"
             })
@@ -236,7 +332,7 @@ class UserRepository(BaseRepository):
 
     async def get_users_by_identifier(self, identifier: str) -> List[Dict[str, Any]]:
         """
-        Retrieves all matching user accounts by email or username (case-insensitive).
+        Retrieves all matching user accounts by email, username, or institutional ID (case-insensitive).
         """
         if self.db is None or not identifier: return []
         try:
@@ -245,12 +341,18 @@ class UserRepository(BaseRepository):
             cursor = self.db['users'].find({
                 "$or": [
                     {"email": regex},
-                    {"username": regex}
+                    {"username": regex},
+                    {"institutional_id": regex},
+                    {"student_id": regex},
+                    {"employee_id": regex},
+                    {"staff_id": regex},
+                    {"admin_id": regex},
+                    {"admin_code": regex}
                 ],
                 "type": "account"
             })
-            users = await cursor.to_list(length=10)
-            return self.clean_docs(users)
+            docs = await cursor.to_list(length=10)
+            return self.clean_docs(docs)
         except Exception as e:
             logger.error(f"Get Users By Identifier Error: {e}")
             return []

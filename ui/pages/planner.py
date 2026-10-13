@@ -8,7 +8,6 @@ from nicegui import ui, app, events
 try:
     from components.sidebar import sidebar
     from components.header import header
-    from components.bottom_nav import bottom_nav
     from core.database.mongo_manager import mongo_db
     from .planner_service import planner_service
 except ImportError:
@@ -412,8 +411,7 @@ class StudyPlannerPage:
     def build_ui(self):
         drawer = sidebar()
         header(drawer_reference=drawer)
-        bottom_nav()
-        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
+        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16'):
             self.container = ui.column().classes('w-full')
 
 async def planner_page():

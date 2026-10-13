@@ -28,8 +28,10 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
         # 2. DYNAMIC NAVIGATION LINKS (Role-Specific)
         with ui.column().classes('w-full p-4 gap-1 flex-grow overflow-y-auto no-scrollbar'):
 
+            current_path = app.storage.client.get('page_path', '/')
+
             def nav_link(text: str, icon: str, target: str, badge_text: str = None):
-                is_active = app.storage.client.get('page_path') == target
+                is_active = (current_path == target) or (target != '/' and str(current_path).startswith(target))
                 base_classes = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-all duration-200 no-underline group cursor-pointer'
                 if is_active:
                     color_classes = 'bg-indigo-50 text-indigo-700 font-bold shadow-sm border border-indigo-100/60'
@@ -77,7 +79,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
                 # Librarian & Admin View: Operational Station & Catalog Ingestion
                 ui.label('LIBRARY OPERATIONS').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-4 mb-1 tracking-widest')
                 nav_link('Librarian Hub', 'local_library', '/librarian', badge_text='OPS')
-                nav_link('Entrance Terminal', 'qr_code_scanner', '/attendance')
+                nav_link('Entrance & Pass Terminal', 'badge', '/attendance')
                 nav_link('Book Requisitions', 'post_add', '/requisitions')
                 nav_link('Ingest & Upload', 'cloud_upload', '/upload')
                 nav_link('Program Analytics', 'insights', '/analytics')

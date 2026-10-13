@@ -281,10 +281,35 @@ class MongoManager:
         name: str,
         bio: str,
         headline: Optional[str] = None,
+        institutional_id: Optional[str] = None,
         student_id: Optional[str] = None,
-        program: Optional[str] = None
+        program: Optional[str] = None,
+        year_level: Optional[str] = None,
+        department: Optional[str] = None,
+        branch: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+        cover_url: Optional[str] = None
     ) -> bool:
-        return await self.users.update_user_profile(user_id, name, bio, headline, student_id, program)
+        return await self.users.update_user_profile(
+            user_id, name, bio,
+            headline=headline,
+            institutional_id=institutional_id,
+            student_id=student_id,
+            program=program,
+            year_level=year_level,
+            department=department,
+            branch=branch,
+            avatar_url=avatar_url,
+            cover_url=cover_url
+        )
+
+    async def update_user_media(
+        self,
+        user_id: str,
+        avatar_url: Optional[str] = None,
+        cover_url: Optional[str] = None
+    ) -> bool:
+        return await self.users.update_user_media(user_id, avatar_url=avatar_url, cover_url=cover_url)
 
     async def get_total_user_count(self) -> int:
         return await self.users.get_total_user_count()
@@ -301,8 +326,15 @@ class MongoManager:
     async def get_system_diagnostics(self) -> Dict[str, Any]:
         return await self.users.get_system_diagnostics()
 
-    async def create_user(self, username: str, email: str, hashed_password: str, role: str = "user") -> Optional[Dict[str, Any]]:
-        return await self.users.create_user(username, email, hashed_password, role)
+    async def create_user(
+        self,
+        username: str,
+        email: str,
+        hashed_password: str,
+        role: str = "student",
+        **kwargs
+    ) -> Optional[Dict[str, Any]]:
+        return await self.users.create_user(username, email, hashed_password, role, **kwargs)
 
     async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         return await self.users.get_user_by_email(email)

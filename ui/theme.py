@@ -27,36 +27,35 @@ GLOBAL_THEME_STYLES = '''
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* Permanently enforce clean, coherent light theme across all devices & mobile OS settings */
+        /* Permanently enforce clean, coherent light theme and standard vertical scrolling */
         html, body, body.body--dark {
-            overflow-x: hidden;
+            min-height: 100%;
+            height: auto;
             max-width: 100vw;
             width: 100%;
-            min-height: 100dvh;
+            overflow-x: hidden;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
             font-family: var(--font-family) !important;
             -webkit-font-smoothing: antialiased;
             -moz-osx-font-smoothing: grayscale;
-            touch-action: pan-y pinch-zoom;
-            overscroll-behavior-y: contain;
-            -webkit-overflow-scrolling: touch;
             background-color: #f8fafc !important; /* Tailwind slate-50 */
             color: #0f172a !important;            /* Tailwind slate-900 */
         }
 
         /* Quasar & NiceGUI Root Layout Containers - Unfreeze Touch Momentum */
         #q-app, .q-layout, .q-page-container {
-            min-height: 100dvh !important;
+            min-height: 100% !important;
+            height: auto !important;
             width: 100% !important;
             overflow-x: hidden !important;
-            touch-action: pan-y pinch-zoom !important;
+            overflow-y: visible !important;
             -webkit-overflow-scrolling: touch !important;
         }
 
         /* Native touch momentum for scrollable viewports */
         .overflow-y-auto, [class*="overflow-y-auto"] {
             -webkit-overflow-scrolling: touch !important;
-            overscroll-behavior-y: contain !important;
-            touch-action: pan-y !important;
         }
 
         /* Neutralize Quasar dark mode artifacts on body or child elements */

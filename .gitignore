@@ -19,6 +19,8 @@ scratch/
 data/
 uploads/*
 !uploads/.gitkeep
+static/uploads/*/*
+!static/uploads/*/.gitkeep
 chroma_db/
 E-Books/
 backups/

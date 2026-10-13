@@ -4,7 +4,6 @@ import logging
 
 from components.sidebar import sidebar
 from components.header import header
-from components.bottom_nav import bottom_nav
 from core.database.mongo_manager import mongo_db
 from core.config import settings
 from core.auth.jwt_handler import get_current_user_role
@@ -22,7 +21,6 @@ async def admin_dashboard():
 
     drawer = sidebar()
     header(drawer_reference=drawer)
-    bottom_nav()
 
     # Fetch system diagnostics
     stats = await mongo_db.get_system_diagnostics()
@@ -54,8 +52,8 @@ async def admin_dashboard():
     clean_users = format_users(raw_users)
 
     with ui.column().classes(
-        'w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
+        'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16'
     ):
         # Page Title Banner
         with ui.row().classes('w-full items-start justify-between gap-4 mb-6 sm:mb-8 flex-wrap'):

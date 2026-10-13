@@ -1,7 +1,6 @@
 from nicegui import ui, app
 from components.sidebar import sidebar
 from components.header import header
-from components.bottom_nav import bottom_nav
 from core.services.ingestion_service import ingestion_service
 import asyncio
 from datetime import datetime
@@ -319,7 +318,6 @@ class IngestionHub:
         """Constructs the NiceGUI Layout."""
         drawer = sidebar()
         header(drawer_reference=drawer)
-        bottom_nav()
 
         # Custom CSS for seamless dropzone styling & hiding Quasar's awkward 0.0B / 0.00% subtitle
         ui.add_head_html('''
@@ -354,7 +352,7 @@ class IngestionHub:
             </style>
         ''')
 
-        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
+        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-16'):
             
             # Page Title
             with ui.row().classes('w-full justify-between items-end mb-6 sm:mb-8'):

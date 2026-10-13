@@ -4,7 +4,6 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from components.sidebar import sidebar
 from components.header import header
-from components.bottom_nav import bottom_nav
 from components.book_card import book_card
 from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import get_current_user_role
@@ -355,9 +354,8 @@ class BookCollection:
     def build_ui(self):
         drawer = sidebar()
         header(drawer_reference=drawer)
-        bottom_nav()
 
-        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1700px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
+        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1700px] mx-auto pb-16'):
 
             # --- COMPACT WORKSPACE HEADER (Streamlined Document Workspace) ---
             with ui.row().classes('w-full justify-between items-center mb-4 sm:mb-5 gap-3 flex-wrap'):

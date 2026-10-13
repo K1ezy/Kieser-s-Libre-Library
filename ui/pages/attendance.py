@@ -7,7 +7,6 @@ from nicegui import ui, app, run
 
 from components.sidebar import sidebar
 from components.header import header
-from components.bottom_nav import bottom_nav
 from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import get_current_user_role
 
@@ -57,7 +56,6 @@ async def attendance_page():
 
     drawer = sidebar()
     header(drawer_reference=drawer)
-    bottom_nav()
 
     # User context
     user_id = app.storage.user.get('user_id')
@@ -75,8 +73,8 @@ async def attendance_page():
     }
 
     with ui.column().classes(
-        'w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
+        'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16'
     ):
         # Page Title Banner
         with ui.column().classes('gap-1 mb-6'):
