@@ -19,12 +19,24 @@ class ProgressRepository(BaseRepository):
         book_id: str,
         current_page: int = 1,
         total_pages: int = 1,
-        status: str = "reading"
+        status: str = "reading",
+        cfi: Optional[str] = None,
+        client_timestamp: Optional[float] = None,
+        progress_percent: Optional[float] = None
     ) -> bool:
-        """Saves persistent reading position, percentage and state for a user."""
+        """Saves persistent reading position, percentage, CFI, and state for a user."""
         if self.db is None or not user_id or not book_id: return False
         try:
-            percent = round((current_page / max(total_pages, 1)) * 100, 1) if total_pages > 0 else 0
+            req_time = client_timestamp or time.time()
+            existing = await self.db['reading_progress'].find_one({"user_id": user_id, "book_id": book_id})
+            if existing and existing.get("last_read_at", 0) > req_time + 1.0:
+                logger.warning(f"Discarding stale reading progress update for user={user_id}, book={book_id}")
+                return True
+
+            if progress_percent is not None:
+                percent = round(float(progress_percent), 1)
+            else:
+                percent = round((current_page / max(total_pages, 1)) * 100, 1) if total_pages > 0 else 0
             doc = {
                 "user_id": user_id,
                 "book_id": book_id,
@@ -32,8 +44,13 @@ class ProgressRepository(BaseRepository):
                 "total_pages": total_pages,
                 "progress_percent": percent,
                 "status": status,
-                "last_read_at": time.time()
+                "last_read_at": req_time
             }
+            if cfi:
+                doc["cfi"] = cfi
+            elif existing and existing.get("cfi"):
+                doc["cfi"] = existing["cfi"]
+
             await self.db['reading_progress'].update_one(
                 {"user_id": user_id, "book_id": book_id},
                 {"$set": doc},

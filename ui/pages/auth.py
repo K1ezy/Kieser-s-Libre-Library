@@ -53,7 +53,7 @@ async def login_page():
                     .props('flat rounded-xl color=grey-7 size=sm font-bold').classes('w-full')
         return
 
-    with ui.row().classes('w-full min-h-[100dvh] h-[100dvh] m-0 p-0 overflow-hidden'):
+    with ui.row().classes('w-full min-h-[100dvh] h-auto md:h-[100dvh] m-0 p-0 overflow-y-auto md:overflow-hidden'):
         # Brand Side
         with ui.column().classes('hidden md:flex w-1/2 h-full bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 items-center justify-center text-white p-12 relative overflow-hidden'):
             # Ambient background glow
@@ -166,7 +166,7 @@ async def signup_page():
                     .props('flat rounded-xl color=grey-7 size=sm font-bold').classes('w-full')
         return
 
-    with ui.row().classes('w-full min-h-[100dvh] h-[100dvh] m-0 p-0 overflow-hidden'):
+    with ui.row().classes('w-full min-h-[100dvh] h-auto md:h-[100dvh] m-0 p-0 overflow-y-auto md:overflow-hidden'):
         # Brand Side
         with ui.column().classes('hidden md:flex w-1/2 h-full bg-gradient-to-br from-purple-900 via-indigo-900 to-indigo-800 items-center justify-center text-white p-12 relative overflow-hidden'):
             ui.element('div').classes('absolute w-96 h-96 bg-purple-500/20 rounded-full blur-3xl -top-20 -right-20')

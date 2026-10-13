@@ -54,7 +54,7 @@ async def admin_dashboard():
 
     with ui.column().classes(
         'w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
     ):
         # Page Title Banner
         with ui.column().classes('gap-1 mb-6 sm:mb-8'):
@@ -102,7 +102,7 @@ async def admin_dashboard():
                     with ui.row().classes('items-center gap-2 mb-1'):
                         ui.icon('insights', size='20px').classes('text-emerald-600')
                         ui.label('Program Analytics').classes('text-sm font-bold text-slate-900')
-                    ui.label('Program utilization charts & AI accreditation reports.').classes('text-[11px] text-slate-500')
+                    ui.label('Program utilization charts & circulation reports.').classes('text-[11px] text-slate-500')
 
         # OPDS E-Reader Catalog Link Card
         with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm mb-6'):
@@ -149,8 +149,8 @@ async def admin_dashboard():
                 if user_options:
                     with ui.row().classes('items-center gap-2 flex-wrap'):
                         selected_user_id = list(user_options.keys())[0]
-                        u_select = ui.select(user_options, value=selected_user_id, label='Select Account').props('dense rounded outlined').classes('w-60 text-xs')
-                        r_select = ui.select(['student', 'faculty', 'librarian', 'admin'], value='faculty', label='New Role').props('dense rounded outlined').classes('w-32 text-xs')
+                        u_select = ui.select(user_options, value=selected_user_id, label='Select Account').props('dense rounded outlined').classes('w-full sm:w-60 text-xs')
+                        r_select = ui.select(['student', 'faculty', 'librarian', 'admin'], value='faculty', label='New Role').props('dense rounded outlined').classes('w-full sm:w-32 text-xs')
                         
                         async def apply_role():
                             uid = u_select.value

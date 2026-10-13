@@ -73,4 +73,20 @@ def get_current_user_info() -> Dict[str, Any]:
         'username': app.storage.user.get('username'),
         'role': app.storage.user.get('role', 'user'),
         'is_admin': app.storage.user.get('role') == 'admin'
-    }
+    }
+
+def get_current_user_role() -> str:
+    """Returns normalized role of currently logged in user (defaults to 'student')."""
+    try:
+        role = app.storage.user.get('role', 'student')
+    except Exception:
+        return 'student'
+    if not role or str(role).lower() in ('user', 'none', ''):
+        return 'student'
+    return str(role).lower().strip()
+
+def has_role(allowed_roles: list) -> bool:
+    """Verifies if the current user possesses one of the allowed roles."""
+    current = get_current_user_role()
+    return current in [str(r).lower().strip() for r in allowed_roles]
+

@@ -27,6 +27,37 @@ class TarsArchive:
         self._cache_lock = threading.Lock()
         logger.info("TARS Archive registered (Lazy Loading Mode).")
 
+    def _ensure_local_model_links(self):
+        """Ensures local offline model can be discovered by HuggingFace / ChromaDB under standard aliases."""
+        if not self.local_model_path.exists():
+            return
+        try:
+            import subprocess
+            resolved_target = str(self.local_model_path.resolve())
+            root_link = app_settings.BASE_DIR / "all-MiniLM-L6-v2"
+            if not root_link.exists():
+                try:
+                    os.symlink(resolved_target, str(root_link), target_is_directory=True)
+                except Exception:
+                    try:
+                        subprocess.run(f'cmd /c mklink /J "{root_link}" "{resolved_target}"', shell=True, capture_output=True)
+                    except Exception:
+                        pass
+
+            st_dir = app_settings.BASE_DIR / "sentence-transformers"
+            st_dir.mkdir(parents=True, exist_ok=True)
+            st_link = st_dir / "all-MiniLM-L6-v2"
+            if not st_link.exists():
+                try:
+                    os.symlink(resolved_target, str(st_link), target_is_directory=True)
+                except Exception:
+                    try:
+                        subprocess.run(f'cmd /c mklink /J "{st_link}" "{resolved_target}"', shell=True, capture_output=True)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.debug(f"Model link initialization notice: {e}")
+
     def ensure_initialized(self) -> bool:
         """
         Thread-safely initializes ChromaDB and embedding models on first access.
@@ -45,11 +76,12 @@ class TarsArchive:
 
                 self.db_path.mkdir(parents=True, exist_ok=True)
 
-                # Offline Embedding Model check
+                # Offline Embedding Model check & directory aliases
                 if self.local_model_path.exists():
                     logger.info(f"OFFLINE MODE: Using local embedding model at {self.local_model_path}")
                     os.environ["TRANSFORMERS_OFFLINE"] = "1"
                     os.environ["HF_HUB_OFFLINE"] = "1"
+                    self._ensure_local_model_links()
                     model_target = str(self.local_model_path)
                 else:
                     logger.warning("Local embedding model not found. Using HuggingFace model 'all-MiniLM-L6-v2'.")
@@ -66,6 +98,15 @@ class TarsArchive:
                     device="cpu"  # Keep CPU to save VRAM for the LLM
                 )
 
+                # Pre-register loaded model across all ChromaDB embedding function cache keys
+                # This completely prevents Chroma from attempting remote HuggingFace network requests
+                if hasattr(self.embedding_fn, "_model") and self.embedding_fn._model is not None:
+                    cached_m = self.embedding_fn._model
+                    embedding_functions.SentenceTransformerEmbeddingFunction.models["all-MiniLM-L6-v2"] = cached_m
+                    embedding_functions.SentenceTransformerEmbeddingFunction.models["sentence-transformers/all-MiniLM-L6-v2"] = cached_m
+                    embedding_functions.SentenceTransformerEmbeddingFunction.models[model_target] = cached_m
+                    embedding_functions.SentenceTransformerEmbeddingFunction.models[str(Path(model_target).resolve())] = cached_m
+
                 self.client = chromadb.PersistentClient(
                     path=str(self.db_path),
                     settings=Settings(anonymized_telemetry=False)
@@ -75,6 +116,9 @@ class TarsArchive:
                     name="tars_knowledge_base",
                     embedding_function=self.embedding_fn
                 )
+
+                if getattr(self.collection, "_embedding_function", None) is None:
+                    self.collection._embedding_function = self.embedding_fn
 
                 doc_count = self.collection.count()
                 logger.info(f"TARS Archive ONLINE. Loaded {doc_count} documents.")
@@ -160,22 +204,33 @@ class TarsArchive:
 
         # Batch insert into ChromaDB (max 200 chunks per batch to prevent memory spikes)
         batch_size = 200
+        persisted = 0
         for i in range(0, len(chunks), batch_size):
             b_docs = chunks[i:i + batch_size]
             b_meta = metadatas[i:i + batch_size]
             b_ids = ids[i:i + batch_size]
             try:
-                self.collection.add(
-                    documents=b_docs,
-                    metadatas=b_meta,
-                    ids=b_ids
-                )
+                b_embeddings = self.embedding_fn(b_docs) if self.embedding_fn else None
+                if b_embeddings is not None:
+                    self.collection.add(
+                        documents=b_docs,
+                        embeddings=b_embeddings,
+                        metadatas=b_meta,
+                        ids=b_ids
+                    )
+                else:
+                    self.collection.add(
+                        documents=b_docs,
+                        metadatas=b_meta,
+                        ids=b_ids
+                    )
+                persisted += len(b_docs)
             except Exception as e:
                 logger.error(f"Error adding chunk batch to ChromaDB: {e}")
 
         self._clear_cache()
-        logger.info(f"Persisted {len(chunks)} chunks from '{filename}' into vector store.")
-        return len(chunks)
+        logger.info(f"Persisted {persisted} chunks from '{filename}' into vector store.")
+        return persisted
 
     def ingest_document(self, file_path: str, filename: str, book_id: Optional[str] = None, title: Optional[str] = None) -> int:
         """
@@ -240,22 +295,33 @@ class TarsArchive:
 
         # Batch insert into ChromaDB
         batch_size = 200
+        persisted = 0
         for i in range(0, len(all_chunks), batch_size):
             b_docs = all_chunks[i:i + batch_size]
             b_meta = all_metas[i:i + batch_size]
             b_ids = all_ids[i:i + batch_size]
             try:
-                self.collection.add(
-                    documents=b_docs,
-                    metadatas=b_meta,
-                    ids=b_ids
-                )
+                b_embeddings = self.embedding_fn(b_docs) if self.embedding_fn else None
+                if b_embeddings is not None:
+                    self.collection.add(
+                        documents=b_docs,
+                        embeddings=b_embeddings,
+                        metadatas=b_meta,
+                        ids=b_ids
+                    )
+                else:
+                    self.collection.add(
+                        documents=b_docs,
+                        metadatas=b_meta,
+                        ids=b_ids
+                    )
+                persisted += len(b_docs)
             except Exception as e:
                 logger.error(f"Error adding chunk batch to ChromaDB: {e}")
 
         self._clear_cache()
-        logger.info(f"Persisted {len(all_chunks)} structured page-aware chunks for '{filename}'.")
-        return len(all_chunks)
+        logger.info(f"Persisted {persisted} structured page-aware chunks for '{filename}'.")
+        return persisted
 
     def ingest_file(self, file_path: str, filename: str, book_id: Optional[str] = None) -> int:
         """Reads a file, chunks it with page metadata, and stores it in ChromaDB."""
@@ -291,14 +357,16 @@ class TarsArchive:
 
             results = None
             has_scoped_hits = False
+            q_emb = self.embedding_fn([query]) if self.embedding_fn else None
+            q_kwargs = {"query_embeddings": q_emb} if q_emb is not None else {"query_texts": [query]}
 
             # Strategy 1: Targeted search by book_id if provided
             if book_id:
                 try:
                     res = self.collection.query(
-                        query_texts=[query],
                         n_results=top_k,
-                        where={"book_id": str(book_id)}
+                        where={"book_id": str(book_id)},
+                        **q_kwargs
                     )
                     if res and res.get('documents') and len(res['documents']) > 0 and len(res['documents'][0]) > 0:
                         results = res
@@ -316,9 +384,9 @@ class TarsArchive:
                 for cand in candidate_sources:
                     try:
                         res = self.collection.query(
-                            query_texts=[query],
                             n_results=top_k,
-                            where={"source": cand}
+                            where={"source": cand},
+                            **q_kwargs
                         )
                         if res and res.get('documents') and len(res['documents']) > 0 and len(res['documents'][0]) > 0:
                             results = res
@@ -337,8 +405,8 @@ class TarsArchive:
             if not has_scoped_hits:
                 # Query without where clause (general library search across all documents)
                 results = self.collection.query(
-                    query_texts=[query],
-                    n_results=top_k
+                    n_results=top_k,
+                    **q_kwargs
                 )
 
             if not results or not results.get('documents') or len(results['documents']) == 0 or len(results['documents'][0]) == 0:
@@ -415,37 +483,62 @@ class TarsArchive:
         except Exception as e:
             return {"total_chunks": 0, "status": f"Error: {e}"}
 
+    def _get_raw_collection(self):
+        """
+        Fast accessor for the ChromaDB collection without loading heavy neural embedding models.
+        Ideal for deletions, count checks, and metadata purges (<0.3s).
+        """
+        if self.collection is not None:
+            return self.collection
+
+        with self._init_lock:
+            if self.collection is not None:
+                return self.collection
+
+            try:
+                import chromadb
+                from chromadb.config import Settings
+
+                self.db_path.mkdir(parents=True, exist_ok=True)
+                if self.client is None:
+                    self.client = chromadb.PersistentClient(
+                        path=str(self.db_path),
+                        settings=Settings(anonymized_telemetry=False)
+                    )
+
+                try:
+                    return self.client.get_collection(name="tars_knowledge_base")
+                except Exception:
+                    return self.client.get_or_create_collection(name="tars_knowledge_base")
+            except Exception as e:
+                logger.error(f"Failed to access raw ChromaDB collection: {e}")
+                return None
+
     def delete_source(self, source_name: str, book_id: Optional[str] = None) -> bool:
-        """Deletes all chunks associated with a source filename or book ID."""
-        if not self.ensure_initialized() or not self.collection:
+        """Deletes all chunks associated with a source filename or book ID with instant cache invalidation."""
+        coll = self._get_raw_collection()
+        if not coll:
             return False
 
-        purged = 0
         try:
-            # Delete by book_id if provided
             target_id = book_id or source_name
+            # Atomic native ChromaDB deletion by book_id
             try:
-                existing_bid = self.collection.get(where={"book_id": target_id})
-                if existing_bid and existing_bid.get('ids'):
-                    self.collection.delete(ids=existing_bid['ids'])
-                    purged += len(existing_bid['ids'])
-            except Exception:
-                pass
+                coll.delete(where={"book_id": str(target_id)})
+            except Exception as e_bid:
+                logger.debug(f"Direct book_id deletion notice: {e_bid}")
 
-            # Delete by source filename
-            try:
-                existing_src = self.collection.get(where={"source": source_name})
-                if existing_src and existing_src.get('ids'):
-                    self.collection.delete(ids=existing_src['ids'])
-                    purged += len(existing_src['ids'])
-            except Exception:
-                pass
+            # Atomic native ChromaDB deletion by source filename
+            if source_name and source_name != target_id:
+                try:
+                    coll.delete(where={"source": str(source_name)})
+                except Exception as e_src:
+                    logger.debug(f"Direct source deletion notice: {e_src}")
 
-            if purged > 0:
-                self._clear_cache()
-                logger.info(f"Purged {purged} chunks for source: {source_name} / {book_id}")
-                return True
-            return False
+            # Always clear query cache to prevent returning deleted results
+            self._clear_cache()
+            logger.info(f"Purged vector embeddings and invalidated cache for: {source_name} / {book_id}")
+            return True
         except Exception as e:
             logger.error(f"Failed to delete source '{source_name}': {e}")
             return False

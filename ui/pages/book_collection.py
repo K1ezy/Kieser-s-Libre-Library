@@ -38,7 +38,7 @@ class BookCollection:
         self.filtered_list: List[Dict[str, Any]] = []
         self.user_progress: Dict[str, Dict[str, Any]] = {}
         self.user_favorites: set = set()
-        self.batch_size = 20
+        self.batch_size = 28
         self.current_index = 0
 
         self.state = {
@@ -61,7 +61,32 @@ class BookCollection:
         self.format_select = None
         self.shelf_select = None
         self.author_select = None
+        self.sort_select = None
+        self.search_input = None
+        self.active_filter_summary = None
+        self.reset_filter_btn = None
         self.status_tab_container = None
+
+    def reset_filters(self):
+        """Clears all active search and filter constraints."""
+        self.state['search_term'] = ''
+        self.state['format_filter'] = 'All'
+        self.state['shelf_filter'] = 'All'
+        self.state['author_filter'] = 'All'
+        self.state['sort_by'] = 'Newest'
+        self.state['status_tab'] = 'all'
+        if self.search_input:
+            self.search_input.value = ''
+        if self.format_select:
+            self.format_select.value = 'All'
+        if self.shelf_select:
+            self.shelf_select.value = 'All'
+        if self.author_select:
+            self.author_select.value = 'All'
+        if self.sort_select:
+            self.sort_select.value = 'Newest'
+        self.render_status_tabs()
+        self.apply_filters_and_sort()
 
     async def load_books(self):
         """Loads books and user reading statuses from database."""
@@ -229,7 +254,28 @@ class BookCollection:
         self.filtered_list = temp_list
 
         if self.hero_count_label:
-            self.hero_count_label.text = f"{len(self.filtered_list)} books available"
+            if len(self.filtered_list) == len(self.books):
+                self.hero_count_label.text = f"{len(self.filtered_list)} books available"
+            else:
+                self.hero_count_label.text = f"Showing {len(self.filtered_list)} of {len(self.books)} books"
+
+        if self.active_filter_summary:
+            is_filtered = (
+                bool(self.state['search_term'].strip()) or
+                self.state['format_filter'] != 'All' or
+                self.state['shelf_filter'] != 'All' or
+                self.state['author_filter'] != 'All' or
+                self.state['sort_by'] != 'Newest' or
+                self.state['status_tab'] != 'all'
+            )
+            if is_filtered:
+                self.active_filter_summary.text = f"{len(self.filtered_list)} matches"
+                if self.reset_filter_btn:
+                    self.reset_filter_btn.set_visibility(True)
+            else:
+                self.active_filter_summary.text = f"{len(self.books)} books total"
+                if self.reset_filter_btn:
+                    self.reset_filter_btn.set_visibility(False)
 
         self.current_index = 0
         if self.grid_container:
@@ -288,18 +334,20 @@ class BookCollection:
                 ui.button('Cancel', on_click=dialog.close).props('flat color=grey')
 
                 async def confirm():
-                    dialog.close()
+                    confirm_btn.props('loading')
                     if app.storage.user.get('role') != 'admin':
                         ui.notify("Administrator privileges required to delete books.", type='negative')
+                        dialog.close()
                         return
                     success = await mongo_db.delete_book(book_id)
+                    dialog.close()
                     if success:
                         ui.notify(f"Deleted '{title}'", type='positive')
                         await self.load_books()
                     else:
                         ui.notify("Failed to delete book", type='negative')
 
-                ui.button('Delete', color='red', on_click=confirm).props('unelevated font-bold rounded')
+                confirm_btn = ui.button('Delete', color='red', on_click=confirm).props('unelevated font-bold rounded')
         dialog.open()
 
 
@@ -308,60 +356,103 @@ class BookCollection:
         header(drawer_reference=drawer)
         bottom_nav()
 
-        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
+        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1700px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
 
-            # --- HERO / FILTER BAR ---
-            with ui.column().classes('w-full bg-white border border-slate-200 p-4 sm:p-6 mb-4 sm:mb-6 rounded-2xl sm:rounded-3xl shadow-sm gap-4'):
-                with ui.row().classes('w-full items-center justify-between gap-4 flex-wrap'):
+            # --- COMPACT WORKSPACE HEADER (Streamlined Document Workspace) ---
+            with ui.row().classes('w-full justify-between items-center mb-4 sm:mb-5 gap-3 flex-wrap'):
+                with ui.row().classes('items-center gap-3'):
+                    with ui.element('div').classes('p-2.5 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 shadow-xs shrink-0 flex items-center justify-center'):
+                        ui.icon('local_library', size='sm')
                     with ui.column().classes('gap-0.5'):
-                        ui.label('Library Archive').classes('text-2xl sm:text-3xl font-black text-slate-900 tracking-tight')
-                        self.hero_count_label = ui.label('Loading collection...').classes('text-slate-500 font-medium text-xs sm:text-sm')
+                        with ui.row().classes('items-center gap-2.5 flex-wrap'):
+                            ui.label('Library Archive').classes('text-xl sm:text-2xl font-black text-slate-900 tracking-tight')
+                            self.hero_count_label = ui.label('Loading collection...').classes(
+                                'text-xs font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full border border-indigo-200/80 shadow-xs'
+                            )
+                        ui.label('Search, filter, and organize your document collection and reading catalog.').classes('text-xs sm:text-sm text-slate-500 font-medium')
+                
+                # Workspace Actions: OPDS Feed & Refresh
+                with ui.row().classes('items-center gap-2'):
+                    ui.button('OPDS Feed', icon='rss_feed', on_click=lambda: ui.run_javascript("""
+                        navigator.clipboard.writeText(window.location.origin + '/opds');
+                        alert('OPDS Catalog Feed URL copied: ' + window.location.origin + '/opds');
+                    """)).props('flat dense rounded-xl text-color=slate-700 size=sm font-bold')\
+                       .classes('bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 shadow-xs')\
+                       .tooltip('Copy OPDS Feed URL for KOReader / Moon+ Reader')
 
-                    with ui.row().classes('items-center gap-2 flex-grow sm:flex-grow-0 max-w-md w-full sm:w-auto'):
-                        ui.input(placeholder='Search Title or Author... (Press /)',
+                    ui.button(icon='refresh', on_click=self.load_books)\
+                        .props('flat dense round text-color=slate-700 size=sm')\
+                        .classes('bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 shadow-xs')\
+                        .tooltip('Reload Library Catalog')
+
+            # --- FILTER & SEARCH CONTROL CENTER WINDOW ---
+            with ui.card().classes('w-full bg-white border border-slate-200 p-4 sm:p-6 mb-6 sm:mb-8 rounded-2xl sm:rounded-3xl shadow-sm gap-4'):
+                
+                # 1. Search Bar & Summary
+                with ui.row().classes('w-full items-center justify-between gap-3 flex-wrap'):
+                    with ui.row().classes('items-center gap-2 flex-1 min-w-[240px]'):
+                        self.search_input = ui.input(placeholder='Search Title, Author, or Keyword... (Press /)',
                                  on_change=lambda e: (self.state.update({'search_term': e.value}), self.apply_filters_and_sort())) \
                             .bind_value(self.state, 'search_term') \
-                            .props('id=global-search-input outlined rounded dense icon=search clearable bg-color=white') \
-                            .classes('flex-1 sm:w-72 text-sm')
+                            .props('id=global-search-input outlined rounded-xl dense icon=search clearable bg-color=slate-50') \
+                            .classes('w-full text-sm')
 
-                        ui.button('OPDS Feed', icon='rss_feed', on_click=lambda: ui.run_javascript("""
-                            navigator.clipboard.writeText(window.location.origin + '/opds');
-                            alert('OPDS Catalog Feed URL copied: ' + window.location.origin + '/opds');
-                        """)).props('outline rounded-xl color=indigo size=sm').classes('hidden md:inline-flex text-xs font-bold') \
-                           .tooltip('Copy OPDS Feed URL for KOReader / Moon+ Reader')
+                    with ui.row().classes('items-center gap-2 shrink-0'):
+                        self.active_filter_summary = ui.label('').classes('text-xs font-bold text-slate-500')
+                        self.reset_filter_btn = ui.button('Reset Filters', icon='restart_alt', on_click=self.reset_filters) \
+                            .props('flat rounded-xl color=indigo size=sm font-bold').classes('text-xs')
+                        self.reset_filter_btn.set_visibility(False)
 
-                        ui.button(icon='refresh', on_click=self.load_books) \
-                            .props('flat round dense color=indigo size=md') \
-                            .tooltip('Reload Library')
-
-                # Reading Status & Collections Filter Tabs (Horizontal swipe chips on mobile)
+                # 2. Reading Status Tabs
                 self.status_tab_container = ui.row().classes('w-full gap-1.5 sm:gap-2 items-center flex-nowrap overflow-x-auto no-scrollbar touch-pan-x py-1')
 
-                # Filter Controls Toolbar: 2 columns on mobile, 4 columns on desktop (Format, Shelf, Author, Sort)
-                with ui.grid().classes('w-full grid-cols-2 md:grid-cols-4 gap-2 sm:gap-2.5 pt-2 border-t border-slate-100'):
-                    self.format_select = ui.select(self.unique_formats, value='All', label='Format',
-                              on_change=lambda e: (self.state.update({'format_filter': e.value}), self.apply_filters_and_sort())) \
-                        .props('outlined rounded dense options-dense bg-color=white').classes('w-full text-sm')
+                # 3. Filter Controls: 4 Columns with Clean Micro-Headers (eliminates duplicate label rendering)
+                with ui.grid().classes('w-full grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pt-3 border-t border-slate-100'):
+                    
+                    # Column 1: Format
+                    with ui.column().classes('gap-1 w-full'):
+                        with ui.row().classes('items-center gap-1.5 px-0.5'):
+                            ui.icon('picture_as_pdf', size='14px').classes('text-indigo-600')
+                            ui.label('Format').classes('text-[11px] font-bold text-slate-500 uppercase tracking-wider')
+                        self.format_select = ui.select(self.unique_formats, value='All',
+                                  on_change=lambda e: (self.state.update({'format_filter': e.value}), self.apply_filters_and_sort())) \
+                            .props('outlined rounded-xl dense options-dense bg-color=slate-50').classes('w-full text-xs sm:text-sm font-medium')
 
-                    self.shelf_select = ui.select(self.unique_shelves, value='All', label='Custom Shelf',
-                              on_change=lambda e: (self.state.update({'shelf_filter': e.value}), self.apply_filters_and_sort())) \
-                        .props('outlined rounded dense options-dense bg-color=white').classes('w-full text-sm')
+                    # Column 2: Custom Shelf
+                    with ui.column().classes('gap-1 w-full'):
+                        with ui.row().classes('items-center gap-1.5 px-0.5'):
+                            ui.icon('collections_bookmark', size='14px').classes('text-indigo-600')
+                            ui.label('Custom Shelf').classes('text-[11px] font-bold text-slate-500 uppercase tracking-wider')
+                        self.shelf_select = ui.select(self.unique_shelves, value='All',
+                                  on_change=lambda e: (self.state.update({'shelf_filter': e.value}), self.apply_filters_and_sort())) \
+                            .props('outlined rounded-xl dense options-dense bg-color=slate-50').classes('w-full text-xs sm:text-sm font-medium')
 
-                    self.author_select = ui.select(self.unique_authors, value='All', label='Author',
-                              on_change=lambda e: (self.state.update({'author_filter': e.value}), self.apply_filters_and_sort())) \
-                        .props('outlined rounded dense options-dense bg-color=white').classes('w-full text-sm')
+                    # Column 3: Author
+                    with ui.column().classes('gap-1 w-full'):
+                        with ui.row().classes('items-center gap-1.5 px-0.5'):
+                            ui.icon('person', size='14px').classes('text-indigo-600')
+                            ui.label('Author').classes('text-[11px] font-bold text-slate-500 uppercase tracking-wider')
+                        self.author_select = ui.select(self.unique_authors, value='All',
+                                  on_change=lambda e: (self.state.update({'author_filter': e.value}), self.apply_filters_and_sort())) \
+                            .props('outlined rounded-xl dense options-dense bg-color=slate-50').classes('w-full text-xs sm:text-sm font-medium')
 
-                    ui.select(['Newest', 'Oldest', 'A-Z', 'Author'], value='Newest', label='Sort By',
-                              on_change=lambda e: (self.state.update({'sort_by': e.value}), self.apply_filters_and_sort())) \
-                        .props('outlined rounded dense options-dense bg-color=white').classes('w-full text-sm')
+                    # Column 4: Sort By
+                    with ui.column().classes('gap-1 w-full'):
+                        with ui.row().classes('items-center gap-1.5 px-0.5'):
+                            ui.icon('swap_vert', size='14px').classes('text-indigo-600')
+                            ui.label('Sort By').classes('text-[11px] font-bold text-slate-500 uppercase tracking-wider')
+                        self.sort_select = ui.select(['Newest', 'Oldest', 'A-Z', 'Author'], value='Newest',
+                                  on_change=lambda e: (self.state.update({'sort_by': e.value}), self.apply_filters_and_sort())) \
+                            .props('outlined rounded-xl dense options-dense bg-color=slate-50').classes('w-full text-xs sm:text-sm font-medium')
 
             # --- BOOKS GRID ---
-            with ui.column().classes('w-full items-center'):
-                with ui.grid().classes('w-full gap-3 sm:gap-4 md:gap-6 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 mb-8') as self.grid_container:
+            with ui.column().classes('w-full mb-8'):
+                with ui.grid().classes('w-full gap-3 sm:gap-4 md:gap-5 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7') as self.grid_container:
                     pass
 
-                self.load_more_btn = ui.button('Load More Books', on_click=self.load_more_batch) \
-                    .props('outline color=indigo rounded').classes('w-full sm:w-48 font-bold')
+                with ui.row().classes('w-full justify-center mt-6'):
+                    self.load_more_btn = ui.button('Load More Books', on_click=self.load_more_batch) \
+                        .props('outline color=indigo rounded').classes('w-full sm:w-48 font-bold')
 
 async def books_page():
     app.storage.client['page_path'] = '/books'

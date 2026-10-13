@@ -3,41 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EPUB Reader with Translation</title>
+    <title>Libre EPUB Reader</title>
     <style>
-        body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; background-color: #fff; font-family: sans-serif; }
+        body { margin: 0; padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; background-color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         
         /* Toolbar for Translation and Controls */
         #toolbar { 
-            height: 60px; 
-            background: #fff; 
-            border-bottom: 1px solid #eee; 
+            height: 52px; 
+            background: #ffffff; 
+            border-bottom: 1px solid #e2e8f0; 
             display: flex; 
             align-items: center; 
             justify-content: space-between; 
-            padding: 0 20px;
+            padding: 0 16px;
             z-index: 100;
         }
 
-        /* FIXED: Moved inline style from the label to here */
-        #toolbar-brand { font-weight: bold; color: #4f46e5; }
+        #toolbar-brand { font-weight: 700; color: #4f46e5; font-size: 14px; display: flex; align-items: center; gap: 6px; }
 
         #viewer { flex: 1; width: 100%; height: 100%; overflow: hidden; position: relative; }
         
-        #controls { height: 50px; background: #f8f9fa; border-top: 1px solid #ddd; display: flex; align-items: center; justify-content: center; gap: 20px; z-index: 10; }
+        #controls { height: 48px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; gap: 16px; z-index: 10; }
         
-        /* FIXED: Moved inline style from page-info to here */
-        #page-info { font-size: 12px; color: #666; }
+        #page-info { font-size: 12px; font-weight: 600; color: #475569; font-family: monospace; }
 
-        button { padding: 8px 20px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; font-size: 14px; color: #333; }
-        button:hover { background: #e9ecef; }
+        .nav-btn { 
+            padding: 6px 16px; 
+            border: 1px solid #cbd5e1; 
+            background: #ffffff; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 13px; 
+            font-weight: 600;
+            color: #334155; 
+            transition: all 0.15s ease;
+        }
+        .nav-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+        .nav-btn:active { transform: scale(0.98); }
         
-        #error-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #721c24; background-color: #f8d7da; padding: 20px; border-radius: 5px; display: none; z-index: 100; }
+        #error-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #991b1b; background-color: #fee2e2; border: 1px solid #fecaca; padding: 18px; border-radius: 12px; display: none; z-index: 100; font-size: 13px; max-width: 80%; text-align: center; }
         
         /* Google Translate branding overrides */
         .goog-logo-link { display:none !important; } 
         .goog-te-gadget { color: transparent !important; }
-        .goog-te-gadget .goog-te-combo { color: #333 !important; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
+        .goog-te-gadget .goog-te-combo { color: #334155 !important; padding: 4px 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-size: 12px; background: #fff; }
     </style>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.1.5/jszip.min.js"></script>
@@ -45,7 +54,9 @@
 </head>
 <body>
     <div id="toolbar">
-        <div id="toolbar-brand">Libre Translator</div>
+        <div id="toolbar-brand">
+            <span>📖</span> Libre Reader
+        </div>
         <div id="google_translate_element"></div>
     </div>
 
@@ -53,55 +64,273 @@
     <div id="viewer"></div>
     
     <div id="controls">
-        <button id="prev">Previous</button>
-        <span id="page-info"></span>
-        <button id="next">Next</button>
+        <button id="prev" class="nav-btn">◀ Previous</button>
+        <span id="page-info">Loading book coordinates...</span>
+        <button id="next" class="nav-btn">Next ▶</button>
     </div>
 
     <script>
         function googleTranslateElementInit() {
-            new google.translate.TranslateElement({
-                pageLanguage: 'en', 
-                layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
-                autoDisplay: false
-            }, 'google_translate_element');
+            try {
+                new google.translate.TranslateElement({
+                    pageLanguage: 'en', 
+                    layout: google.translate.TranslateElement.InlineLayout.SIMPLE,
+                    autoDisplay: false
+                }, 'google_translate_element');
+            } catch (e) {
+                console.warn("Google Translate initialization skipped:", e);
+            }
         }
     </script>
-    <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+    <script src="https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit" async defer></script>
 
     <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const bookUrl = urlParams.get('file');
-        const errorDiv = document.getElementById('error-msg');
+        (function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const bookUrl = urlParams.get('file');
+            const bookId = urlParams.get('book_id') || '';
+            const userId = urlParams.get('user_id') || 'guest';
+            const initialCfi = urlParams.get('cfi') ? decodeURIComponent(urlParams.get('cfi')) : null;
+            const initialPage = parseInt(urlParams.get('page') || '1', 10);
+            const totalPages = Math.max(1, parseInt(urlParams.get('total') || '100', 10));
 
-        if (!bookUrl) {
-            errorDiv.style.display = 'block';
-            errorDiv.innerText = "Error: No book file specified.";
-        } else {
+            const errorDiv = document.getElementById('error-msg');
+            const pageInfoSpan = document.getElementById('page-info');
+
+            if (!bookUrl) {
+                errorDiv.style.display = 'block';
+                errorDiv.innerText = "Error: No book file specified in query parameters.";
+                return;
+            }
+
+            console.log(`[EPUB Engine] Initializing: bookId=${bookId}, initialPage=${initialPage}/${totalPages}, hasCfi=${Boolean(initialCfi)}`);
+
+            let book = null;
+            let rendition = null;
+            let isRestoring = Boolean(initialCfi || (initialPage > 1));
+            let locationsReady = false;
+            let lastNotifiedCfi = initialCfi || null;
+            let lastNotifiedPage = initialPage;
+            let saveDebounceTimer = null;
+            let pendingSavePayload = null;
+
+            function updateHud(page, total, pct, cfi) {
+                if (pageInfoSpan) {
+                    pageInfoSpan.innerText = `Page ${page} of ${total} (${pct}%)`;
+                }
+
+                // Synchronize parent frame HUD and application state
+                try {
+                    window.parent.postMessage({
+                        type: 'LIBRE_READER_PROGRESS',
+                        book_id: bookId,
+                        current_page: page,
+                        total_pages: total,
+                        percentage: pct,
+                        cfi: cfi
+                    }, '*');
+
+                    // Legacy fallback message
+                    window.parent.postMessage({
+                        type: 'READER_PROGRESS_UPDATE',
+                        book_id: bookId,
+                        current_page: page,
+                        total_pages: total,
+                        percentage: pct,
+                        cfi: cfi
+                    }, '*');
+                } catch (err) {
+                    console.warn("[EPUB Engine] postMessage to parent failed:", err);
+                }
+            }
+
+            function scheduleSave(payload) {
+                pendingSavePayload = payload;
+                if (saveDebounceTimer) {
+                    clearTimeout(saveDebounceTimer);
+                }
+                saveDebounceTimer = setTimeout(() => {
+                    persistReadingProgress(pendingSavePayload);
+                }, 500);
+            }
+
+            async function persistReadingProgress(payload) {
+                if (!payload || !payload.book_id) return;
+                try {
+                    const response = await fetch('/api/progress/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) {
+                        console.log(`[EPUB Engine] Persisted progress: page ${payload.current_page}/${payload.total_pages} (${payload.progress_percent}%)`);
+                    } else {
+                        console.warn(`[EPUB Engine] Persist returned HTTP ${response.status}`);
+                    }
+                } catch (err) {
+                    console.error("[EPUB Engine] Network error during progress save:", err);
+                }
+            }
+
+            function flushPendingSave() {
+                if (pendingSavePayload) {
+                    const payloadString = JSON.stringify(pendingSavePayload);
+                    if (navigator.sendBeacon) {
+                        navigator.sendBeacon('/api/progress/sync', new Blob([payloadString], { type: 'application/json' }));
+                    } else {
+                        fetch('/api/progress/sync', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: payloadString,
+                            keepalive: true
+                        });
+                    }
+                    pendingSavePayload = null;
+                }
+            }
+
+            window.addEventListener('beforeunload', flushPendingSave);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') flushPendingSave();
+            });
+
+            // Bi-directional parent-window command dispatcher
+            window.addEventListener('message', function(event) {
+                if (!event.data || !rendition) return;
+                if (event.data.type === 'READER_NAVIGATE') {
+                    if (event.data.action === 'next') {
+                        rendition.next();
+                    } else if (event.data.action === 'prev') {
+                        rendition.prev();
+                    }
+                }
+            });
+
             try {
-                var book = ePub(bookUrl);
-                var rendition = book.renderTo("viewer", {
+                book = ePub(bookUrl);
+                rendition = book.renderTo("viewer", {
                     width: "100%",
                     height: "100%",
-                    flow: "scrolled-doc",
+                    flow: "paginated",
                     manager: "default"
                 });
 
-                rendition.display();
+                // Display immediately at saved CFI, or start of book
+                if (initialCfi) {
+                    console.log("[EPUB Engine] Restoring exact CFI location:", initialCfi);
+                    rendition.display(initialCfi).catch(err => {
+                        console.warn("[EPUB Engine] Direct CFI display error, falling back:", err);
+                        rendition.display();
+                    });
+                } else {
+                    rendition.display();
+                }
 
-                document.getElementById("next").addEventListener("click", () => rendition.next());
-                document.getElementById("prev").addEventListener("click", () => rendition.prev());
+                // Generate CFI coordinate mappings in background
+                book.ready.then(function() {
+                    return book.locations.generate(1000);
+                }).then(function() {
+                    locationsReady = true;
+                    console.log("[EPUB Engine] Location coordinates generated successfully.");
 
-                document.addEventListener("keyup", (e) => {
-                    if(e.key === "ArrowLeft") rendition.prev();
-                    if(e.key === "ArrowRight") rendition.next();
+                    // If no CFI was stored but initialPage > 1, navigate by fraction
+                    if (isRestoring && !initialCfi && initialPage > 1 && totalPages > 1) {
+                        const targetFraction = Math.max(0, Math.min(1, (initialPage - 1) / (totalPages - 1)));
+                        const cfi = book.locations.cfiFromPercentage(targetFraction);
+                        if (cfi) {
+                            console.log(`[EPUB Engine] Navigating to estimated CFI from page ${initialPage}:`, cfi);
+                            rendition.display(cfi);
+                        }
+                    }
+                }).catch(function(err) {
+                    console.warn("[EPUB Engine] Location generation warning:", err);
+                });
+
+                // Authoritative relocation listener
+                rendition.on('relocated', function(location) {
+                    if (!location || !location.start) return;
+                    const curCfi = location.start.cfi;
+
+                    let pct = 0;
+                    if (book.locations && book.locations.length()) {
+                        pct = book.locations.percentageFromCfi(curCfi);
+                    } else if (book.spine && book.spine.length) {
+                        pct = (location.start.index || 0) / Math.max(1, book.spine.length);
+                    }
+                    pct = Math.max(0, Math.min(1, pct));
+
+                    const curPage = Math.max(1, Math.min(totalPages, Math.round(pct * (totalPages - 1)) + 1));
+                    const pctInt = Math.round(pct * 100);
+
+                    // Update HUD immediately
+                    updateHud(curPage, totalPages, pctInt, curCfi);
+
+                    // Initial restoration event check: synchronize UI but suppress redundant overwrite save
+                    if (isRestoring) {
+                        console.log(`[EPUB Engine] Restoration verified at page ${curPage}/${totalPages} (${pctInt}%)`);
+                        isRestoring = false;
+                        lastNotifiedCfi = curCfi;
+                        lastNotifiedPage = curPage;
+                        return;
+                    }
+
+                    // Avoid duplicate persistence for identical position
+                    if (curCfi === lastNotifiedCfi && curPage === lastNotifiedPage) {
+                        return;
+                    }
+
+                    lastNotifiedCfi = curCfi;
+                    lastNotifiedPage = curPage;
+
+                    // Automatically persist position without manual buttons
+                    scheduleSave({
+                        book_id: bookId,
+                        user_id: userId,
+                        current_page: curPage,
+                        total_pages: totalPages,
+                        progress_percent: Math.round(pct * 1000) / 10,
+                        cfi: curCfi,
+                        status: (curPage >= totalPages && totalPages > 1) ? 'completed' : 'reading',
+                        client_timestamp: Date.now() / 1000
+                    });
+                });
+
+                // Button controls
+                const nextBtn = document.getElementById("next");
+                const prevBtn = document.getElementById("prev");
+                if (nextBtn) nextBtn.addEventListener("click", () => rendition.next());
+                if (prevBtn) prevBtn.addEventListener("click", () => rendition.prev());
+
+                // Keyboard listener on outer document
+                document.addEventListener("keydown", (e) => {
+                    if (e.key === "ArrowLeft" || e.key === "PageUp") {
+                        rendition.prev();
+                        e.preventDefault();
+                    } else if (e.key === "ArrowRight" || e.key === "PageDown") {
+                        rendition.next();
+                        e.preventDefault();
+                    }
+                });
+
+                // Keyboard listener inside EPUB iframe contents
+                rendition.hooks.content.register(function(contents) {
+                    contents.document.addEventListener("keydown", (e) => {
+                        if (e.key === "ArrowLeft" || e.key === "PageUp") {
+                            rendition.prev();
+                            e.preventDefault();
+                        } else if (e.key === "ArrowRight" || e.key === "PageDown") {
+                            rendition.next();
+                            e.preventDefault();
+                        }
+                    });
                 });
 
             } catch (e) {
+                console.error("[EPUB Engine] Fatal initialization error:", e);
                 errorDiv.style.display = 'block';
-                errorDiv.innerText = "Error: " + e.message;
+                errorDiv.innerText = "Fatal Reader Error: " + e.message;
             }
-        }
+        })();
     </script>
 </body>
 </html>

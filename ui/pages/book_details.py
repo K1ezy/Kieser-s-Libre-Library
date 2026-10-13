@@ -1,5 +1,6 @@
 from nicegui import ui, app, run
 from pathlib import Path
+import re
 import asyncio
 import logging
 import math
@@ -48,6 +49,15 @@ class BookDetailsPage:
             ui.navigate.to('/books')
             return
 
+        # Ensure page count is resolved accurately from file or metadata
+        if not self.book.get('page_count') or int(self.book.get('page_count', 0)) <= 1:
+            try:
+                resolved_pc = await mongo_db.get_or_resolve_page_count(self.book_id, self.book)
+                if resolved_pc > 0:
+                    self.book['page_count'] = resolved_pc
+            except Exception:
+                pass
+
         user_id = app.storage.user.get('user_id') or app.storage.user.get('token') or 'guest'
         try:
             self.reading_progress = await mongo_db.get_reading_progress(user_id, self.book_id)
@@ -55,6 +65,57 @@ class BookDetailsPage:
             self.reading_progress = None
 
         self.render_content()
+
+    def get_effective_total_pages(self) -> int:
+        """
+        Determines authoritative total page count.
+        Prioritizes validated book metadata, user reading progress total, or intelligent fallback.
+        """
+        book_pages = 0
+        if self.book and isinstance(self.book.get('page_count'), (int, float)):
+            book_pages = int(self.book['page_count'])
+
+        prog_pages = 0
+        if self.reading_progress and isinstance(self.reading_progress.get('total_pages'), (int, float)):
+            prog_pages = int(self.reading_progress['total_pages'])
+
+        tot = max(book_pages, prog_pages)
+        return tot if tot > 1 else (tot if tot == 1 else 100)
+
+    @staticmethod
+    def format_synopsis_text(raw_text: str) -> str:
+        """
+        Cleans and normalizes book synopsis content:
+        - Strips Unicode mojibake / corrupted replacement characters (e.g. \ufffd, smart quote bytes)
+        - Normalizes curly/smart quotes and dashes to standard typography
+        - Removes raw dashed divider lines (e.g., '---') that falsely trigger Markdown Setext <h2> headings
+        - Strips accidental 4-space code block indents
+        - Collapses excess whitespace and normalizes paragraphs
+        """
+        if not raw_text:
+            return ""
+
+        # 1. Normalize mojibake and curly quotes to clean standard characters
+        text = raw_text.replace("\ufffd", "'").replace("\x92", "'").replace("\x91", "'")
+        text = text.replace("\x93", '"').replace("\x94", '"')
+        text = text.replace("\u2018", "'").replace("\u2019", "'")
+        text = text.replace("\u201c", '"').replace("\u201d", '"')
+        text = text.replace("\u2014", " - ").replace("\u2013", "-")
+
+        # 2. Strip standalone hyphen/equal dividers and accidental code block indentation
+        lines = text.splitlines()
+        clean_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if re.match(r"^[-=_*~]{3,}$", stripped):
+                clean_lines.append("")
+            else:
+                clean_lines.append(stripped)
+
+        text = "\n".join(clean_lines)
+        # 3. Collapse 3+ newlines into 2
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
 
     def refresh_ui(self):
         if self.content_container:
@@ -82,19 +143,14 @@ class BookDetailsPage:
             normalized_status = 'want_to_read'
 
         # 2. Pages and progress percentage calculation
-        page_count = self.book.get('page_count') or 1
-        total_pages = int(page_count) if isinstance(page_count, (int, float)) and page_count > 0 else 1
+        total_pages = self.get_effective_total_pages()
 
         current_page = 0
         progress_percent = 0.0
 
         if self.reading_progress:
-            total_pages = int(self.reading_progress.get('total_pages', total_pages)) or total_pages
             current_page = int(self.reading_progress.get('current_page', 0))
             progress_percent = float(self.reading_progress.get('progress_percent', 0.0))
-
-        if total_pages <= 0:
-            total_pages = 1
 
         if normalized_status == 'completed':
             current_page = total_pages
@@ -210,11 +266,12 @@ class BookDetailsPage:
 
                 # Active page quick updater (appears when Currently Reading)
                 if normalized_status == 'reading':
-                    with ui.row().classes('w-full items-center justify-between gap-2 pt-2 mt-1 border-t border-slate-200/60'):
+                    with ui.row().classes('w-full items-center justify-between gap-2 pt-2 mt-1 border-t border-slate-200/60 flex-wrap'):
                         ui.label('Active page:').classes('text-[11px] text-slate-500 font-semibold')
-                        with ui.row().classes('items-center gap-1'):
-                            page_num = ui.number(value=current_page, min=1, max=total_pages, step=1)\
+                        with ui.row().classes('items-center gap-1.5'):
+                            page_num = ui.number(value=current_page, min=1, step=1)\
                                 .props('outlined dense size=xs').classes('w-20 text-xs bg-white rounded-lg')
+                            ui.label(f"of {total_pages}").classes('text-xs text-slate-400 font-medium')
                             with ui.button(
                                 icon='check',
                                 on_click=lambda: self.update_page_number(int(page_num.value or 1))
@@ -225,6 +282,8 @@ class BookDetailsPage:
         if not self.book:
             return
 
+        tot_pages = self.get_effective_total_pages()
+
         # 1. Normalize status
         if new_status in ('to_read', 'want_to_read'):
             status_key = 'want_to_read'
@@ -234,16 +293,12 @@ class BookDetailsPage:
         elif new_status in ('reading', 'currently_reading', 'in_progress'):
             status_key = 'reading'
             cur = int(self.reading_progress.get('current_page', 0)) if self.reading_progress else 0
-            tot = self.book.get('page_count') or 1
-            tot = int(tot) if isinstance(tot, (int, float)) and tot > 0 else 1
-            cur_page = cur if (0 < cur < tot) else 1
-            pct_val = round((cur_page / max(tot, 1)) * 100.0, 1)
+            cur_page = cur if (0 < cur < tot_pages) else 1
+            pct_val = round((cur_page / max(tot_pages, 1)) * 100.0, 1)
             display_title = 'Currently Reading'
         elif new_status in ('completed', 'done', 'finished'):
             status_key = 'completed'
-            tot = self.book.get('page_count') or 1
-            tot = int(tot) if isinstance(tot, (int, float)) and tot > 0 else 1
-            cur_page = tot
+            cur_page = tot_pages
             pct_val = 100.0
             display_title = 'Completed'
         else:
@@ -251,9 +306,6 @@ class BookDetailsPage:
             cur_page = 0
             pct_val = 0.0
             display_title = new_status.replace('_', ' ').title()
-
-        page_count = self.book.get('page_count') or 1
-        tot_pages = int(page_count) if isinstance(page_count, (int, float)) and page_count > 0 else 1
 
         # 2. Update local state immediately
         self.book['reading_status'] = status_key
@@ -287,11 +339,17 @@ class BookDetailsPage:
         if not self.book:
             return
 
-        page_count = self.book.get('page_count') or 1
-        tot_pages = int(page_count) if isinstance(page_count, (int, float)) and page_count > 0 else 1
+        tot_pages = self.get_effective_total_pages()
+        # If user entered a page number greater than currently registered total pages, adapt gracefully
+        if page_val > tot_pages:
+            tot_pages = page_val
+            self.book['page_count'] = tot_pages
+
         page_val = max(1, min(page_val, tot_pages))
         pct_val = round((page_val / max(tot_pages, 1)) * 100.0, 1)
-        status_key = 'completed' if page_val >= tot_pages else 'reading'
+
+        # Only transition to completed if user legitimately reached or surpassed total pages AND total_pages > 1
+        status_key = 'completed' if (page_val >= tot_pages and tot_pages > 1) else 'reading'
 
         self.book['reading_status'] = status_key
         if not self.reading_progress:
@@ -405,7 +463,8 @@ class BookDetailsPage:
         summaries = self.book.get('summaries')
         raw_desc = summaries[0] if summaries and isinstance(summaries, list) else self.book.get('description', '')
         has_real_synopsis = bool(raw_desc and raw_desc.strip() and raw_desc.strip() != 'No synopsis available for this document.')
-        synopsis_text = raw_desc.strip() if has_real_synopsis else ""
+        synopsis_text = self.format_synopsis_text(raw_desc) if has_real_synopsis else ""
+        has_real_synopsis = bool(synopsis_text)
 
         # Cover URL resolution
         disk_cover = settings.BASE_DIR / 'data' / 'books' / self.book_id / 'cover.jpg'
@@ -481,7 +540,7 @@ class BookDetailsPage:
                         new_author = author_input.value.strip() or 'Unknown'
                         new_pub = pub_input.value.strip()
                         new_year = year_input.value.strip()
-                        new_desc = desc_input.value.strip()
+                        new_desc = self.format_synopsis_text(desc_input.value.strip())
 
                         clean_shelves = [s.strip() for s in shelves_input.value.split(',') if s.strip()]
                         clean_genres = [g.strip() for g in tags_input.value.split(',') if g.strip()]
@@ -527,15 +586,17 @@ class BookDetailsPage:
                     ui.button('Cancel', on_click=del_dialog.close).props('flat rounded-xl color=grey font-bold size=sm')
                     
                     async def do_delete():
-                        del_dialog.close()
+                        delete_btn.props('loading')
                         success = await mongo_db.delete_book(self.book_id)
+                        del_dialog.close()
                         if success:
                             ui.notify(f"'{title}' has been deleted.", type='positive')
                             ui.navigate.to('/books')
                         else:
                             ui.notify('Could not delete document.', type='negative')
+                            delete_btn.props(remove='loading')
 
-                    ui.button('Delete Permanently', icon='delete_forever', on_click=do_delete)\
+                    delete_btn = ui.button('Delete Permanently', icon='delete_forever', on_click=do_delete)\
                         .props('unelevated rounded-xl color=red font-bold size=sm shadow-md')
 
             del_dialog.open()
@@ -600,7 +661,7 @@ class BookDetailsPage:
                 )
 
                 generated = await tars_engine.generate_response(prompt, max_tokens=350)
-                clean_synopsis = generated.strip() if generated else ""
+                clean_synopsis = self.format_synopsis_text(generated) if generated else ""
 
                 if clean_synopsis:
                     await mongo_db.progress.save_book_summary(self.book_id, clean_synopsis)
@@ -775,10 +836,17 @@ class BookDetailsPage:
 
                     ui.separator().classes('opacity-40 my-1')
 
-                    # 3. SYNOPSIS SECTION (with AI Generation CTA)
+                    # 3. SYNOPSIS SECTION (with AI Generation CTA & Scrollable Viewport)
                     with ui.column().classes('w-full gap-2.5'):
                         with ui.row().classes('w-full items-center justify-between'):
-                            ui.label('SYNOPSIS').classes('text-xs font-black text-slate-400 uppercase tracking-widest')
+                            with ui.row().classes('items-center gap-2'):
+                                ui.icon('subject', size='18px').classes('text-indigo-600')
+                                ui.label('SYNOPSIS').classes('text-xs font-black text-slate-500 uppercase tracking-widest')
+                                if has_real_synopsis and len(synopsis_text) > 280:
+                                    with ui.row().classes('items-center gap-1 text-[10px] font-bold text-slate-400 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded-md'):
+                                        ui.icon('unfold_more', size='12px')
+                                        ui.label('Scrollable')
+
                             ui.button(
                                 'Regenerate with AI' if has_real_synopsis else '✨ Generate with AI',
                                 icon='auto_awesome',
@@ -786,8 +854,15 @@ class BookDetailsPage:
                             ).props('flat dense size=sm color=indigo').classes('font-bold hover:bg-indigo-50 rounded-lg px-2')
 
                         if has_real_synopsis:
-                            with ui.card().classes('w-full p-5 sm:p-6 bg-slate-50/70 rounded-2xl border border-slate-200 shadow-xs'):
-                                ui.markdown(synopsis_text).classes('text-slate-700 leading-relaxed text-sm sm:text-base max-w-prose break-words')
+                            with ui.card().classes(
+                                'w-full p-4 sm:p-6 bg-slate-50/70 rounded-2xl border border-slate-200 shadow-xs relative overflow-hidden'
+                            ):
+                                with ui.column().classes(
+                                    'w-full max-h-72 sm:max-h-80 lg:max-h-[360px] overflow-y-auto pr-2 sm:pr-3 overscroll-contain synopsis-scroll-container'
+                                ):
+                                    ui.markdown(synopsis_text).classes(
+                                        'synopsis-markdown w-full text-slate-700 leading-relaxed text-sm sm:text-base break-words'
+                                    )
                         else:
                             # Dynamic Interactive Empty State
                             with ui.card().classes(

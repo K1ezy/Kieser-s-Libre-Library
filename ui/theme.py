@@ -3,7 +3,7 @@ from core.config import settings
 
 # --- MODERN CLEAN LIGHT DESIGN SYSTEM ---
 GLOBAL_THEME_STYLES = '''
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#4f46e5">
     <meta name="color-scheme" content="light">
     <meta name="mobile-web-app-capable" content="yes">
@@ -248,6 +248,89 @@ GLOBAL_THEME_STYLES = '''
         }
         ::-webkit-scrollbar-thumb:hover {
             background: rgba(99, 102, 241, 0.7);
+        }
+
+        /* Dedicated Document Synopsis Typography & Scroll Styles */
+        .synopsis-scroll-container {
+            max-height: 280px;
+            overflow-y: auto;
+            overscroll-behavior-y: contain;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+        }
+
+        @media (min-width: 640px) {
+            .synopsis-scroll-container {
+                max-height: 320px;
+            }
+        }
+
+        @media (min-width: 1024px) {
+            .synopsis-scroll-container {
+                max-height: 360px;
+            }
+        }
+
+        .synopsis-markdown,
+        .synopsis-markdown * {
+            font-family: var(--font-family) !important;
+        }
+
+        .synopsis-markdown p {
+            margin-bottom: 0.85rem !important;
+            line-height: 1.75 !important;
+            color: #334155 !important;
+            font-size: 0.9375rem !important;
+            letter-spacing: -0.01em !important;
+        }
+
+        .synopsis-markdown p:last-child {
+            margin-bottom: 0 !important;
+        }
+
+        .synopsis-markdown h1,
+        .synopsis-markdown h2,
+        .synopsis-markdown h3,
+        .synopsis-markdown h4 {
+            font-weight: 700 !important;
+            color: #0f172a !important;
+            margin-top: 1rem !important;
+            margin-bottom: 0.5rem !important;
+            line-height: 1.4 !important;
+            font-size: 1.05rem !important;
+        }
+
+        .synopsis-markdown ul,
+        .synopsis-markdown ol {
+            margin-top: 0.5rem !important;
+            margin-bottom: 0.85rem !important;
+            padding-left: 1.4rem !important;
+            color: #334155 !important;
+            font-size: 0.9375rem !important;
+            line-height: 1.7 !important;
+        }
+
+        .synopsis-markdown li {
+            margin-bottom: 0.35rem !important;
+        }
+
+        .synopsis-markdown strong,
+        .synopsis-markdown b {
+            font-weight: 700 !important;
+            color: #1e293b !important;
+        }
+
+        .synopsis-markdown em,
+        .synopsis-markdown i {
+            font-style: italic !important;
+        }
+
+        .synopsis-markdown hr {
+            border: 0 !important;
+            border-top: 1px solid #e2e8f0 !important;
+            margin: 0.85rem 0 !important;
         }
 
         /* Accessibility Focus-Visible High-Contrast Indicators (WCAG 2.1 AA/AAA) */

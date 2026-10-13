@@ -11,6 +11,9 @@ __pycache__/
 models/*.gguf
 models/*.bin
 models/all-MiniLM-L6-v2/
+all-MiniLM-L6-v2/
+sentence-transformers/
+scratch/
 
 # User Data & Storage (Persistent runtime data)
 data/
@@ -18,6 +21,7 @@ uploads/*
 !uploads/.gitkeep
 chroma_db/
 E-Books/
+backups/
 
 # NiceGUI / App Local Storage
 .nicegui/

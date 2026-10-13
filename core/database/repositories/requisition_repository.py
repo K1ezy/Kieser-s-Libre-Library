@@ -1,6 +1,9 @@
+import io
+import csv
 import time
 import uuid
 import logging
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from core.database.repositories.base_repository import BaseRepository
@@ -10,7 +13,7 @@ logger = logging.getLogger("REQUISITION_REPOSITORY")
 class RequisitionRepository(BaseRepository):
     """
     Dedicated repository for Faculty Book Requisition & Curriculum Acquisition Portal.
-    Complies with SRS Chapter 1 (Obj. 4), Chapter 2 (FR 4), and Section 2.3.
+    Complies with SRS Chapter 1 (Obj. 4), Chapter 2 (FR 4), and Form FM-LIBS-002.
     Tracks curriculum-aligned book requests with real-time procurement workflow.
     """
 
@@ -35,9 +38,14 @@ class RequisitionRepository(BaseRepository):
         edition_year: str = "",
         isbn: str = "",
         urgency: str = "Normal",
-        justification: str = ""
+        justification: str = "",
+        publisher: str = "",
+        copyright_date: str = "",
+        price: float = 0.0,
+        copies: int = 1,
+        college: str = ""
     ) -> Dict[str, Any]:
-        """Submits a new faculty book requisition for collection acquisition."""
+        """Submits a new faculty book requisition for collection acquisition (FM-LIBS-002)."""
         if self.db is None:
             return {"success": False, "error": "Database unavailable."}
 
@@ -50,15 +58,23 @@ class RequisitionRepository(BaseRepository):
             "faculty_name": faculty_name.strip(),
             "email": email.strip().lower(),
             "department": department.strip().upper() or "CS/IT",
+            "college": college.strip() or "College of Information Technology Education (CITE)",
             "book_title": book_title.strip(),
             "author": author.strip(),
+            "publisher": publisher.strip(),
             "edition_year": edition_year.strip(),
+            "copyright_date": copyright_date.strip(),
+            "price": float(price or 0.0),
+            "copies": int(copies or 1),
             "isbn": isbn.strip(),
             "course_code": course_code.strip().upper(),
             "course_title": course_title.strip(),
             "urgency": urgency.strip() or "Normal",
             "justification": justification.strip(),
             "status": "Pending Review",
+            "dean_approved": False,
+            "reader_services_received": False,
+            "college_librarian_noted": False,
             "admin_notes": "",
             "catalog_book_id": None,
             "created_at": now,
@@ -71,6 +87,39 @@ class RequisitionRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Create Requisition Error: {e}")
             return {"success": False, "error": str(e)}
+
+    def generate_fmlibs002_csv(self, requisitions: List[Dict[str, Any]]) -> str:
+        """Generates institutional FM-LIBS-002 Book Request Form compliant export."""
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Republic of the Philippines"])
+        writer.writerow(["NORTH EASTERN MINDANAO STATE UNIVERSITY (NEMSU) - TANDAG CAMPUS"])
+        writer.writerow(["BOOK REQUEST FORM (FM-LIBS-002)"])
+        writer.writerow([f"Generated: {datetime.now().strftime('%Y-%m-%d %I:%M %p')}"])
+        writer.writerow([])
+        writer.writerow([
+            "REQ ID", "TITLE", "AUTHOR", "EDITION", "PUBLISHER", "COPYRIGHT DATE",
+            "EST. PRICE (PHP)", "COPIES", "SELECTED BY (FACULTY)", "COLLEGE / DEPT",
+            "COURSE CODE", "COURSE TITLE", "STATUS", "JUSTIFICATION"
+        ])
+        for r in requisitions:
+            writer.writerow([
+                r.get("id", ""),
+                r.get("book_title", ""),
+                r.get("author", ""),
+                r.get("edition_year", "-"),
+                r.get("publisher", "-"),
+                r.get("copyright_date", "-"),
+                r.get("price", 0.0),
+                r.get("copies", 1),
+                r.get("faculty_name", ""),
+                r.get("department", ""),
+                r.get("course_code", ""),
+                r.get("course_title", ""),
+                r.get("status", "Pending Review"),
+                r.get("justification", "")
+            ])
+        return output.getvalue()
 
     async def get_requisitions(
         self,

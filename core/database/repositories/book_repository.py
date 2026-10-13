@@ -1,5 +1,6 @@
 import re
 import shutil
+import asyncio
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -158,17 +159,36 @@ class BookRepository(BaseRepository):
             logger.error(f"Update Book Metadata Error: {e}")
             return False
 
+    @staticmethod
+    def _cleanup_disk_and_vectors(book_dir: Path, books_root: Path, book_id: str, local_path: Optional[str]):
+        """Helper to run synchronous disk cleanup and vector purge in a worker thread without blocking the event loop."""
+        try:
+            if book_dir != books_root and book_dir.is_relative_to(books_root) and book_dir.exists():
+                shutil.rmtree(book_dir, ignore_errors=True)
+        except Exception as fs_err:
+            logger.warning(f"Disk cleanup notice for {book_id}: {fs_err}")
+
+        try:
+            from core.ai_engine.rag_pipeline import tars_archive
+            tars_archive.delete_source(source_name=book_id, book_id=book_id)
+            if local_path:
+                source_name = Path(local_path).name
+                if source_name and source_name != book_id:
+                    tars_archive.delete_source(source_name=source_name, book_id=book_id)
+        except Exception as vec_err:
+            logger.warning(f"Vector cleanup notice for {book_id}: {vec_err}")
+
     async def delete_book(self, book_id: str) -> bool:
         """
-        Deletes a book completely:
+        Deletes a book completely and instantly (<1-2 seconds):
         1. Validates book_id format to prevent path traversal attacks.
-        2. Removes from MongoDB 'books' collection.
-        3. Safely removes physical folder from 'data/books/{book_id}'.
-        4. Removes vector embeddings from ChromaDB.
-        5. Removes any associated planner tasks and decks.
+        2. Retrieves local path for complete cleanup.
+        3. Concurrently purges MongoDB book, tasks, planner, and reading_progress records.
+        4. Offloads disk directory removal and ChromaDB vector deletion to a worker thread.
         """
-        if self.db is None or not book_id: return False
-        
+        if self.db is None or not book_id:
+            return False
+
         # Security: Prevent path traversal in book_id
         if not re.match(r'^[a-zA-Z0-9_-]+$', str(book_id)):
             logger.warning(f"Rejected delete_book with suspicious ID: {book_id}")
@@ -176,28 +196,27 @@ class BookRepository(BaseRepository):
 
         try:
             book = await self.get_book_by_id(book_id)
-
-            await self.db['books'].delete_one({"id": book_id})
+            local_p = book.get('local_path') if book else None
 
             books_root = (settings.BASE_DIR / 'data' / 'books').resolve()
             book_dir = (books_root / book_id).resolve()
-            
-            if book_dir != books_root and book_dir.is_relative_to(books_root) and book_dir.exists():
-                shutil.rmtree(book_dir, ignore_errors=True)
 
-            try:
-                from core.ai_engine.rag_pipeline import tars_archive
-                tars_archive.delete_source(book_id)
-                if book:
-                    local_p = book.get('local_path')
-                    if local_p:
-                        tars_archive.delete_source(Path(local_p).name)
-            except Exception as vec_err:
-                logger.warning(f"Vector cleanup notice for {book_id}: {vec_err}")
+            # Concurrently delete MongoDB documents across collections
+            await asyncio.gather(
+                self.db['books'].delete_one({"id": book_id}),
+                self.db['tasks'].delete_many({"linked_book_id": book_id}),
+                self.db['planner'].delete_many({"linked_book_id": book_id}),
+                self.db['reading_progress'].delete_many({"book_id": book_id}),
+                return_exceptions=True
+            )
 
-            await self.db['tasks'].delete_many({"linked_book_id": book_id})
-            await self.db['planner'].delete_many({"linked_book_id": book_id})
-            logger.info(f"Book deleted successfully: {book_id}")
+            # Offload blocking filesystem removal & ChromaDB vector purge to worker thread
+            await asyncio.to_thread(
+                self._cleanup_disk_and_vectors,
+                book_dir, books_root, book_id, local_p
+            )
+
+            logger.info(f"Book deleted successfully in optimized workflow: {book_id}")
             return True
 
         except Exception as e:
@@ -311,3 +330,100 @@ class BookRepository(BaseRepository):
                     return str(content_files[0].resolve())
 
         return None
+
+    async def get_or_resolve_page_count(self, book_id: str, book_doc: Optional[dict] = None) -> int:
+        """
+        Determines and caches true document page count across PDF, EPUB, DOCX, PPTX, and text formats.
+        Persists newly discovered page count to MongoDB to avoid repeated disk reads.
+        """
+        # 1. Check in-memory doc
+        if book_doc and isinstance(book_doc.get('page_count'), (int, float)) and book_doc['page_count'] > 0:
+            return int(book_doc['page_count'])
+
+        # 2. Check database record if book_doc wasn't provided or didn't have it
+        if self.db is not None and book_id:
+            try:
+                db_doc = await self.get_book_by_id(book_id)
+                if db_doc and isinstance(db_doc.get('page_count'), (int, float)) and db_doc['page_count'] > 0:
+                    if book_doc:
+                        book_doc['page_count'] = int(db_doc['page_count'])
+                    return int(db_doc['page_count'])
+            except Exception:
+                pass
+
+        # 3. Resolve physical file path on disk
+        file_path_str = self.resolve_document_path(book_id, book_doc)
+        if not file_path_str or not Path(file_path_str).exists():
+            return 0
+
+        p = Path(file_path_str)
+        ext = p.suffix.lower()
+        pages = 0
+
+        try:
+            if ext == '.pdf':
+                try:
+                    import fitz
+                    with fitz.open(str(p)) as doc:
+                        pages = max(1, doc.page_count)
+                except Exception:
+                    try:
+                        from pypdf import PdfReader
+                        pages = max(1, len(PdfReader(str(p)).pages))
+                    except Exception:
+                        pages = 0
+            elif ext in ('.pptx', '.ppt'):
+                try:
+                    from pptx import Presentation
+                    pages = max(1, len(Presentation(str(p)).slides))
+                except Exception:
+                    pages = 0
+            elif ext == '.docx':
+                try:
+                    import docx
+                    doc = docx.Document(str(p))
+                    total_words = sum(len(para.text.split()) for para in doc.paragraphs)
+                    pages = max(1, round(total_words / 250))
+                except Exception:
+                    pages = 0
+            elif ext == '.epub':
+                try:
+                    import ebooklib
+                    from ebooklib import epub
+                    from bs4 import BeautifulSoup
+                    book = epub.read_epub(str(p))
+                    total_words = 0
+                    item_count = 0
+                    for item in book.get_items():
+                        if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                            item_count += 1
+                            soup = BeautifulSoup(item.get_content(), 'html.parser')
+                            total_words += len(soup.get_text().split())
+                    if total_words > 0:
+                        pages = max(1, round(total_words / 250))
+                    elif item_count > 0:
+                        pages = item_count
+                except Exception:
+                    pages = 0
+            elif ext in ('.txt', '.md'):
+                try:
+                    with open(str(p), 'r', encoding='utf-8', errors='ignore') as f:
+                        words = len(f.read().split())
+                    pages = max(1, round(words / 250))
+                except Exception:
+                    pages = 0
+        except Exception as e:
+            logger.debug(f"Could not calculate page count for {book_id}: {e}")
+
+        # 4. Cache resolved count in MongoDB and book_doc
+        if pages > 0:
+            if book_doc:
+                book_doc['page_count'] = pages
+            if self.db is not None and book_id:
+                try:
+                    await self.update_book_metadata(book_id, {"page_count": pages})
+                except Exception:
+                    pass
+
+        return pages
+

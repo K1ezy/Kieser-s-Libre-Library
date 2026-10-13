@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Libre PDF Reader</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { 
+            margin: 0; 
+            padding: 0; 
+            height: 100vh; 
+            display: flex; 
+            flex-direction: column; 
+            overflow: hidden; 
+            background-color: #525659; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+        }
+        
+        /* Top Navigation & Toolbars */
+        #toolbar { 
+            height: 52px; 
+            background: #ffffff; 
+            border-bottom: 1px solid #e2e8f0; 
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between; 
+            padding: 0 16px;
+            z-index: 100;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        }
+
+        #toolbar-brand { 
+            font-weight: 700; 
+            color: #4f46e5; 
+            font-size: 14px; 
+            display: flex; 
+            align-items: center; 
+            gap: 6px; 
+        }
+
+        .toolbar-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tool-btn { 
+            padding: 6px 12px; 
+            border: 1px solid #cbd5e1; 
+            background: #ffffff; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-size: 12px; 
+            font-weight: 600;
+            color: #334155; 
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .tool-btn:hover { background: #f1f5f9; border-color: #94a3b8; }
+        .tool-btn:active { transform: scale(0.98); }
+
+        .page-input-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: #475569;
+            font-weight: 600;
+        }
+
+        #page-num-input {
+            width: 48px;
+            padding: 4px 6px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            text-align: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        #page-num-input:focus {
+            outline: 2px solid #6366f1;
+            border-color: transparent;
+        }
+
+        /* Document Scroll Viewport */
+        #viewer-container { 
+            flex: 1; 
+            width: 100%; 
+            height: 100%; 
+            overflow-y: auto; 
+            overflow-x: auto; 
+            position: relative; 
+            padding: 24px 16px;
+            scroll-behavior: smooth;
+        }
+
+        #pdf-viewer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+            min-height: 100%;
+        }
+
+        .page-container {
+            background-color: #ffffff;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+            position: relative;
+            border-radius: 4px;
+            transition: box-shadow 0.2s ease;
+        }
+
+        .page-container.active-page {
+            box-shadow: 0 0 0 2px #6366f1, 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        canvas {
+            display: block;
+            border-radius: 4px;
+        }
+
+        .page-loading-skeleton {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 600;
+            background: #f8fafc;
+            border: 1px dashed #cbd5e1;
+            border-radius: 4px;
+        }
+
+        /* Bottom Controls */
+        #controls { 
+            height: 48px; 
+            background: #ffffff; 
+            border-top: 1px solid #e2e8f0; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 16px; 
+            z-index: 10; 
+        }
+        
+        #page-info { 
+            font-size: 12px; 
+            font-weight: 600; 
+            color: #475569; 
+            font-family: monospace; 
+        }
+
+        #error-msg { 
+            position: absolute; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            color: #991b1b; 
+            background-color: #fee2e2; 
+            border: 1px solid #fecaca; 
+            padding: 18px; 
+            border-radius: 12px; 
+            display: none; 
+            z-index: 100; 
+            font-size: 13px; 
+            max-width: 80%; 
+            text-align: center; 
+        }
+
+        /* Loading Spinner */
+        #initial-loader {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 50;
+        }
+
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: #ffffff;
+            animation: spin 0.8s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+    
+    <!-- PDF.js from Cloudflare CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+    <div id="toolbar">
+        <div id="toolbar-brand">
+            <span>📄</span> Libre PDF Reader
+        </div>
+
+        <div class="toolbar-group">
+            <div class="page-input-wrapper">
+                <span>Page</span>
+                <input type="number" id="page-num-input" min="1" value="1" />
+                <span id="page-count-display">of --</span>
+            </div>
+        </div>
+
+        <div class="toolbar-group">
+            <button id="zoom-out" class="tool-btn" title="Zoom Out">－</button>
+            <button id="zoom-reset" class="tool-btn" title="Fit Width">Fit</button>
+            <button id="zoom-in" class="tool-btn" title="Zoom In">＋</button>
+        </div>
+    </div>
+
+    <div id="error-msg"></div>
+
+    <div id="initial-loader">
+        <div class="spinner"></div>
+        <span>Loading document...</span>
+    </div>
+
+    <div id="viewer-container">
+        <div id="pdf-viewer"></div>
+    </div>
+    
+    <div id="controls">
+        <button id="prev" class="tool-btn">◀ Previous</button>
+        <span id="page-info">Loading PDF coordinates...</span>
+        <button id="next" class="tool-btn">Next ▶</button>
+    </div>
+
+    <script>
+        (function() {
+            // Configure PDF.js Worker
+            if (typeof pdfjsLib !== 'undefined') {
+                pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const fileUrl = urlParams.get('file');
+            const bookId = urlParams.get('book_id') || '';
+            const userId = urlParams.get('user_id') || 'guest';
+            const initialPage = Math.max(1, parseInt(urlParams.get('page') || '1', 10));
+            const paramTotal = parseInt(urlParams.get('total') || '0', 10);
+
+            const viewerContainer = document.getElementById('viewer-container');
+            const pdfViewer = document.getElementById('pdf-viewer');
+            const errorDiv = document.getElementById('error-msg');
+            const pageInfoSpan = document.getElementById('page-info');
+            const pageNumInput = document.getElementById('page-num-input');
+            const pageCountDisplay = document.getElementById('page-count-display');
+            const loaderDiv = document.getElementById('initial-loader');
+
+            if (!fileUrl) {
+                if (loaderDiv) loaderDiv.style.display = 'none';
+                errorDiv.style.display = 'block';
+                errorDiv.innerText = "Error: No PDF document specified in query parameters.";
+                return;
+            }
+
+            let pdfDoc = null;
+            let totalPages = paramTotal > 0 ? paramTotal : 1;
+            let currentPage = initialPage;
+            let lastNotifiedPage = initialPage;
+            let currentScale = 1.25;
+            let isRestoring = (initialPage > 1);
+            let renderedPages = new Set();
+            let pageContainers = [];
+            let saveDebounceTimer = null;
+            let pendingSavePayload = null;
+
+            console.log(`[PDF Engine] Initializing: bookId=${bookId}, initialPage=${initialPage}, totalPages=${totalPages}`);
+
+            function calculatePercentage(page, total) {
+                if (total <= 1) return 100.0;
+                // Transition formula: Page 1 = 0%, Page total = 100%
+                return Math.max(0.0, Math.min(100.0, Math.round(((page - 1) / (total - 1)) * 1000) / 10));
+            }
+
+            function updateHud(page, total) {
+                const pct = calculatePercentage(page, total);
+                if (pageInfoSpan) {
+                    pageInfoSpan.innerText = `Page ${page} of ${total} (${Math.round(pct)}%)`;
+                }
+                if (pageNumInput && document.activeElement !== pageNumInput) {
+                    pageNumInput.value = page;
+                }
+                if (pageCountDisplay) {
+                    pageCountDisplay.innerText = `of ${total}`;
+                }
+
+                // Synchronize parent frame HUD and application state
+                try {
+                    window.parent.postMessage({
+                        type: 'LIBRE_READER_PROGRESS',
+                        book_id: bookId,
+                        current_page: page,
+                        total_pages: total,
+                        percentage: Math.round(pct),
+                        format: 'pdf'
+                    }, '*');
+
+                    window.parent.postMessage({
+                        type: 'READER_PROGRESS_UPDATE',
+                        book_id: bookId,
+                        current_page: page,
+                        total_pages: total,
+                        percentage: Math.round(pct),
+                        format: 'pdf'
+                    }, '*');
+                } catch (err) {
+                    console.warn("[PDF Engine] postMessage to parent failed:", err);
+                }
+            }
+
+            function scheduleSave(payload) {
+                pendingSavePayload = payload;
+                if (saveDebounceTimer) {
+                    clearTimeout(saveDebounceTimer);
+                }
+                saveDebounceTimer = setTimeout(() => {
+                    persistReadingProgress(pendingSavePayload);
+                }, 500);
+            }
+
+            async function persistReadingProgress(payload) {
+                if (!payload || !payload.book_id) return;
+                try {
+                    const response = await fetch('/api/progress/sync', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) {
+                        console.log(`[PDF Engine] Persisted progress: page ${payload.current_page}/${payload.total_pages} (${payload.progress_percent}%)`);
+                    } else {
+                        console.warn(`[PDF Engine] Persist returned HTTP ${response.status}`);
+                    }
+                } catch (err) {
+                    console.error("[PDF Engine] Network error during progress save:", err);
+                }
+            }
+
+            function flushPendingSave() {
+                if (pendingSavePayload) {
+                    const payloadString = JSON.stringify(pendingSavePayload);
+                    if (navigator.sendBeacon) {
+                        navigator.sendBeacon('/api/progress/sync', new Blob([payloadString], { type: 'application/json' }));
+                    } else {
+                        fetch('/api/progress/sync', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: payloadString,
+                            keepalive: true
+                        });
+                    }
+                    pendingSavePayload = null;
+                }
+            }
+
+            window.addEventListener('beforeunload', flushPendingSave);
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') flushPendingSave();
+            });
+
+            function onActivePageChanged(newPage) {
+                if (newPage < 1 || newPage > totalPages) return;
+                currentPage = newPage;
+
+                // Highlight active page border
+                pageContainers.forEach((c, idx) => {
+                    if (idx + 1 === newPage) {
+                        c.classList.add('active-page');
+                    } else {
+                        c.classList.remove('active-page');
+                    }
+                });
+
+                updateHud(newPage, totalPages);
+
+                // Initial restoration guard: update display but suppress saving to avoid overwriting with initial coordinate
+                if (isRestoring) {
+                    console.log(`[PDF Engine] Restoration verified at page ${newPage}/${totalPages}`);
+                    isRestoring = false;
+                    lastNotifiedPage = newPage;
+                    return;
+                }
+
+                if (newPage === lastNotifiedPage) return;
+                lastNotifiedPage = newPage;
+
+                const pct = calculatePercentage(newPage, totalPages);
+                scheduleSave({
+                    book_id: bookId,
+                    user_id: userId,
+                    current_page: newPage,
+                    total_pages: totalPages,
+                    progress_percent: pct,
+                    status: (newPage >= totalPages && totalPages > 1) ? 'completed' : 'reading',
+                    client_timestamp: Date.now() / 1000
+                });
+            }
+
+            function scrollToPage(pageNum, smooth = true) {
+                pageNum = Math.max(1, Math.min(totalPages, pageNum));
+                const target = document.getElementById(`page-container-${pageNum}`);
+                if (target) {
+                    target.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+                    onActivePageChanged(pageNum);
+                }
+            }
+
+            // Bi-directional parent-window navigation commands
+            window.addEventListener('message', function(event) {
+                if (!event.data) return;
+                if (event.data.type === 'READER_NAVIGATE') {
+                    if (event.data.action === 'next') {
+                        scrollToPage(currentPage + 1);
+                    } else if (event.data.action === 'prev') {
+                        scrollToPage(currentPage - 1);
+                    }
+                }
+            });
+
+            // Keyboard navigation
+            document.addEventListener('keydown', function(e) {
+                if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+                if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+                    scrollToPage(currentPage + 1);
+                    e.preventDefault();
+                } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+                    scrollToPage(currentPage - 1);
+                    e.preventDefault();
+                } else if (e.key === 'Home') {
+                    scrollToPage(1);
+                    e.preventDefault();
+                } else if (e.key === 'End') {
+                    scrollToPage(totalPages);
+                    e.preventDefault();
+                }
+            });
+
+            // Toolbar buttons
+            const nextBtn = document.getElementById('next');
+            const prevBtn = document.getElementById('prev');
+            if (nextBtn) nextBtn.addEventListener('click', () => scrollToPage(currentPage + 1));
+            if (prevBtn) prevBtn.addEventListener('click', () => scrollToPage(currentPage - 1));
+
+            // Direct page jump input
+            if (pageNumInput) {
+                pageNumInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        const target = parseInt(pageNumInput.value, 10);
+                        if (!isNaN(target)) {
+                            scrollToPage(target);
+                        }
+                    }
+                });
+            }
+
+            // Zoom handlers
+            document.getElementById('zoom-in').addEventListener('click', () => {
+                currentScale = Math.min(3.0, currentScale + 0.25);
+                rebuildLayout();
+            });
+            document.getElementById('zoom-out').addEventListener('click', () => {
+                currentScale = Math.max(0.6, currentScale - 0.25);
+                rebuildLayout();
+            });
+            document.getElementById('zoom-reset').addEventListener('click', () => {
+                fitToWidth();
+            });
+
+            function fitToWidth() {
+                if (!pageContainers.length || !pdfDoc) return;
+                pdfDoc.getPage(1).then(page => {
+                    const viewport = page.getViewport({ scale: 1.0 });
+                    const containerWidth = viewerContainer.clientWidth - 48;
+                    currentScale = Math.max(0.5, containerWidth / viewport.width);
+                    rebuildLayout();
+                });
+            }
+
+            async function renderPageCanvas(pageNum, container) {
+                if (renderedPages.has(pageNum)) return;
+                renderedPages.add(pageNum);
+
+                try {
+                    const page = await pdfDoc.getPage(pageNum);
+                    const viewport = page.getViewport({ scale: currentScale });
+                    const outputScale = window.devicePixelRatio || 1;
+
+                    container.innerHTML = '';
+                    container.style.width = `${Math.floor(viewport.width)}px`;
+                    container.style.height = `${Math.floor(viewport.height)}px`;
+
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+
+                    canvas.width = Math.floor(viewport.width * outputScale);
+                    canvas.height = Math.floor(viewport.height * outputScale);
+                    canvas.style.width = `${Math.floor(viewport.width)}px`;
+                    canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+                    container.appendChild(canvas);
+
+                    const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+
+                    await page.render({
+                        canvasContext: context,
+                        viewport: viewport,
+                        transform: transform
+                    }).promise;
+                } catch (err) {
+                    console.error(`[PDF Engine] Error rendering page ${pageNum}:`, err);
+                }
+            }
+
+            // IntersectionObserver for lazy on-demand page rendering & active page detection
+            let renderObserver = null;
+            let scrollDebounceTimer = null;
+
+            function setupObservers() {
+                if (renderObserver) renderObserver.disconnect();
+
+                renderObserver = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        const pageNum = parseInt(entry.target.getAttribute('data-page-number'), 10);
+                        if (entry.isIntersecting) {
+                            renderPageCanvas(pageNum, entry.target);
+                        }
+                    });
+                }, {
+                    root: viewerContainer,
+                    rootMargin: '300px 0px 300px 0px'
+                });
+
+                pageContainers.forEach(container => {
+                    renderObserver.observe(container);
+                });
+
+                // Scroll listener for authoritative active-page coordinate resolution
+                viewerContainer.addEventListener('scroll', () => {
+                    if (scrollDebounceTimer) cancelAnimationFrame(scrollDebounceTimer);
+                    scrollDebounceTimer = requestAnimationFrame(checkActivePageFromScroll);
+                }, { passive: true });
+            }
+
+            function checkActivePageFromScroll() {
+                if (!pageContainers.length) return;
+                const containerRect = viewerContainer.getBoundingClientRect();
+                const viewportCenter = containerRect.top + containerRect.height / 3;
+
+                let bestPage = currentPage;
+                let minDistance = Infinity;
+
+                pageContainers.forEach(container => {
+                    const rect = container.getBoundingClientRect();
+                    const pageTop = rect.top;
+                    const dist = Math.abs(pageTop - viewportCenter);
+                    if (dist < minDistance) {
+                        minDistance = dist;
+                        bestPage = parseInt(container.getAttribute('data-page-number'), 10);
+                    }
+                });
+
+                if (bestPage !== currentPage) {
+                    onActivePageChanged(bestPage);
+                }
+            }
+
+            function rebuildLayout() {
+                renderedPages.clear();
+                pdfViewer.innerHTML = '';
+                pageContainers = [];
+
+                if (!pdfDoc) return;
+
+                pdfDoc.getPage(1).then(firstPage => {
+                    const viewport = firstPage.getViewport({ scale: currentScale });
+                    const estWidth = Math.floor(viewport.width);
+                    const estHeight = Math.floor(viewport.height);
+
+                    for (let i = 1; i <= totalPages; i++) {
+                        const container = document.createElement('div');
+                        container.className = 'page-container';
+                        container.id = `page-container-${i}`;
+                        container.setAttribute('data-page-number', i);
+                        container.style.width = `${estWidth}px`;
+                        container.style.minHeight = `${estHeight}px`;
+
+                        const skeleton = document.createElement('div');
+                        skeleton.className = 'page-loading-skeleton';
+                        skeleton.style.width = `${estWidth}px`;
+                        skeleton.style.height = `${estHeight}px`;
+                        skeleton.innerText = `Page ${i}`;
+                        container.appendChild(skeleton);
+
+                        pdfViewer.appendChild(container);
+                        pageContainers.push(container);
+                    }
+
+                    setupObservers();
+
+                    // Restore position
+                    scrollToPage(currentPage, false);
+                });
+            }
+
+            // Load Document
+            const loadingTask = pdfjsLib.getDocument({
+                url: fileUrl,
+                cMapUrl: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/',
+                cMapPacked: true
+            });
+
+            loadingTask.promise.then(async function(loadedDoc) {
+                pdfDoc = loadedDoc;
+                totalPages = pdfDoc.numPages;
+                console.log(`[PDF Engine] Document loaded successfully. Total pages: ${totalPages}`);
+
+                if (loaderDiv) loaderDiv.style.display = 'none';
+
+                updateHud(currentPage, totalPages);
+
+                const firstPage = await pdfDoc.getPage(1);
+                const viewport = firstPage.getViewport({ scale: 1.0 });
+                const containerWidth = viewerContainer.clientWidth - 48;
+                if (containerWidth > 0 && viewport.width > 0) {
+                    currentScale = Math.max(0.6, Math.min(2.0, containerWidth / viewport.width));
+                }
+
+                rebuildLayout();
+
+                // Initial position restoration
+                if (initialPage > 1) {
+                    console.log(`[PDF Engine] Restoring saved page coordinate: ${initialPage}`);
+                    setTimeout(() => {
+                        scrollToPage(initialPage, false);
+                    }, 100);
+                } else {
+                    onActivePageChanged(1);
+                }
+            }).catch(function(error) {
+                console.error("[PDF Engine] Error loading PDF:", error);
+                if (loaderDiv) loaderDiv.style.display = 'none';
+                errorDiv.style.display = 'block';
+                errorDiv.innerText = "Error loading PDF document: " + error.message;
+            });
+
+        })();
+    </script>
+</body>
+</html>

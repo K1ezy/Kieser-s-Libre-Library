@@ -53,5 +53,40 @@ class TestAuth(unittest.TestCase):
         # Incorrect password
         self.assertFalse(bcrypt.checkpw("WrongPassword!".encode('utf-8'), hashed.encode('utf-8')))
 
+    def test_get_current_user_role_and_has_role(self):
+        """Validates role retrieval, normalization, and hierarchical permission checks."""
+        from unittest.mock import patch
+        from core.auth.jwt_handler import get_current_user_role, has_role
+
+        mock_user_dict = {}
+        with patch('core.auth.jwt_handler.app') as mock_app:
+            mock_app.storage.user = mock_user_dict
+
+            # 1. Default fallback when no role in storage
+            self.assertEqual(get_current_user_role(), "student")
+            self.assertTrue(has_role(["student"]))
+            self.assertFalse(has_role(["admin", "librarian"]))
+
+            # 2. Legacy 'user' maps to 'student'
+            mock_user_dict['role'] = 'user'
+            self.assertEqual(get_current_user_role(), "student")
+
+            # 3. Faculty role
+            mock_user_dict['role'] = 'Faculty'
+            self.assertEqual(get_current_user_role(), "faculty")
+            self.assertTrue(has_role(["faculty", "librarian", "admin"]))
+            self.assertFalse(has_role(["admin"]))
+
+            # 4. Librarian role
+            mock_user_dict['role'] = 'LIBRARIAN'
+            self.assertEqual(get_current_user_role(), "librarian")
+            self.assertTrue(has_role(["librarian", "admin"]))
+
+            # 5. Admin role
+            mock_user_dict['role'] = 'admin'
+            self.assertEqual(get_current_user_role(), "admin")
+            self.assertTrue(has_role(["admin"]))
+
 if __name__ == "__main__":
     unittest.main()
+

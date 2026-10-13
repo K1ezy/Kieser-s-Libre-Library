@@ -171,14 +171,14 @@ class SummarizerTool:
         header(drawer_reference=drawer)
         bottom_nav()
 
-        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
+        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
             with ui.column().classes('gap-1 mb-6 sm:mb-8'):
                 ui.label('AI Document Summarizer').classes('text-2xl sm:text-3xl font-black text-slate-900 tracking-tight')
                 ui.label('Extract authoritative insights, chapters, study guides, and executive summaries directly from your documents.').classes('text-xs sm:text-sm text-slate-500')
 
             with ui.row().classes('w-full gap-5 sm:gap-8 items-start flex-col lg:flex-row'):
-                # Controls Card
-                with ui.card().classes('w-full lg:w-1/3 p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):
+                # Controls Card (Compact Left Column)
+                with ui.card().classes('w-full lg:w-80 lg:shrink-0 p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):
                     ui.label('Select Document').classes('font-bold text-xs sm:text-sm text-slate-800 uppercase tracking-wider mb-2')
 
                     init_val = self.selected_book_id if (self.selected_book_id and self.selected_book_id in self.books) else None
@@ -203,8 +203,8 @@ class SummarizerTool:
                     self.generate_btn = ui.button('Generate Summary', icon='bolt', on_click=self.generate_summary) \
                         .props('unelevated rounded-xl color=indigo size=md').classes('w-full py-2.5 sm:py-3 font-bold shadow-md')
 
-                # Output Card
-                with ui.card().classes('w-full lg:w-2/3 p-4 sm:p-6 md:p-8 min-h-[360px] sm:min-h-[460px] rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):
+                # Output Card (Generous Reading Width on Desktop)
+                with ui.card().classes('w-full flex-1 min-w-0 p-4 sm:p-6 md:p-8 min-h-[380px] sm:min-h-[480px] rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):
                     with ui.row().classes('w-full justify-between items-center mb-3 sm:mb-4 pb-3 border-b border-slate-100 flex-wrap gap-2'):
                         with ui.row().classes('items-center gap-2'):
                             ui.icon('summarize', size='sm').classes('text-indigo-600')
@@ -243,12 +243,12 @@ class SummarizerTool:
 
                     # Initial Placeholder state (Aesthetic-Usability Effect)
                     self.summary_output = ui.markdown(
-                        "### 📚 AI Document Synthesis Engine Ready\n\n"
-                        "Select a document from your library and click **Generate Summary** to extract high-yield insights.\n\n"
-                        "- **Exhaustive Study Guide**: Full chapter-by-chapter synthesis for exam prep\n"
-                        "- **Executive Overview**: High-level core takeaways in under 2 minutes\n"
-                        "- **Key Concepts & Definitions**: Technical vocabulary and conceptual glossary\n"
-                        "- **Q&A Active Recall Prep**: High-yield question-and-answer flashcard format"
+                        "### 📖 Ready to Summarize\n\n"
+                        "Select an academic textbook, paper, or lecture deck on the left and click **Generate Summary** to extract high-yield insights.\n\n"
+                        "- **Exhaustive Study Guide**: Complete chapter-by-chapter synthesis for exam prep\n"
+                        "- **Executive Overview**: High-level takeaways and core conclusions in under 2 minutes\n"
+                        "- **Key Concepts & Definitions**: Technical terminology and conceptual glossary\n"
+                        "- **Q&A Active Recall Prep**: High-yield question-and-answer test prep format"
                     ).classes('prose max-w-none text-slate-700 leading-relaxed text-sm md:text-base break-words overflow-x-auto')
 
 

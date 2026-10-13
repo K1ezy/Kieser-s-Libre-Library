@@ -9,6 +9,7 @@ from components.sidebar import sidebar
 from components.header import header
 from components.bottom_nav import bottom_nav
 from core.database.mongo_manager import mongo_db
+from core.auth.jwt_handler import get_current_user_role
 
 PURPOSE_OPTIONS = [
     "📚 Study / Review",
@@ -61,7 +62,7 @@ async def attendance_page():
     # User context
     user_id = app.storage.user.get('user_id')
     user_name = app.storage.user.get('username') or 'Student'
-    user_role = app.storage.user.get('role', 'student')
+    user_role = get_current_user_role()
     user_profile = await mongo_db.get_user_profile(user_id)
     student_id = user_profile.get('student_id') or (f"2024-{str(user_id)[:5].upper()}" if user_id else "2024-001")
     user_program = user_profile.get('program') or "BSCS"
@@ -75,7 +76,7 @@ async def attendance_page():
 
     with ui.column().classes(
         'w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
     ):
         # Page Title Banner
         with ui.column().classes('gap-1 mb-6'):
@@ -118,7 +119,8 @@ async def attendance_page():
             tab_logs = ui.tab('logs', label='Daily Visitor Logs', icon='receipt_long')
             tab_pass = ui.tab('pass', label='My Library QR Pass', icon='badge')
 
-        with ui.tab_panels(tabs, value=tab_scanner).classes('w-full bg-transparent p-0'):
+        initial_tab = tab_pass if user_role == 'student' else tab_scanner
+        with ui.tab_panels(tabs, value=initial_tab).classes('w-full bg-transparent p-0'):
 
             # =================================================================
             # TAB 1: FAST ENTRANCE SCANNER TERMINAL
@@ -204,6 +206,8 @@ async def attendance_page():
                             with ui.row().classes('w-full items-center gap-2 flex-wrap sm:flex-nowrap'):
                                 manual_input = ui.input(placeholder='Scan barcode gun or type Student ID (e.g. 2024-001)...') \
                                     .classes('flex-1 text-base min-h-[44px]').props('id="attendance-manual-input" rounded outlined dense autofocus')
+                                year_select = ui.select(["1st Year", "2nd Year", "3rd Year", "4th Year", "Graduate"], value="1st Year") \
+                                    .classes('w-full sm:w-28 sm:shrink-0').props('rounded outlined dense options-dense')
 
                                 def set_self_input():
                                     manual_input.value = student_id
@@ -217,7 +221,8 @@ async def attendance_page():
                                         identifier=val,
                                         purpose=active_purpose['val'],
                                         name=user_name if val == student_id else "",
-                                        program=user_program if val == student_id else ""
+                                        program=user_program if val == student_id else "",
+                                        year_level=year_select.value
                                     )
                                     manual_input.value = ""
                                     feedback_banner.clear()
@@ -238,7 +243,7 @@ async def attendance_page():
                                                     ui.icon(banner_icon, size='24px').classes('text-emerald-600' if is_checkin else 'text-blue-600')
                                                     with ui.column().classes('gap-0 min-w-0 flex-1'):
                                                         ui.label(entry.get('name', val)).classes('text-sm font-black truncate')
-                                                        ui.label(f"{entry.get('program', 'BSCS')} • {entry.get('purpose', 'Study')} • {entry.get('time_in_str', '')}").classes('text-xs opacity-80')
+                                                        ui.label(f"{entry.get('program', 'BSCS')} ({entry.get('year_level', '1st Year')}) • {entry.get('purpose', 'Study')} • {entry.get('time_in_str', '')}").classes('text-xs opacity-80')
                                                 with ui.element('div').classes('px-2.5 py-1 rounded-xl text-xs font-black uppercase bg-white/80 shadow-xs shrink-0'):
                                                     ui.label("CHECKED IN" if is_checkin else f"OUT ({res.get('duration_minutes', 0)}m)")
 
@@ -293,14 +298,16 @@ async def attendance_page():
                             await refresh_live_feed()
 
             # =================================================================
-            # TAB 2: DAILY VISITOR LOG SUMMARY (Chapter 2 Section 2.2 Report)
+            # TAB 2: DAILY VISITOR LOG SUMMARY (Chapter 2 Section 2.2 Report / FM-LIBS-009)
             # =================================================================
             with ui.tab_panel(tab_logs).classes('p-0'):
                 with ui.card().classes('w-full p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm'):
                     with ui.row().classes('w-full items-center justify-between gap-3 mb-4 flex-wrap'):
                         with ui.column().classes('gap-0.5'):
-                            ui.label('Daily Library Visitor / Entrance Log Summary').classes('text-base sm:text-lg font-black text-slate-900')
-                            ui.label('Formal institutional visitor log record replacing pen-and-paper entrance sheets').classes('text-xs text-slate-500')
+                            with ui.row().classes('items-center gap-2'):
+                                ui.label('Daily Library Visitor / Entrance Log Summary').classes('text-base sm:text-lg font-black text-slate-900')
+                                ui.element('span').classes('text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-009'
+                            ui.label('Formal institutional visitor log record replacing pen-and-paper entrance sheets (NEMSU Tandag Campus)').classes('text-xs text-slate-500')
 
                         # Filters Bar
                         with ui.row().classes('items-center gap-2 flex-wrap'):
@@ -326,8 +333,10 @@ async def attendance_page():
                                 'time_out': l.get('time_out_str', '-'),
                                 'student_id': l.get('student_id', '-'),
                                 'name': l.get('name', 'Visitor'),
+                                'year_level': l.get('year_level', '1st Year'),
                                 'program': l.get('program', 'GENERAL'),
                                 'purpose': l.get('purpose', 'Study'),
+                                'purpose_attained': l.get('purpose_attained', 'Yes'),
                                 'duration': f"{l.get('duration_minutes', 0)} mins" if l.get('status') == 'Checked Out' else 'Active',
                                 'status': l.get('status', 'Checked In')
                             })
@@ -337,8 +346,10 @@ async def attendance_page():
                             {'name': 'time_out', 'label': 'Time-Out', 'field': 'time_out', 'align': 'left', 'sortable': True},
                             {'name': 'student_id', 'label': 'Student ID', 'field': 'student_id', 'align': 'left', 'sortable': True},
                             {'name': 'name', 'label': 'Student Name', 'field': 'name', 'align': 'left', 'sortable': True},
-                            {'name': 'program', 'label': 'Program', 'field': 'program', 'align': 'center', 'sortable': True},
+                            {'name': 'year_level', 'label': 'Year', 'field': 'year_level', 'align': 'center'},
+                            {'name': 'program', 'label': 'Major / Program', 'field': 'program', 'align': 'center', 'sortable': True},
                             {'name': 'purpose', 'label': 'Purpose of Visit', 'field': 'purpose', 'align': 'left'},
+                            {'name': 'purpose_attained', 'label': 'Attained', 'field': 'purpose_attained', 'align': 'center'},
                             {'name': 'duration', 'label': 'Duration', 'field': 'duration', 'align': 'center'},
                             {'name': 'status', 'label': 'Status', 'field': 'status', 'align': 'center', 'sortable': True},
                         ]
@@ -349,28 +360,26 @@ async def attendance_page():
                             else:
                                 ui.table(columns=columns, rows=rows, row_key='id').classes('w-full').props('flat bordered')
 
-                        # Export CSV helper
-                        with ui.row().classes('w-full justify-end mt-4'):
+                        # Export CSV helper (FM-LIBS-009 Format)
+                        with ui.row().classes('w-full justify-between items-center mt-4 flex-wrap gap-2'):
+                            ui.label('Institutional Reference: FM-LIBS-009 (College of Arts & Sciences / General Entrance Log)').classes('text-xs text-slate-400 font-medium')
                             def export_csv():
                                 if not rows:
                                     ui.notify("No data to export", type='warning')
                                     return
-                                csv_lines = ["Date,Time-In,Time-Out,StudentID,Name,Program,Purpose,Duration,Status"]
-                                for r in rows:
-                                    csv_lines.append(f'"{r["date"]}","{r["time_in"]}","{r["time_out"]}","{r["student_id"]}","{r["name"]}","{r["program"]}","{r["purpose"]}","{r["duration"]}","{r["status"]}"')
-                                csv_content = "\n".join(csv_lines)
+                                csv_content = mongo_db.export_fmlibs009_csv(logs, date_input.value, prog_select.value)
                                 b64 = base64.b64encode(csv_content.encode('utf-8')).decode('utf-8')
-                                filename = f"NEMSU_Library_Visitor_Log_{date_input.value}.csv"
+                                filename = f"NEMSU_FM-LIBS-009_Visitor_Log_{date_input.value or 'All'}.csv"
                                 ui.run_javascript(f'''
                                     const a = document.createElement('a');
                                     a.href = 'data:text/csv;base64,{b64}';
                                     a.download = '{filename}';
                                     a.click();
                                 ''')
-                                ui.notify("Visitor log exported successfully!", type='positive')
+                                ui.notify("FM-LIBS-009 Visitor Log exported successfully!", type='positive')
 
-                            ui.button('Export Log Summary (CSV)', icon='download', on_click=export_csv) \
-                                .props('unelevated rounded-xl color=indigo size=sm font-bold')
+                            ui.button('Export FM-LIBS-009 Logbook (CSV)', icon='download', on_click=export_csv) \
+                                .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-xs')
 
                     prog_select.on('update:model-value', refresh_table)
                     date_input.on('keydown.enter', refresh_table)

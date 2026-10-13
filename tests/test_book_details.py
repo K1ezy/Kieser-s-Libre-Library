@@ -105,6 +105,41 @@ class TestBookDetails(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(res[0]['book_id'], 'b1')
         mgr.progress.get_reading_history.assert_called_once_with("u1", limit=50)
 
+    @patch('ui.pages.book_details.mongo_db')
+    @patch('ui.pages.book_details.ui')
+    @patch('ui.pages.book_details.app')
+    async def test_update_page_number_without_page_count_does_not_flip_to_completed(self, mock_app, mock_ui, mock_db):
+        """Verifies that entering page 50 on a book without page_count does NOT prematurely flip to completed."""
+        mock_app.storage.user.get.return_value = 'test-user-123'
+        mock_db.update_book_reading_status = AsyncMock(return_value=True)
+        mock_db.progress.save_reading_progress = AsyncMock(return_value=True)
+
+        page = BookDetailsPage("book-no-pages")
+        page.book = {'id': 'book-no-pages', 'title': 'Unindexed Book', 'reading_status': 'reading'}
+        page.render_reading_card = MagicMock()
+
+        # Update active page to 50
+        await page.update_page_number(50)
+
+        # Status must stay reading, NOT completed!
+        self.assertEqual(page.book['reading_status'], 'reading')
+        self.assertEqual(page.reading_progress['status'], 'reading')
+        self.assertEqual(page.reading_progress['current_page'], 50)
+        self.assertGreaterEqual(page.reading_progress['total_pages'], 50)
+        self.assertLess(page.reading_progress['progress_percent'], 100.0)
+
+    def test_get_or_resolve_page_count_delegation(self):
+        """Verifies MongoManager delegates get_or_resolve_page_count to BookRepository."""
+        mgr = MongoManager()
+        mgr.books = MagicMock()
+        mgr.books.get_or_resolve_page_count = AsyncMock(return_value=161)
+
+        import asyncio
+        res = asyncio.run(mgr.get_or_resolve_page_count("book-123", {"title": "Test"}))
+        self.assertEqual(res, 161)
+        mgr.books.get_or_resolve_page_count.assert_called_once_with("book-123", {"title": "Test"})
+
 
 if __name__ == '__main__':
     unittest.main()
+

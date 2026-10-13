@@ -368,11 +368,22 @@ class StudyPlannerPage:
                     with ui.element('div').classes('p-5 rounded-full bg-indigo-50 border border-indigo-100 mb-3'):
                         ui.icon('school', size='3em').classes('text-indigo-600')
                     ui.label("No Study Topics Created Yet").classes('text-slate-800 text-lg sm:text-xl font-bold mb-1')
-                    ui.label("Add your curriculum subjects or textbook chapters to generate automated 3D flashcards.").classes('text-slate-500 text-xs sm:text-sm max-w-sm mb-5')
-                    ui.button('Create First Study Topic', icon='add', on_click=self.open_add_dialog)\
+                    ui.label("Add your curriculum subjects or textbook chapters to generate automated 3D flashcards.").classes('text-slate-500 text-xs sm:text-sm max-w-sm mb-4')
+
+                    # Quick topic starter suggestions
+                    with ui.row().classes('items-center justify-center gap-2 mb-6 flex-wrap'):
+                        ui.label('Try:').classes('text-xs font-bold text-slate-400')
+                        for sample in ["CS 413 Software Engineering", "Data Structures (Trees)", "Database Systems"]:
+                            def make_sample_click(t_name=sample):
+                                async def fill_sample():
+                                    await self.add_task(t_name, datetime.now().strftime("%Y-%m-%d"))
+                                return fill_sample
+                            ui.button(sample, on_click=make_sample_click(sample)).props('flat dense rounded-xl size=xs color=indigo').classes('bg-indigo-50 border border-indigo-100 font-bold')
+
+                    ui.button('Create Custom Study Topic', icon='add', on_click=self.open_add_dialog)\
                         .props('unelevated rounded-xl color=indigo size=md font-bold').classes('shadow-md')
             
-            with ui.grid().classes('w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6'):
+            with ui.grid().classes('w-full grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6'):
                 for task in self.tasks: self.render_task_card(task)
 
     def render_task_card(self, task):
@@ -402,7 +413,7 @@ class StudyPlannerPage:
         drawer = sidebar()
         header(drawer_reference=drawer)
         bottom_nav()
-        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
+        with ui.column().classes('w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'):
             self.container = ui.column().classes('w-full')
 
 async def planner_page():

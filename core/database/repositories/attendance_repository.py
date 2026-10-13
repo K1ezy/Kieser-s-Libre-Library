@@ -1,3 +1,5 @@
+import io
+import csv
 import time
 import uuid
 import logging
@@ -11,7 +13,7 @@ logger = logging.getLogger("ATTENDANCE_REPOSITORY")
 class AttendanceRepository(BaseRepository):
     """
     Dedicated repository for QR-code Entrance Attendance System and Visitor Logging.
-    Complies with SRS Chapter 1 (Obj. 3) and Chapter 2 (FR 3, NFR 1).
+    Complies with SRS Chapter 1 (Obj. 3), Chapter 2 (FR 3, NFR 1), and Form FM-LIBS-009.
     Automates door traffic, eliminates paper bottleneck, logs entry/exit timestamps.
     """
 
@@ -21,12 +23,15 @@ class AttendanceRepository(BaseRepository):
         name: str = "",
         program: str = "",
         purpose: str = "Study / Review",
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
+        year_level: str = "1st Year",
+        purpose_attained: str = "Yes",
+        remarks: str = ""
     ) -> Dict[str, Any]:
         """
         Processes QR/barcode ID scans within < 0.2s.
         If visitor is already checked in today without checking out, toggles check-out.
-        Otherwise, records a new entrance check-in.
+        Otherwise, records a new entrance check-in with FM-LIBS-009 metadata.
         """
         if self.db is None or not identifier:
             return {"success": False, "error": "Database unavailable or empty identifier."}
@@ -38,6 +43,7 @@ class AttendanceRepository(BaseRepository):
         # 1. Lookup user in accounts table to enrich details if missing
         clean_name = name.strip() if name else ""
         clean_prog = program.strip().upper() if program else ""
+        clean_year = year_level.strip() if year_level else "1st Year"
         resolved_uid = user_id
 
         try:
@@ -54,6 +60,8 @@ class AttendanceRepository(BaseRepository):
                     clean_name = user_doc.get("name") or user_doc.get("username", "Student")
                 if not clean_prog:
                     clean_prog = (user_doc.get("program") or "BSCS").upper()
+                if not year_level and user_doc.get("year_level"):
+                    clean_year = user_doc.get("year_level")
                 if not resolved_uid:
                     resolved_uid = user_doc.get("id")
         except Exception as e:
@@ -76,16 +84,20 @@ class AttendanceRepository(BaseRepository):
                 duration_min = round(duration_sec / 60)
                 time_out_str = datetime.fromtimestamp(now).strftime("%I:%M %p")
 
+                update_fields = {
+                    "status": "Checked Out",
+                    "timestamp_out": now,
+                    "time_out_str": time_out_str,
+                    "duration_minutes": duration_min
+                }
+                if purpose_attained:
+                    update_fields["purpose_attained"] = purpose_attained
+                if remarks:
+                    update_fields["remarks"] = remarks
+
                 await self.db['attendance_logs'].update_one(
                     {"id": active_entry["id"]},
-                    {
-                        "$set": {
-                            "status": "Checked Out",
-                            "timestamp_out": now,
-                            "time_out_str": time_out_str,
-                            "duration_minutes": duration_min
-                        }
-                    }
+                    {"$set": update_fields}
                 )
 
                 updated = await self.db['attendance_logs'].find_one({"id": active_entry["id"]})
@@ -105,7 +117,10 @@ class AttendanceRepository(BaseRepository):
                 "user_id": resolved_uid,
                 "name": clean_name,
                 "program": clean_prog,
+                "year_level": clean_year,
                 "purpose": purpose.strip() or "Study / Review",
+                "purpose_attained": purpose_attained.strip() or "Yes",
+                "remarks": remarks.strip(),
                 "timestamp_in": now,
                 "timestamp_out": None,
                 "time_in_str": time_in_str,
@@ -126,6 +141,43 @@ class AttendanceRepository(BaseRepository):
         except Exception as e:
             logger.error(f"Record Scan Error: {e}")
             return {"success": False, "error": str(e)}
+
+    def generate_fmlibs009_csv(
+        self,
+        logs: List[Dict[str, Any]],
+        date_str: Optional[str] = None,
+        program: Optional[str] = None
+    ) -> str:
+        """Generates an institutional FM-LIBS-009 compliant CSV export."""
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Republic of the Philippines"])
+        writer.writerow(["NORTH EASTERN MINDANAO STATE UNIVERSITY (NEMSU) - TANDAG CAMPUS"])
+        writer.writerow(["LIBRARY USER'S LOGBOOK FORM (FM-LIBS-009)"])
+        writer.writerow([f"Generated: {datetime.now().strftime('%Y-%m-%d %I:%M %p')}", f"Filter Date: {date_str or 'All'}", f"Program: {program or 'All'}"])
+        writer.writerow([])
+        writer.writerow([
+            "NO.", "DATE", "TIME-IN", "TIME-OUT", "STUDENT ID", "STUDENT NAME",
+            "YEAR LEVEL", "MAJOR / PROGRAM", "PURPOSE OF VISIT", "PURPOSE ATTAINED",
+            "DURATION (MINS)", "STATUS", "REMARKS"
+        ])
+        for idx, l in enumerate(logs, 1):
+            writer.writerow([
+                idx,
+                l.get("date_str", ""),
+                l.get("time_in_str", "-"),
+                l.get("time_out_str", "-"),
+                l.get("student_id", ""),
+                l.get("name", ""),
+                l.get("year_level", "1st Year"),
+                l.get("program", "GENERAL"),
+                l.get("purpose", "Study"),
+                l.get("purpose_attained", "Yes"),
+                l.get("duration_minutes", 0),
+                l.get("status", "Checked In"),
+                l.get("remarks", "")
+            ])
+        return output.getvalue()
 
     async def get_today_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
         """Retrieves today's attendance logs in reverse chronological order."""

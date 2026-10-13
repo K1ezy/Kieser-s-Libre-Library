@@ -3,10 +3,11 @@ from ui.theme import apply_theme
 from core.config import settings
 from core.database.mongo_manager import mongo_db 
 from core.external_api.dbooks_manager import shutdown_client
-from core.auth.jwt_handler import is_user_authenticated
+from core.auth.jwt_handler import is_user_authenticated, get_current_user_role
 from components.chat_floating import FloatingChat 
 from core.external_api.opds_router import opds_router
 from core.ai_engine.llm_engine import tars_engine
+from core.ai_engine.rag_pipeline import tars_archive
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
@@ -42,6 +43,10 @@ app.add_middleware(
 
 # Register OPDS 1.2 Catalog Router for E-Readers (KOReader, Moon+ Reader, Apple Books)
 app.include_router(opds_router)
+
+# Register High-Throughput Reading Progress Synchronization API
+from core.external_api.progress_router import progress_router
+app.include_router(progress_router)
 
 # --- PAGE IMPORTS ---
 import ui.pages.home as home
@@ -142,6 +147,10 @@ async def planner_route():
 @ui.page('/upload')
 async def upload_page():
     if not check_auth(): return
+    user_role = get_current_user_role()
+    if user_role not in ['admin', 'librarian']:
+        ui.notify("Document Ingestion is restricted to Librarians and Administrators.", type='warning')
+        return ui.navigate.to('/')
     app.storage.client['page_path'] = '/upload'
     apply_theme()
     await upload.upload_page() 
@@ -181,6 +190,10 @@ async def requisitions_route():
 @ui.page('/analytics')
 async def analytics_route():
     if not check_auth(): return
+    user_role = get_current_user_role()
+    if user_role not in ['admin', 'librarian', 'faculty']:
+        ui.notify("Institutional Analytics is restricted to Faculty, Librarians, and Administrators.", type='warning')
+        return ui.navigate.to('/')
     app.storage.client['page_path'] = '/analytics'
     apply_theme()
     await analytics.analytics_page()
@@ -189,7 +202,7 @@ async def analytics_route():
 @ui.page('/admin')
 async def admin_route():
     if not check_auth(): return
-    user_role = app.storage.user.get('role', 'student').lower()
+    user_role = get_current_user_role()
     if user_role not in ['admin', 'librarian']:
         ui.notify("Administrator or Librarian access required.", type='warning')
         return ui.navigate.to('/')
@@ -203,6 +216,8 @@ async def admin_route():
 async def startup():
     await mongo_db.initialize()
     await tars_engine.ensure_db_settings_loaded()
+    # Non-blocking background warm-up of ChromaDB client for instant vector deletions
+    asyncio.create_task(asyncio.to_thread(tars_archive._get_raw_collection))
 
 def _ensure_port_available(port: int = 8080):
     """Releases port if occupied by a stale process on Windows to prevent Errno 10048."""
@@ -234,5 +249,5 @@ if __name__ in {"__main__", "__mp_main__"}:
         session_middleware_kwargs={"max_age": None},
         dark=False,
         reload=settings.RELOAD,
-        uvicorn_reload_excludes=["data/*", "data/**", "chroma_db/*", "*.log"]
+        uvicorn_reload_excludes=["data/*", "data/**", "data\\*", "data\\**", "chroma_db/*", "chroma_db/**", "chroma_db\\*", "chroma_db\\**", "*.log", "*.sqlite3*", "*all-MiniLM-L6-v2*"]
     )

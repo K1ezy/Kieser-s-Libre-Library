@@ -76,11 +76,15 @@ class MongoManager:
                 await self.db['books'].create_index("shelves")
                 await self.db['chats'].create_index("id", unique=True)
                 await self.db['chats'].create_index([("user_id", 1), ("timestamp", -1)])
+                await self.db['chats'].create_index([("timestamp", -1)])
                 await self.db['tasks'].create_index("id", unique=True)
                 await self.db['tasks'].create_index([("user_id", 1), ("created_at", -1)])
+                await self.db['tasks'].create_index([("created_at", -1)])
                 await self.db['planner'].create_index("id", unique=True)
                 await self.db['planner'].create_index([("created_at", -1)])
                 await self.db['reading_progress'].create_index([("user_id", 1), ("book_id", 1)], unique=True)
+                await self.db['reading_progress'].create_index([("user_id", 1), ("last_read_at", -1)])
+                await self.db['system_settings'].create_index("key", unique=True)
                 await self.db['users'].create_index("email", unique=True, sparse=True)
                 await self.db['users'].create_index("username", sparse=True)
                 await self.db['users'].create_index("student_id", sparse=True)
@@ -154,6 +158,9 @@ class MongoManager:
     async def update_book_reading_status(self, book_id: str, status: str) -> bool:
         return await self.books.update_book_reading_status(book_id, status)
 
+    async def get_or_resolve_page_count(self, book_id: str, book_doc: Optional[dict] = None) -> int:
+        return await self.books.get_or_resolve_page_count(book_id, book_doc)
+
     async def get_all_shelves(self) -> List[str]:
         return await self.books.get_all_shelves()
 
@@ -211,8 +218,20 @@ class MongoManager:
     # =========================================================================
     # 📖 READING PROGRESS & SETTINGS DELEGATE METHODS
     # =========================================================================
-    async def save_reading_progress(self, user_id: str, book_id: str, current_page: int = 1, total_pages: int = 1, status: str = "reading") -> bool:
-        return await self.progress.save_reading_progress(user_id, book_id, current_page, total_pages, status)
+    async def save_reading_progress(
+        self,
+        user_id: str,
+        book_id: str,
+        current_page: int = 1,
+        total_pages: int = 1,
+        status: str = "reading",
+        cfi: Optional[str] = None,
+        client_timestamp: Optional[float] = None,
+        progress_percent: Optional[float] = None
+    ) -> bool:
+        return await self.progress.save_reading_progress(
+            user_id, book_id, current_page, total_pages, status, cfi=cfi, client_timestamp=client_timestamp, progress_percent=progress_percent
+        )
 
     async def get_reading_progress(self, user_id: str, book_id: str) -> Optional[Dict[str, Any]]:
         return await self.progress.get_reading_progress(user_id, book_id)
@@ -306,9 +325,23 @@ class MongoManager:
         name: str = "",
         program: str = "",
         purpose: str = "Study / Review",
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
+        year_level: str = "1st Year",
+        purpose_attained: str = "Yes",
+        remarks: str = ""
     ) -> Dict[str, Any]:
-        return await self.attendance.record_scan(identifier, name, program, purpose, user_id)
+        return await self.attendance.record_scan(
+            identifier, name, program, purpose, user_id,
+            year_level=year_level, purpose_attained=purpose_attained, remarks=remarks
+        )
+
+    def export_fmlibs009_csv(
+        self,
+        logs: List[Dict[str, Any]],
+        date_str: Optional[str] = None,
+        program: Optional[str] = None
+    ) -> str:
+        return self.attendance.generate_fmlibs009_csv(logs, date_str, program)
 
     async def get_today_attendance_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
         return await self.attendance.get_today_logs(limit=limit)
@@ -352,12 +385,21 @@ class MongoManager:
         edition_year: str = "",
         isbn: str = "",
         urgency: str = "Normal",
-        justification: str = ""
+        justification: str = "",
+        publisher: str = "",
+        copyright_date: str = "",
+        price: float = 0.0,
+        copies: int = 1,
+        college: str = ""
     ) -> Dict[str, Any]:
         return await self.requisitions.create_requisition(
             faculty_id, faculty_name, email, department, book_title,
-            author, course_code, course_title, edition_year, isbn, urgency, justification
+            author, course_code, course_title, edition_year, isbn, urgency, justification,
+            publisher=publisher, copyright_date=copyright_date, price=price, copies=copies, college=college
         )
+
+    def export_fmlibs002_csv(self, requisitions: List[Dict[str, Any]]) -> str:
+        return self.requisitions.generate_fmlibs002_csv(requisitions)
 
     async def get_requisitions(
         self,

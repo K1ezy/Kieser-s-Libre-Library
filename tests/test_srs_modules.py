@@ -86,7 +86,7 @@ class TestSRSModules(unittest.IsolatedAsyncioTestCase):
             course_code="CS 413",
             course_title="Software Engineering 2",
             edition_year="4th Edition",
-            urgency="Critical for Accreditation",
+            urgency="Critical Priority",
             justification="Core reference for CS 413 syllabus."
         )
         self.assertTrue(res["success"])
@@ -108,6 +108,55 @@ class TestSRSModules(unittest.IsolatedAsyncioTestCase):
         promoted = await repo.update_user_role("user-456", "librarian")
         self.assertTrue(promoted)
         mock_db.update_one.assert_called_with({"id": "user-456"}, {"$set": {"role": "librarian"}})
+
+    async def test_fmlibs009_csv_export(self):
+        """Validates institutional FM-LIBS-009 CSV generation."""
+        repo = AttendanceRepository()
+        sample_logs = [{
+            "date_str": "2026-10-13",
+            "time_in_str": "08:30 AM",
+            "time_out_str": "10:00 AM",
+            "student_id": "2024-10492",
+            "name": "Kieser Loren",
+            "year_level": "4th Year",
+            "program": "BSCS",
+            "purpose": "Research / Thesis",
+            "purpose_attained": "Yes",
+            "duration_minutes": 90,
+            "status": "Checked Out",
+            "remarks": "Completed laboratory review"
+        }]
+        csv_out = repo.generate_fmlibs009_csv(sample_logs, date_str="2026-10-13", program="BSCS")
+        self.assertIn("FM-LIBS-009", csv_out)
+        self.assertIn("NORTH EASTERN MINDANAO STATE UNIVERSITY", csv_out)
+        self.assertIn("Kieser Loren", csv_out)
+        self.assertIn("4th Year", csv_out)
+        self.assertIn("Research / Thesis", csv_out)
+
+    async def test_fmlibs002_csv_export(self):
+        """Validates institutional FM-LIBS-002 Book Request Form CSV generation."""
+        repo = RequisitionRepository()
+        sample_reqs = [{
+            "id": "req-999",
+            "book_title": "Artificial Intelligence: A Modern Approach",
+            "author": "Stuart Russell",
+            "edition_year": "4th Edition",
+            "publisher": "Pearson Education",
+            "copyright_date": "2020",
+            "price": 4500.0,
+            "copies": 5,
+            "faculty_name": "Prof. Loren",
+            "department": "BSCS",
+            "course_code": "CS 413",
+            "course_title": "Software Engineering 2",
+            "status": "Pending Review",
+            "justification": "Required reference for CS 413."
+        }]
+        csv_out = repo.generate_fmlibs002_csv(sample_reqs)
+        self.assertIn("FM-LIBS-002", csv_out)
+        self.assertIn("BOOK REQUEST FORM", csv_out)
+        self.assertIn("Pearson Education", csv_out)
+        self.assertIn("4500.0", csv_out)
 
 
 if __name__ == "__main__":

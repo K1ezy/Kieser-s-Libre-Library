@@ -17,7 +17,7 @@ STATUS_BADGES = {
 }
 
 DEPARTMENTS = ["BSCS", "BSIT", "BSED", "BEED", "BSBA", "BSHM", "Crim", "Nursing", "GENERAL"]
-URGENCY_LEVELS = ["Normal", "Urgent", "Critical for Accreditation"]
+URGENCY_LEVELS = ["Normal", "Urgent", "Critical Priority"]
 
 
 async def requisitions_page():
@@ -47,7 +47,7 @@ async def requisitions_page():
 
     with ui.column().classes(
         'w-full min-h-[100dvh] pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-8 max-w-7xl mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-16'
     ):
         # Header Banner
         with ui.row().classes('w-full items-center justify-between gap-4 mb-6 flex-wrap'):
@@ -109,8 +109,30 @@ async def requisitions_page():
                     )
                     tab_btns[st] = b_el
 
-            if can_manage:
-                ui.label('🛡️ Librarian Review Mode Active').classes('text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-full')
+            with ui.row().classes('items-center gap-2'):
+                if can_manage:
+                    ui.label('🛡️ Librarian Review Mode Active').classes('text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-full')
+                
+                async def export_fmlibs002():
+                    import base64
+                    st_f = current_status_filter['val']
+                    data = await mongo_db.get_requisitions(status=st_f if st_f != 'All' else None, limit=500)
+                    if not data:
+                        ui.notify("No requisitions to export", type='warning')
+                        return
+                    csv_text = mongo_db.export_fmlibs002_csv(data)
+                    b64 = base64.b64encode(csv_text.encode('utf-8')).decode('utf-8')
+                    fn = f"NEMSU_FM-LIBS-002_Book_Requests_{st_f}.csv"
+                    ui.run_javascript(f'''
+                        const a = document.createElement('a');
+                        a.href = 'data:text/csv;base64,{b64}';
+                        a.download = '{fn}';
+                        a.click();
+                    ''')
+                    ui.notify("FM-LIBS-002 Book Requests exported!", type='positive')
+
+                ui.button('Export FM-LIBS-002 (CSV)', icon='download', on_click=export_fmlibs002) \
+                    .props('flat rounded-xl color=indigo size=xs font-bold border border-indigo-200 bg-white shadow-xs')
 
         # Requisitions List Container
         reqs_list_container = ui.column().classes('w-full gap-4')
@@ -122,10 +144,25 @@ async def requisitions_page():
 
             with reqs_list_container:
                 if not reqs:
-                    with ui.card().classes('w-full p-8 text-center bg-white border border-slate-200 rounded-3xl shadow-sm'):
-                        ui.icon('menu_book', size='3em').classes('text-slate-300 mx-auto mb-2')
-                        ui.label('No requisitions found in this category.').classes('text-base font-bold text-slate-700')
-                        ui.label('Faculty members can click "Submit Book Requisition" above to request instructional textbooks.').classes('text-xs text-slate-400')
+                    with ui.card().classes('w-full p-8 sm:p-12 text-center bg-white border border-slate-200 rounded-3xl shadow-sm'):
+                        ui.icon('post_add', size='3.5em').classes('text-indigo-300 mx-auto mb-3')
+                        ui.label('No Curricular Requisitions in this Category').classes('text-lg sm:text-xl font-black text-slate-800 mb-1')
+                        ui.label('The Faculty Book Requisition system connects college course syllabi with library procurement.').classes('text-xs sm:text-sm text-slate-500 max-w-md mx-auto mb-6')
+                        
+                        # 3-Stage How It Works Guidance
+                        with ui.grid().classes('w-full max-w-2xl mx-auto grid-cols-1 sm:grid-cols-3 gap-3 text-left mb-6'):
+                            with ui.card().classes('p-3.5 bg-slate-50 border border-slate-200 rounded-2xl'):
+                                ui.label('1. Submission').classes('text-xs font-bold text-indigo-600')
+                                ui.label('Faculty submits course code, textbook title & syllabus justification.').classes('text-[11px] text-slate-500 mt-1 leading-snug')
+                            with ui.card().classes('p-3.5 bg-slate-50 border border-slate-200 rounded-2xl'):
+                                ui.label('2. Committee Review').classes('text-xs font-bold text-blue-600')
+                                ui.label('Library staff evaluates collection budget & curriculum alignment.').classes('text-[11px] text-slate-500 mt-1 leading-snug')
+                            with ui.card().classes('p-3.5 bg-slate-50 border border-slate-200 rounded-2xl'):
+                                ui.label('3. Shelf Availability').classes('text-xs font-bold text-emerald-600')
+                                ui.label('Purchased titles are cataloged and made accessible to students.').classes('text-[11px] text-slate-500 mt-1 leading-snug')
+
+                        ui.button('Submit Book Requisition', icon='add', on_click=lambda: open_requisition_dialog())\
+                            .props('unelevated rounded-xl color=indigo size=md font-bold shadow-md')
                     return
 
                 for r in reqs:
@@ -142,17 +179,36 @@ async def requisitions_page():
                                     with ui.element('div').classes(f'px-2.5 py-0.5 rounded-full text-xs font-black uppercase border flex items-center gap-1 {badge_style}'):
                                         ui.icon(badge_icon, size='14px')
                                         ui.label(st)
+                                    ui.element('span').classes('text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-002'
 
-                                ui.label(f"By {r.get('author', 'Unknown Author')} • {r.get('edition_year', 'Current Edition')}").classes('text-xs font-medium text-slate-600')
+                                author_txt = r.get('author', 'Unknown Author')
+                                pub_txt = f" • Publisher: {r.get('publisher')}" if r.get('publisher') else ""
+                                copy_txt = f" • Year: {r.get('copyright_date') or r.get('edition_year', 'Current')}"
+                                ui.label(f"By {author_txt}{pub_txt}{copy_txt}").classes('text-xs font-medium text-slate-600')
 
                             # Right Urgency & Program Pill
                             with ui.column().classes('items-end shrink-0 gap-1'):
                                 with ui.row().classes('items-center gap-1.5'):
                                     ui.label(r.get('department', 'BSCS')).classes('text-xs font-black text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-lg')
-                                    urgency_col = 'text-rose-700 bg-rose-50 border-rose-200' if r.get('urgency') == 'Critical for Accreditation' else 'text-slate-600 bg-slate-100 border-slate-200'
-                                    ui.label(r.get('urgency', 'Normal')).classes(f'text-[10px] font-bold uppercase px-2 py-0.5 rounded-lg border {urgency_col}')
+                                    raw_urgency = r.get('urgency', 'Normal')
+                                    urgency_col = 'text-rose-700 bg-rose-50 border-rose-200' if raw_urgency in ('Critical Priority', 'Critical for Accreditation') else 'text-slate-600 bg-slate-100 border-slate-200'
+                                    display_urgency = 'Critical Priority' if raw_urgency == 'Critical for Accreditation' else raw_urgency
+                                    ui.label(display_urgency).classes(f'text-[10px] font-bold uppercase px-2 py-0.5 rounded-lg border {urgency_col}')
                                 date_str = datetime.fromtimestamp(r.get('created_at', time.time())).strftime("%b %d, %Y")
                                 ui.label(f"Submitted: {date_str}").classes('text-[10px] font-mono text-slate-400')
+
+                        # FM-LIBS-002 Itemized Specs (Copies & Pricing)
+                        price_val = float(r.get('price') or 0.0)
+                        copies_val = int(r.get('copies') or 1)
+                        with ui.row().classes('w-full items-center gap-3 px-3 py-1.5 bg-slate-100/60 rounded-xl text-xs text-slate-600 mb-2 flex-wrap'):
+                            with ui.row().classes('items-center gap-1'):
+                                ui.icon('menu_book', size='15px').classes('text-indigo-600')
+                                ui.label(f"Copies Requested: {copies_val}").classes('font-bold text-slate-800')
+                            if price_val > 0:
+                                with ui.row().classes('items-center gap-1'):
+                                    ui.icon('payments', size='15px').classes('text-emerald-600')
+                                    ui.label(f"Est. Unit Price: ₱{price_val:,.2f}").classes('font-medium text-slate-700')
+                                    ui.label(f"(Total: ₱{price_val * copies_val:,.2f})").classes('font-bold text-slate-900')
 
                         # Course & Justification Box
                         with ui.row().classes('w-full p-3 bg-slate-50 rounded-2xl border border-slate-100 items-center justify-between gap-3 flex-wrap text-xs mb-3'):
@@ -202,37 +258,50 @@ async def requisitions_page():
         await load_requisitions_list()
 
 
-    # Submission Dialog
+    # Submission Dialog (Compliant with Form FM-LIBS-002)
     def open_requisition_dialog():
         with ui.dialog() as req_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-xl p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 shadow-2xl'):
             with ui.row().classes('w-full justify-between items-center mb-2'):
                 with ui.row().classes('items-center gap-2'):
                     ui.icon('post_add', size='md').classes('text-indigo-600')
                     ui.label('Faculty Book Requisition Form').classes('text-lg sm:text-xl font-black text-slate-900')
+                    ui.element('span').classes('text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-002'
                 ui.button(icon='close', on_click=req_dialog.close).props('flat round dense size=sm color=grey')
 
-            ui.label('Submit textbook titles or reference materials to the library collection committee (CS 413 / Section 2.3).').classes('text-xs text-slate-500 mb-4')
+            ui.label('Submit textbook titles or reference materials to the library collection committee (CS 413 / Form FM-LIBS-002).').classes('text-xs text-slate-500 mb-4')
 
             b_title = ui.input(label='Book / Resource Title *', placeholder='e.g., Software Engineering: A Practitioner\'s Approach') \
                 .classes('w-full mb-2').props('rounded outlined dense autofocus')
 
-            with ui.row().classes('w-full gap-2 mb-2'):
-                b_author = ui.input(label='Author / Publisher *', placeholder='e.g., Roger S. Pressman') \
-                    .classes('flex-1').props('rounded outlined dense')
-                b_edition = ui.input(label='Edition / Year', placeholder='e.g., 9th Edition, 2020') \
-                    .classes('w-36').props('rounded outlined dense')
+            with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
+                b_author = ui.input(label='Author *', placeholder='e.g., Roger S. Pressman') \
+                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
+                b_edition = ui.input(label='Edition', placeholder='e.g., 9th Edition') \
+                    .classes('w-full sm:w-36').props('rounded outlined dense')
 
-            with ui.row().classes('w-full gap-2 mb-2'):
+            with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
+                b_publisher = ui.input(label='Publisher', placeholder='e.g., McGraw-Hill Education') \
+                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
+                b_copyright = ui.input(label='Copyright Date / Year', placeholder='e.g., 2024') \
+                    .classes('w-full sm:w-36').props('rounded outlined dense')
+
+            with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
                 b_course_code = ui.input(label='Course Code *', placeholder='e.g., CS 413') \
-                    .classes('w-28').props('rounded outlined dense')
+                    .classes('w-full sm:w-28').props('rounded outlined dense')
                 b_course_title = ui.input(label='Course Title *', placeholder='e.g., Software Engineering 2') \
-                    .classes('flex-1').props('rounded outlined dense')
+                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
 
-            with ui.row().classes('w-full gap-2 mb-2'):
+            with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
+                b_price = ui.number(label='Est. Unit Price (PHP)', value=0, min=0) \
+                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense')
+                b_copies = ui.number(label='Copies Requested *', value=1, min=1) \
+                    .classes('w-full sm:w-36').props('rounded outlined dense')
+
+            with ui.row().classes('w-full gap-2 mb-2 flex-wrap sm:flex-nowrap'):
                 b_dept = ui.select(DEPARTMENTS, value=user_department, label='Department / Program') \
-                    .classes('flex-1').props('rounded outlined dense options-dense')
+                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense options-dense')
                 b_urgency = ui.select(URGENCY_LEVELS, value='Normal', label='Urgency Level') \
-                    .classes('flex-1').props('rounded outlined dense options-dense')
+                    .classes('flex-1 min-w-[140px]').props('rounded outlined dense options-dense')
 
             b_justification = ui.textarea(label='Syllabus Justification / Reason for Acquisition', placeholder='Required for updated CS 413 syllabus reference and student laboratory projects.') \
                 .classes('w-full mb-4').props('rounded outlined dense rows=2')
@@ -255,10 +324,14 @@ async def requisitions_page():
                         course_title=b_course_title.value,
                         edition_year=b_edition.value,
                         urgency=b_urgency.value,
-                        justification=b_justification.value
+                        justification=b_justification.value,
+                        publisher=b_publisher.value or "",
+                        copyright_date=b_copyright.value or "",
+                        price=float(b_price.value or 0.0),
+                        copies=int(b_copies.value or 1)
                     )
                     if res.get('success'):
-                        ui.notify('Requisition submitted to library committee!', type='positive')
+                        ui.notify('Requisition submitted to library committee (FM-LIBS-002)!', type='positive')
                         req_dialog.close()
                         await refresh_summary()
                         await load_requisitions_list()
