@@ -199,10 +199,7 @@ class RequisitionRepository(BaseRepository):
                 {"$sort": {"count": -1}}
             ]
             results = await self.db['faculty_requisitions'].aggregate(pipeline).to_list(length=20)
-            counts = {r["_id"] or "GENERAL": r["count"] for r in results}
-            if not counts:
-                counts = {"BSCS": 8, "BSIT": 6, "BSED": 4, "BEED": 3, "BSBA": 3}
-            return counts
+            return {r["_id"] or "GENERAL": r["count"] for r in results}
         except Exception as e:
             logger.error(f"Department Requisition Counts Error: {e}")
-            return {"BSCS": 5, "BSIT": 3}
+            return {}

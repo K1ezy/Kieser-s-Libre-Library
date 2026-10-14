@@ -157,6 +157,8 @@ async def analytics_page():
                 ui.label('FACULTY REQUISITIONS BY DEPARTMENT').classes('text-xs font-black text-indigo-600 uppercase tracking-wider mb-1')
                 ui.label('Curriculum acquisition alignment per academic discipline').classes('text-xs text-slate-500 mb-4')
                 tot_r = sum(dept_reqs.values()) or 1
+                if not dept_reqs:
+                    ui.label('No faculty requisitions submitted yet.').classes('text-xs text-slate-400 italic py-2')
                 for d_name, d_cnt in dept_reqs.items():
                     r_pct = round((d_cnt / tot_r) * 100)
                     with ui.row().classes('w-full items-center justify-between py-1.5 border-b border-slate-100 last:border-none text-xs'):

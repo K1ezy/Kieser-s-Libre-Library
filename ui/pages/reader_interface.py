@@ -249,7 +249,7 @@ class BookReader:
             if (fontLabel) fontLabel.innerText = "{self.font_size}px";
         ''')
 
-    def build_ui(self):
+    async def build_ui(self):
         found = self.find_content_file()
         card_cls, container_bg = self.get_prose_theme_classes()
 
@@ -393,7 +393,7 @@ class BookReader:
                 try:
                     import docx
                     file_path = self.book_path / self.file_name
-                    doc = docx.Document(file_path)
+                    doc = await asyncio.to_thread(docx.Document, file_path)
                     self.scroll_area = ui.scroll_area().props('id=prose-card-container').classes(f'w-full h-full p-4 sm:p-8 md:p-16 max-w-4xl shadow-sm sm:rounded-2xl sm:my-4 border transition-colors {card_cls}').style(f'font-size: {self.font_size}px')
                     self.scroll_area.on_scroll(self.handle_scroll)
                     with self.scroll_area:
@@ -412,7 +412,7 @@ class BookReader:
                 try:
                     from pptx import Presentation
                     file_path = self.book_path / self.file_name
-                    prs = Presentation(file_path)
+                    prs = await asyncio.to_thread(Presentation, file_path)
                     self.scroll_area = ui.scroll_area().props('id=prose-card-container').classes(f'w-full h-full p-3 sm:p-8 md:p-16 max-w-5xl shadow-sm sm:rounded-2xl sm:my-4 border transition-colors {card_cls}')
                     self.scroll_area.on_scroll(self.handle_scroll)
                     with self.scroll_area:
@@ -433,8 +433,10 @@ class BookReader:
             elif self.file_type == 'text':
                 try:
                     file_path = self.book_path / self.file_name
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        content_txt = f.read()
+                    def _read_txt(fp):
+                        with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
+                            return f.read()
+                    content_txt = await asyncio.to_thread(_read_txt, file_path)
                     self.scroll_area = ui.scroll_area().props('id=prose-card-container').classes(f'w-full h-full p-4 sm:p-8 border transition-colors {card_cls}').style(f'font-size: {self.font_size}px')
                     self.scroll_area.on_scroll(self.handle_scroll)
                     with self.scroll_area:
@@ -503,7 +505,7 @@ async def reader_page(book_id: str):
         font_family=pref_font_family,
         line_height=pref_line_height
     )
-    reader.build_ui()
+    await reader.build_ui()
 
     # Only initialize a brand-new reading entry if the user has no prior history with this book
     if not existing_prog:

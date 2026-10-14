@@ -230,13 +230,22 @@ async def admin_route():
     await admin.admin_dashboard()
     FloatingChat()
 
-# --- STARTUP ---
+# --- STARTUP & SHUTDOWN LIFECYCLE ---
+_chroma_warmup_task = None
+
 @app.on_startup
 async def startup():
+    global _chroma_warmup_task
     await mongo_db.initialize()
     await tars_engine.ensure_db_settings_loaded()
     # Non-blocking background warm-up of ChromaDB client for instant vector deletions
-    asyncio.create_task(asyncio.to_thread(tars_archive._get_raw_collection))
+    _chroma_warmup_task = asyncio.create_task(asyncio.to_thread(tars_archive._get_raw_collection))
+
+@app.on_shutdown
+async def shutdown():
+    await shutdown_client()
+    await mongo_db.close()
+    await tars_engine.close()
 
 def _ensure_port_available(port: int = 8080):
     """Releases port if occupied by a stale process on Windows to prevent Errno 10048."""
@@ -258,7 +267,6 @@ def _ensure_port_available(port: int = 8080):
 
 if __name__ in {"__main__", "__mp_main__"}:
     _ensure_port_available(8080)
-    app.on_shutdown(shutdown_client) 
     ui.run(
         title="Libre Library",
         favicon="📚",

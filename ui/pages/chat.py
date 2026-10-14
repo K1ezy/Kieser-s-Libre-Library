@@ -648,8 +648,7 @@ class ChatInterface:
 
         # 3. Main Chat Viewport
         with ui.column().classes(
-            'w-full h-[100dvh] pt-[calc(3.5rem+env(safe-area-inset-top,0px))] sm:pt-[calc(4rem+env(safe-area-inset-top,0px))] '
-            'pb-[max(8px,env(safe-area-inset-bottom,0px))] bg-slate-50 overflow-hidden'
+            'w-full fixed top-14 sm:top-16 inset-x-0 bottom-0 flex flex-col bg-slate-50 overflow-hidden p-0 m-0'
         ):
             with ui.column().classes('w-full flex-1 min-h-0 overflow-y-auto p-2.5 sm:p-4 md:p-6 no-scrollbar touch-pan-y overscroll-contain') as self.scroll_container:
                 with ui.column().classes('w-full max-w-4xl mx-auto gap-3 sm:gap-4 pb-4') as self.log_container:

@@ -137,7 +137,6 @@ async def home_page():
     is_tars_online = tars_engine.is_available
     tars_status = "Online" if is_tars_online else "Offline"
     tars_color = "emerald" if is_tars_online else "rose"
-    tars_sub = "Llama 3.2 3B Active (Local)" if is_tars_online else "Model missing in models/"
 
     greeting_str = f"{get_greeting()}, {user_name}" if user_name else f"{get_greeting()}"
 
@@ -221,19 +220,3 @@ async def home_page():
             with ui.element('div').classes('w-full fluid-book-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-8'):
                 for book in recent_books:
                     book_card(book, action_target='book')
-
-        # 5. Transparent 3-Subsystem Diagnostics Strip
-        with ui.row().classes('w-full p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl items-center justify-between gap-3 flex-wrap mt-2'):
-            with ui.row().classes('items-center gap-2'):
-                ui.icon('dns', size='18px').classes('text-slate-500')
-                ui.label('SYSTEM SUBSYSTEMS:').classes('text-[11px] font-bold text-slate-400 uppercase tracking-wider')
-            with ui.row().classes('items-center gap-4 text-xs font-medium text-slate-600 flex-wrap'):
-                with ui.row().classes('items-center gap-1.5'):
-                    ui.icon('web', size='14px').classes('text-emerald-600')
-                    ui.label("App Server: Ready (FastAPI/NiceGUI)")
-                with ui.row().classes('items-center gap-1.5'):
-                    ui.icon('smart_toy', size='14px').classes(f'text-{tars_color}-600')
-                    ui.label(f"AI Engine: {tars_status} ({tars_sub})")
-                with ui.row().classes('items-center gap-1.5'):
-                    ui.icon('storage', size='14px').classes('text-indigo-600')
-                    ui.label("Database: Connected (MongoDB & ChromaDB)")

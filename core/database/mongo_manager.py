@@ -36,6 +36,7 @@ class MongoManager:
         self.client: Optional[AsyncIOMotorClient] = None
         self.db: Optional[AsyncIOMotorDatabase] = None
         self.collection = None
+        self._covers_task: Optional[asyncio.Task] = None
 
         # Domain Repositories
         self.books = BookRepository()
@@ -100,19 +101,37 @@ class MongoManager:
                 await self.db['faculty_requisitions'].create_index("status")
                 await self.db['annotations'].create_index("id", unique=True)
                 await self.db['annotations'].create_index([("user_id", 1), ("book_id", 1), ("created_at", -1)])
+                await self.db['user_favorites'].create_index([("user_id", 1), ("book_id", 1)], unique=True)
                 await self.users.normalize_existing_users()
-                asyncio.create_task(self._ensure_covers_background())
+                self._covers_task = asyncio.create_task(self._ensure_covers_background())
             except Exception as idx_err:
                 logger.warning(f"Index creation notice: {idx_err}")
 
         except Exception as e:
             logger.error(f"MongoDB Connection Failed: {e}")
 
+    async def close(self):
+        """Gracefully cancels pending background tasks and disconnects MongoDB client."""
+        if self._covers_task and not self._covers_task.done():
+            self._covers_task.cancel()
+            try:
+                await self._covers_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.debug(f"Cover task cancellation notice: {e}")
+        if self.client:
+            self.client.close()
+            self.client = None
+            self.db = None
+
     async def _ensure_covers_background(self):
         """Asynchronously checks and generates missing covers in background without blocking startup."""
         try:
             from core.utils.cover_manager import cover_manager
             await cover_manager.batch_generate_missing_covers(sync_mongodb=True)
+        except asyncio.CancelledError:
+            pass
         except Exception as e:
             logger.debug(f"Background cover check notice: {e}")
 
@@ -505,14 +524,29 @@ class MongoManager:
     async def get_annotation(self, annotation_id: str) -> Optional[Dict[str, Any]]:
         return await self.annotations.get_annotation(annotation_id)
 
-    async def update_annotation(self, annotation_id: str, updates: Dict[str, Any]) -> bool:
-        return await self.annotations.update_annotation(annotation_id, updates)
+    async def update_annotation(self, annotation_id: str, updates: Dict[str, Any], user_id: Optional[str] = None) -> bool:
+        return await self.annotations.update_annotation(annotation_id, updates, user_id=user_id)
 
     async def delete_annotation(self, annotation_id: str, user_id: Optional[str] = None) -> bool:
         return await self.annotations.delete_annotation(annotation_id, user_id=user_id)
 
     def generate_annotations_markdown(self, annotations: List[Dict[str, Any]], book_title: str = "Document") -> str:
         return self.annotations.generate_markdown_export(annotations, book_title=book_title)
+
+    # =========================================================================
+    # ⭐ USER FAVORITES DELEGATE METHODS
+    # =========================================================================
+    async def toggle_book_favorite(self, book_id: str, user_id: Optional[str] = None) -> bool:
+        return await self.books.toggle_book_favorite(book_id, user_id=user_id)
+
+    async def get_user_favorite_book_ids(self, user_id: str) -> List[str]:
+        return await self.users.get_user_favorite_book_ids(user_id)
+
+    async def is_book_favorited(self, user_id: str, book_id: str) -> bool:
+        return await self.users.is_book_favorited(user_id, book_id)
+
+    async def get_favorite_books(self, user_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        return await self.users.get_user_favorites(user_id=user_id, limit=limit)
 
 # Global Singleton Instance
 mongo_db = MongoManager()

@@ -98,8 +98,6 @@ def header(drawer_reference=None):
 
             user_name = app.storage.user.get('username') or 'Account'
             user_role = get_current_user_role()
-            is_librarian = user_role in ('admin', 'librarian')
-            is_faculty = user_role in ('admin', 'librarian', 'faculty')
 
             with ui.button().props('flat round dense no-caps size=md').classes('p-0.5 ml-0.5 sm:ml-1'):
                 ui.avatar(icon='person', color='indigo-50', text_color='indigo', size='32px') \
@@ -112,18 +110,6 @@ def header(drawer_reference=None):
                             ui.label(user_role.upper()).classes('text-[9px] font-bold text-indigo-600 uppercase tracking-wider')
 
                     ui.menu_item('Account Profile', on_click=lambda: ui.navigate.to('/profile')).props('prepend-icon=person').classes('text-xs font-medium')
-                    ui.menu_item('Library Pass & QR', on_click=lambda: ui.navigate.to('/attendance')).props('prepend-icon=badge').classes('text-xs font-medium')
-                    
-                    if is_faculty:
-                        ui.menu_item('Book Requisitions', on_click=lambda: ui.navigate.to('/requisitions')).props('prepend-icon=post_add').classes('text-xs font-medium')
-                    
-                    if is_librarian:
-                        ui.menu_item('Librarian Hub', on_click=lambda: ui.navigate.to('/librarian')).props('prepend-icon=local_library').classes('text-xs font-bold text-indigo-700')
-                        ui.menu_item('Ingest & Upload', on_click=lambda: ui.navigate.to('/upload')).props('prepend-icon=cloud_upload').classes('text-xs font-medium')
-                        ui.menu_item('Program Analytics', on_click=lambda: ui.navigate.to('/analytics')).props('prepend-icon=insights').classes('text-xs font-medium')
-
-                    if user_role == 'admin':
-                        ui.menu_item('Admin IT Console', on_click=lambda: ui.navigate.to('/admin')).props('prepend-icon=admin_panel_settings').classes('text-xs font-bold text-amber-700')
 
                     ui.separator().classes('my-1')
                     def sign_out():

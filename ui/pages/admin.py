@@ -7,8 +7,11 @@ from components.header import header
 from core.database.mongo_manager import mongo_db
 from core.config import settings
 from core.auth.jwt_handler import get_current_user_role
+from core.services.ingestion_service import ingestion_service
+from core.ai_engine.rag_pipeline import tars_archive
 
 logger = logging.getLogger("ADMIN_UI")
+
 
 
 async def admin_dashboard():
@@ -24,10 +27,12 @@ async def admin_dashboard():
 
     # Fetch system diagnostics concurrently
     import asyncio
-    stats, raw_users = await asyncio.gather(
+    stats, raw_users, all_books = await asyncio.gather(
         mongo_db.get_system_diagnostics(),
-        mongo_db.get_all_users()
+        mongo_db.get_all_users(),
+        mongo_db.get_all_books()
     )
+
 
     # Sanitize user rows to ensure strict JSON serializability (no BSON ObjectId)
     def format_users(user_list):
@@ -102,8 +107,138 @@ async def admin_dashboard():
                 ui.button('Switch to Librarian Operations Console', icon='arrow_forward', on_click=lambda: ui.navigate.to('/librarian')) \
                     .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-sm')
 
+        # TARS AI Knowledge Store & Vector Maintenance Card
+        unindexed_books = [
+            b for b in (all_books or [])
+            if b.get("chunk_count", 0) == 0 or b.get("indexing_status") == "failed"
+        ]
+        unindexed_count = len(unindexed_books)
+        total_books_count = len(all_books or [])
+        rag_stats = await asyncio.to_thread(tars_archive.get_collection_stats)
+        total_chunks_count = rag_stats.get("total_chunks", 0)
+        vector_status = rag_stats.get("status", "Online")
+
+        with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm mb-6'):
+            with ui.row().classes('w-full items-start justify-between gap-4 flex-wrap mb-4'):
+                with ui.row().classes('items-center gap-3 min-w-0 flex-1'):
+                    with ui.element('div').classes('p-2.5 rounded-2xl bg-purple-50 text-purple-600 border border-purple-100 shadow-xs shrink-0'):
+                        ui.icon('psychology', size='24px')
+                    with ui.column().classes('gap-0.5 min-w-0 flex-1'):
+                        with ui.row().classes('items-center gap-2 flex-wrap'):
+                            ui.label('TARS AI Knowledge Store & Vector Health').classes('text-base font-black text-slate-900 tracking-tight')
+                            rag_status_badge = ui.element('span').classes(
+                                'text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border ' +
+                                ('bg-emerald-50 text-emerald-700 border-emerald-200' if vector_status == 'Online' else 'bg-rose-50 text-rose-700 border-rose-200')
+                            )
+                            rag_status_badge.text = f"Vector Store: {vector_status}"
+                        ui.label('Monitors ChromaDB semantic embeddings, detects unindexed volumes, and triggers automated RAG re-indexing.').classes('text-xs text-slate-500')
+
+            with ui.grid().classes('w-full grid-cols-1 sm:grid-cols-3 gap-3 mb-4'):
+                with ui.card().classes('p-3 rounded-2xl bg-slate-50 border border-slate-100 shadow-none'):
+                    ui.label('Total Vector Chunks').classes('text-[11px] font-bold text-slate-400 uppercase tracking-wider')
+                    chunks_stat_label = ui.label(f"{total_chunks_count:,}").classes('text-xl font-black text-purple-700 mt-0.5')
+                    ui.label('ChromaDB neural embeddings').classes('text-[10px] text-slate-500')
+
+                with ui.card().classes('p-3 rounded-2xl bg-slate-50 border border-slate-100 shadow-none'):
+                    ui.label('Indexed Catalog Books').classes('text-[11px] font-bold text-slate-400 uppercase tracking-wider')
+                    indexed_stat_label = ui.label(f"{max(0, total_books_count - unindexed_count)} / {total_books_count}").classes('text-xl font-black text-indigo-700 mt-0.5')
+                    ui.label('Active in semantic search').classes('text-[10px] text-slate-500')
+
+                with ui.card().classes('p-3 rounded-2xl bg-slate-50 border border-slate-100 shadow-none'):
+                    ui.label('Unindexed / Failed Books').classes('text-[11px] font-bold text-slate-400 uppercase tracking-wider')
+                    unindexed_stat_label = ui.label(str(unindexed_count)).classes(
+                        f"text-xl font-black mt-0.5 {'text-amber-600' if unindexed_count > 0 else 'text-emerald-600'}"
+                    )
+                    unindexed_subtext = ui.label(
+                        "Needs vectorization" if unindexed_count > 0 else "All books fully indexed"
+                    ).classes('text-[10px] text-slate-500')
+
+            # Progress Bar and Live Status Banner
+            with ui.column().classes('w-full gap-2 mb-3'):
+                progress_bar = ui.linear_progress(value=0.0).props('rounded color=purple size=6px').classes('w-full')
+                progress_bar.set_visibility(False)
+                with ui.row().classes('w-full items-center justify-between text-xs'):
+                    with ui.row().classes('items-center gap-2'):
+                        status_spinner = ui.spinner(size='xs', color='purple')
+                        status_spinner.set_visibility(False)
+                        status_label = ui.label(
+                            f"{unindexed_count} unindexed document(s) detected in catalog." if unindexed_count > 0 else "All catalog documents are vectorized in ChromaDB."
+                        ).classes('text-slate-600 font-medium')
+                    sync_time_label = ui.label('Ready').classes('text-[10px] text-slate-400 font-mono')
+
+            # Action Buttons Row
+            with ui.row().classes('w-full items-center justify-between gap-3 pt-2 border-t border-slate-100 flex-wrap'):
+                ui.label('One-click recovery reads documents, extracts pages, and populates ChromaDB facts.').classes('text-[11px] text-slate-400 max-w-md')
+
+                async def run_reindex():
+                    reindex_btn.disable()
+                    status_spinner.set_visibility(True)
+                    progress_bar.set_visibility(True)
+                    progress_bar.value = 0.0
+                    status_label.text = "Scanning catalog for unindexed documents..."
+                    status_label.classes('text-purple-700 font-bold', remove='text-slate-600 text-emerald-600 text-rose-600')
+
+                    async def handle_progress(idx, total, title, stage):
+                        pct = (idx / max(total, 1))
+                        progress_bar.value = pct
+                        status_label.text = f"Vectorizing [{idx}/{total}]: {title[:40]}..."
+
+                    try:
+                        res = await ingestion_service.reindex_failed_books(progress_callback=handle_progress)
+                        reindexed_n = res.get("reindexed", 0)
+                        failed_n = res.get("failed", 0)
+                        total_n = res.get("total", 0)
+
+                        # Refresh live stats
+                        updated_books = await mongo_db.get_all_books()
+                        new_unindexed = len([
+                            b for b in (updated_books or [])
+                            if b.get("chunk_count", 0) == 0 or b.get("indexing_status") == "failed"
+                        ])
+                        new_total = len(updated_books or [])
+                        new_stats = await asyncio.to_thread(tars_archive.get_collection_stats)
+                        new_chunks = new_stats.get("total_chunks", 0)
+
+                        chunks_stat_label.text = f"{new_chunks:,}"
+                        indexed_stat_label.text = f"{max(0, new_total - new_unindexed)} / {new_total}"
+                        unindexed_stat_label.text = str(new_unindexed)
+                        unindexed_stat_label.classes(
+                            'text-amber-600' if new_unindexed > 0 else 'text-emerald-600',
+                            remove='text-amber-600 text-emerald-600'
+                        )
+                        unindexed_subtext.text = "Needs vectorization" if new_unindexed > 0 else "All books fully indexed"
+
+                        progress_bar.value = 1.0
+                        now_str = datetime.now().strftime("%H:%M:%S")
+                        sync_time_label.text = f"Last run: {now_str}"
+
+                        if total_n == 0:
+                            status_label.text = "All books in the library are already indexed with active vectors."
+                            status_label.classes('text-emerald-600 font-bold', remove='text-purple-700')
+                            ui.notify("All catalog documents are already fully vectorized.", type='info')
+                        else:
+                            status_label.text = f"Re-indexing complete: {reindexed_n} indexed, {failed_n} failed."
+                            status_label.classes('text-emerald-600 font-bold', remove='text-purple-700')
+                            ui.notify(f"TARS Knowledge Store updated: {reindexed_n} documents indexed successfully.", type='positive')
+
+                    except Exception as err:
+                        logger.error(f"Re-indexing failure: {err}", exc_info=True)
+                        status_label.text = f"Re-indexing error: {str(err)}"
+                        status_label.classes('text-rose-600 font-bold', remove='text-purple-700')
+                        ui.notify(f"Re-indexing error: {str(err)}", type='negative')
+                    finally:
+                        status_spinner.set_visibility(False)
+                        reindex_btn.enable()
+
+                reindex_btn = ui.button(
+                    'Re-index Failed / Unindexed Books',
+                    icon='auto_fix_high',
+                    on_click=run_reindex
+                ).props('unelevated rounded-xl color=purple size=sm font-bold shadow-sm')
+
 
         # Registered Accounts Management Table (Role-Based Access Control)
+
         with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):
             with ui.row().classes('w-full items-center justify-between mb-4'):
                 with ui.row().classes('items-center gap-2'):

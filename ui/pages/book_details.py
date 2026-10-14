@@ -42,6 +42,12 @@ class BookDetailsPage:
             ui.navigate.to('/books')
             return
 
+        if self.book and user_id:
+            try:
+                self.book['is_favorite'] = await mongo_db.is_book_favorited(user_id, self.book_id)
+            except Exception:
+                pass
+
         self.render_content()
 
     def get_effective_total_pages(self) -> int:
@@ -85,7 +91,6 @@ class BookDetailsPage:
         ui.notify(f"Marked as {res['display_title']}", type='positive')
 
         try:
-            await mongo_db.update_book_reading_status(self.book_id, res['status'])
             if user_id:
                 await mongo_db.progress.save_reading_progress(
                     user_id=user_id,
@@ -117,7 +122,6 @@ class BookDetailsPage:
         ui.notify(f"Progress updated to page {res['current_page']} of {res['total_pages']}", type='positive')
 
         try:
-            await mongo_db.update_book_reading_status(self.book_id, res['status'])
             if user_id:
                 await mongo_db.progress.save_reading_progress(
                     user_id=user_id,
@@ -130,14 +134,12 @@ class BookDetailsPage:
             logger.error(f"Error persisting page progress: {err}")
 
     async def toggle_favorite(self):
-        new_state = not bool(self.book.get('is_favorite', False))
-        success = await book_details_service.toggle_favorite(self.book_id)
-        if success:
-            self.book['is_favorite'] = new_state
-            ui.notify("Saved to Favorites!" if new_state else "Removed from Favorites.", type='positive' if new_state else 'info')
-            self.refresh_ui()
-        else:
-            ui.notify("Failed to update favorite status.", type='warning')
+        user_id = app.storage.user.get('user_id') or app.storage.user.get('token') or 'guest'
+        is_fav = await book_details_service.toggle_favorite(self.book_id, user_id=user_id)
+        if self.book:
+            self.book['is_favorite'] = is_fav
+        ui.notify("Saved to Favorites!" if is_fav else "Removed from Favorites.", type='positive' if is_fav else 'info')
+        self.refresh_ui()
 
     async def generate_ai_synopsis(self, title: str, author_name: str, file_type: str):
         spinner_dialog = ui.dialog()

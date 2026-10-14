@@ -453,12 +453,67 @@ class UserRepository(BaseRepository):
             logger.error(f"Get User Reading List Error: {e}")
             return []
 
-    async def get_user_favorites(self, limit: int = 8) -> List[Dict[str, Any]]:
-        """Returns books marked as favorites."""
+    async def toggle_user_favorite(self, user_id: str, book_id: str) -> bool:
+        """Toggles bookmark favorite status strictly isolated per user in user_favorites."""
+        if self.db is None or not user_id or not book_id:
+            return False
+        clean_user = str(user_id).strip()
+        clean_book = str(book_id).strip()
+        try:
+            existing = await self.db['user_favorites'].find_one({"user_id": clean_user, "book_id": clean_book})
+            if existing:
+                await self.db['user_favorites'].delete_one({"user_id": clean_user, "book_id": clean_book})
+                return False  # Now unfavorited
+            else:
+                await self.db['user_favorites'].insert_one({
+                    "user_id": clean_user,
+                    "book_id": clean_book,
+                    "added_at": time.time()
+                })
+                return True  # Now favorited
+        except Exception as e:
+            logger.error(f"Toggle User Favorite Error: {e}")
+            return False
+
+    async def get_user_favorite_book_ids(self, user_id: str) -> List[str]:
+        """Returns list of book IDs favorited by this user."""
+        if self.db is None or not user_id:
+            return []
+        clean_user = str(user_id).strip()
+        try:
+            cursor = self.db['user_favorites'].find({"user_id": clean_user})
+            fav_docs = await cursor.to_list(length=1000)
+            return [f["book_id"] for f in fav_docs if f.get("book_id")]
+        except Exception as e:
+            logger.error(f"Get Favorite Book IDs Error: {e}")
+            return []
+
+    async def is_book_favorited(self, user_id: str, book_id: str) -> bool:
+        """Checks if a specific book is marked as favorite by this user."""
+        if self.db is None or not user_id or not book_id:
+            return False
+        try:
+            doc = await self.db['user_favorites'].find_one({"user_id": str(user_id).strip(), "book_id": str(book_id).strip()})
+            return bool(doc)
+        except Exception:
+            return False
+
+    async def get_user_favorites(self, user_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Returns books marked as favorites isolated to the specified user account."""
         if self.db is None: return []
         try:
-            cursor = self.db['books'].find({"is_favorite": True}).sort("added_at", -1).limit(limit)
-            return await cursor.to_list(length=limit)
+            if user_id:
+                clean_user = str(user_id).strip()
+                cursor = self.db['user_favorites'].find({"user_id": clean_user}).sort("added_at", -1).limit(limit)
+                fav_docs = await cursor.to_list(length=limit)
+                b_ids = [f['book_id'] for f in fav_docs if f.get('book_id')]
+                if not b_ids:
+                    return []
+                b_cursor = self.db['books'].find({"id": {"$in": b_ids}})
+                return await b_cursor.to_list(length=limit)
+            else:
+                cursor = self.db['books'].find({"is_favorite": True}).sort("added_at", -1).limit(limit)
+                return await cursor.to_list(length=limit)
         except Exception as e:
             logger.error(f"Get Favorites Error: {e}")
             return []

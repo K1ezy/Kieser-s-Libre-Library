@@ -26,6 +26,7 @@ class CreateAnnotationRequest(BaseModel):
 
 
 class UpdateAnnotationRequest(BaseModel):
+    user_id: Optional[str] = Field(None, description="User identifier of the owner")
     color: Optional[str] = Field(None, description="Updated highlight color")
     note: Optional[str] = Field(None, description="Updated student note text")
 
@@ -84,17 +85,18 @@ async def create_annotation(payload: CreateAnnotationRequest):
 
 @annotations_router.put("/{annotation_id}")
 async def update_annotation(annotation_id: str, payload: UpdateAnnotationRequest):
-    """Modifies the color or note of an existing highlight."""
+    """Modifies the color or note of an existing highlight with user ownership validation."""
     clean_id = annotation_id.strip()
+    clean_user = payload.user_id.strip() if payload.user_id else None
     updates = {}
     if payload.color is not None:
         updates["color"] = payload.color
     if payload.note is not None:
         updates["note"] = payload.note
 
-    success = await mongo_db.update_annotation(clean_id, updates)
+    success = await mongo_db.update_annotation(clean_id, updates, user_id=clean_user)
     if not success:
-        raise HTTPException(status_code=404, detail="Annotation not found or could not be updated")
+        raise HTTPException(status_code=404, detail="Annotation not found or update unauthorized")
 
     updated_doc = await mongo_db.get_annotation(clean_id)
     return {
@@ -105,9 +107,13 @@ async def update_annotation(annotation_id: str, payload: UpdateAnnotationRequest
 
 @annotations_router.delete("/{annotation_id}")
 async def delete_annotation(annotation_id: str, user_id: Optional[str] = None):
-    """Deletes an annotation by ID."""
+    """Deletes an annotation by ID with owner validation."""
     clean_id = annotation_id.strip()
-    success = await mongo_db.delete_annotation(clean_id, user_id=user_id)
+    clean_user = user_id.strip() if user_id else None
+    if not clean_user:
+        raise HTTPException(status_code=400, detail="User ID is required for delete authorization.")
+
+    success = await mongo_db.delete_annotation(clean_id, user_id=clean_user)
     if not success:
         raise HTTPException(status_code=404, detail="Annotation not found or delete unauthorized")
 

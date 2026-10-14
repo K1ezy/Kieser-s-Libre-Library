@@ -30,7 +30,7 @@ class ChatInputBar:
         self.continue_btn = None
 
     def build(self) -> ui.column:
-        with ui.column().classes('w-full p-2 sm:p-4 z-30 shrink-0 max-w-4xl mx-auto') as container:
+        with ui.column().classes('w-full p-2 sm:p-4 z-30 shrink-0 max-w-4xl mx-auto pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]') as container:
             with ui.card().classes(
                 'w-full bg-white/95 backdrop-blur-md border border-slate-200 '
                 'p-1.5 sm:p-3 rounded-2xl sm:rounded-3xl shadow-xl gap-1'

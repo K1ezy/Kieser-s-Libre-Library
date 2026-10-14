@@ -233,10 +233,11 @@
 
         // Instant Spine / Lazy CFI Restoration (Non-blocking)
         book.ready.then(() => {
-            if (isRestoring && !initialCfi && initialPage > 1 && totalPages > 1 && book.spine && book.spine.length) {
+            const spineLen = (book.spine && book.spine.length) || (book.spine && book.spine.spineItems && book.spine.spineItems.length) || (book.spine && book.spine.items && book.spine.items.length) || 0;
+            if (isRestoring && !initialCfi && initialPage > 1 && totalPages > 1 && spineLen > 0) {
                 const fraction = Math.max(0, Math.min(1, (initialPage - 1) / (totalPages - 1)));
-                const spineIdx = Math.min(book.spine.length - 1, Math.floor(fraction * book.spine.length));
-                const item = book.spine.get(spineIdx);
+                const spineIdx = Math.min(spineLen - 1, Math.floor(fraction * spineLen));
+                const item = book.spine.get ? book.spine.get(spineIdx) : (book.spine.spineItems ? book.spine.spineItems[spineIdx] : null);
                 if (item && item.href) {
                     rendition.display(item.href).catch(() => {});
                 }
@@ -261,12 +262,17 @@
             const curCfi = location.start.cfi;
 
             let pct = 0;
-            if (book.locations && book.locations.length()) {
+            const spineLen = (book.spine && book.spine.length) || (book.spine && book.spine.spineItems && book.spine.spineItems.length) || (book.spine && book.spine.items && book.spine.items.length) || 0;
+            if (book.locations && typeof book.locations.length === 'function' && book.locations.length() > 0) {
                 pct = book.locations.percentageFromCfi(curCfi);
-            } else if (book.spine && book.spine.length) {
-                pct = (location.start.index || 0) / Math.max(1, book.spine.length);
+            } else if (spineLen > 0) {
+                pct = (location.start.index || 0) / Math.max(1, spineLen);
             }
-            pct = Math.max(0, Math.min(1, pct));
+            if (isNaN(pct) || pct === null || pct === undefined) {
+                pct = 0;
+            } else {
+                pct = Math.max(0, Math.min(1, pct));
+            }
 
             const curPage = Math.max(1, Math.min(totalPages, Math.round(pct * (totalPages - 1)) + 1));
             const pctInt = Math.round(pct * 100);

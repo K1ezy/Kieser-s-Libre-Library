@@ -2,30 +2,19 @@ name: CI Test Suite
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main" ]
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-permissions:
-  contents: read
 
 jobs:
   test:
-    name: Test (Python ${{ matrix.python-version }} on ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ['3.11', '3.12']
-
-    env:
-      PYTHONPATH: .
+        python-version: ["3.11", "3.12"]
 
     steps:
       - name: Checkout Repository
@@ -37,15 +26,20 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: 'pip'
 
-      - name: Install Dependencies
+      - name: Install CI Dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          if [ -f requirements-ci.txt ]; then pip install -r requirements-ci.txt; else pip install -r requirements.txt; fi
+        shell: bash
 
-      - name: Verify Python Compilation
+      - name: Run Ruff Static Syntax & Import Check
         run: |
-          python -m compileall core ui components tools tests
+          ruff check . --select=E9,F63,F7,F82
 
-      - name: Run Automated Test Suite
+      - name: Validate Python Bytecode Compilation
+        run: |
+          python -m compileall -q .
+
+      - name: Execute Unit Test Suite
         run: |
           python -m unittest discover -s tests -p "test_*.py" -v

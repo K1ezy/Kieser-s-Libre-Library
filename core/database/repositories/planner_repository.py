@@ -53,8 +53,8 @@ class PlannerRepository(BaseRepository):
             cursor = self.db['tasks'].find(query).sort("created_at", -1)
             tasks = await cursor.to_list(length=300)
             if not tasks:
-                # Check legacy planner collection for backward compatibility
-                cursor2 = self.db['planner'].find({}).sort("created_at", -1)
+                # Check legacy planner collection for backward compatibility using same user filter
+                cursor2 = self.db['planner'].find(query).sort("created_at", -1)
                 tasks = await cursor2.to_list(length=300)
             return tasks
         except Exception as e:

@@ -115,13 +115,13 @@
         },
 
         async updateAnnotation(annId, updates) {
-            const { showToast, dismissAllPopovers, getRendition } = this.context;
+            const { userId, showToast, dismissAllPopovers, getRendition } = this.context;
             if (!annId) return;
             try {
                 const res = await fetch(`/api/annotations/${encodeURIComponent(annId)}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(updates)
+                    body: JSON.stringify({ ...updates, user_id: userId })
                 });
                 const data = await res.json();
                 if (res.ok && data.annotation) {

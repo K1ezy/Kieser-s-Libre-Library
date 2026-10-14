@@ -13,7 +13,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
     is_librarian = user_role in ['admin', 'librarian']
     is_faculty = user_role in ['admin', 'librarian', 'faculty']
 
-    with ui.left_drawer(value=False, fixed=True).props('bordered overlay show-if-above').classes(
+    with ui.left_drawer(value=False, fixed=True).props('bordered overlay').classes(
         'bg-white border-r border-slate-200 flex flex-col w-72 max-w-[85vw] shadow-md'
     ) as drawer:
 
@@ -23,7 +23,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
                 with ui.element('div').classes('p-2 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 shadow-sm'):
                     ui.icon('local_library', size='sm')
                 ui.label('Libre Library').classes('text-xl font-black text-slate-900 tracking-tight')
-            ui.button(icon='close', on_click=drawer.hide).props('flat round dense color=grey-7 size=md')
+            ui.button(icon='close', on_click=lambda: (drawer.set_visibility(False), drawer.hide())).props('flat round dense color=grey-7 size=md')
 
         # 2. DYNAMIC NAVIGATION LINKS (Role-Specific)
         with ui.column().classes('w-full p-4 gap-1 flex-grow overflow-y-auto no-scrollbar'):
@@ -39,6 +39,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
                     color_classes = 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-medium'
 
                 def on_navigate():
+                    drawer.set_visibility(False)
                     drawer.hide()
                     ui.navigate.to(target)
 
@@ -70,13 +71,13 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
             if user_role == 'student':
                 # Student View: Focused on Personal Access & Pass
                 ui.label('CAMPUS ACCESS').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-4 mb-1 tracking-widest')
-                nav_link('My Digital Pass', 'badge', '/attendance')
+                nav_link('Library Pass & QR', 'badge', '/attendance')
 
             elif user_role == 'faculty':
                 # Faculty View: Curricular Requests & Program Metrics
                 ui.label('FACULTY SERVICES').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-4 mb-1 tracking-widest')
                 nav_link('Book Requisitions', 'post_add', '/requisitions')
-                nav_link('My Digital Pass', 'badge', '/attendance')
+                nav_link('Library Pass & QR', 'badge', '/attendance')
                 nav_link('Program Analytics', 'insights', '/analytics')
 
             elif is_librarian:
@@ -109,7 +110,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
         badge_cls, role_icon = role_styles.get(user_role, ('bg-indigo-50 text-indigo-700 border-indigo-200', 'person'))
 
         with ui.row().classes('w-full p-3.5 border-t border-slate-200 bg-slate-50 flex-none items-center justify-between gap-2'):
-            with ui.row().classes('items-center gap-2.5 flex-1 min-w-0 cursor-pointer').on('click', lambda: (drawer.hide(), ui.navigate.to('/profile'))):
+            with ui.row().classes('items-center gap-2.5 flex-1 min-w-0 cursor-pointer').on('click', lambda: (drawer.set_visibility(False), drawer.hide(), ui.navigate.to('/profile'))):
                 with ui.element('div').classes(f'w-8 h-8 rounded-full flex items-center justify-center border {badge_cls} shadow-xs shrink-0'):
                     ui.icon(role_icon, size='16px')
                 with ui.column().classes('gap-0 flex-1 min-w-0'):

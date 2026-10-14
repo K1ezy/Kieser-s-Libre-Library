@@ -1,5 +1,6 @@
 import time
 import asyncio
+import re
 from pathlib import Path
 from typing import Tuple, Optional, Any
 import logging
@@ -51,7 +52,8 @@ def save_user_avatar(user_id: str, file_name: str, file_bytes: bytes, mime_type:
 
     try:
         clean_ext = ext if ext in ('.jpg', '.png', '.webp') else '.png'
-        filename = f"{user_id}_avatar{clean_ext}"
+        safe_uid = re.sub(r'[^a-zA-Z0-9_\-]', '', str(user_id)) or "anonymous"
+        filename = f"{safe_uid}_avatar{clean_ext}"
         dest_path = AVATAR_DIR / filename
         dest_path.write_bytes(file_bytes)
         
@@ -74,7 +76,8 @@ def save_user_cover(user_id: str, file_name: str, file_bytes: bytes, mime_type: 
 
     try:
         clean_ext = ext if ext in ('.jpg', '.png', '.webp') else '.jpg'
-        filename = f"{user_id}_cover{clean_ext}"
+        safe_uid = re.sub(r'[^a-zA-Z0-9_\-]', '', str(user_id)) or "anonymous"
+        filename = f"{safe_uid}_cover{clean_ext}"
         dest_path = COVER_DIR / filename
         dest_path.write_bytes(file_bytes)
         
@@ -97,6 +100,11 @@ def save_user_media(user_id: str, file_bytes: bytes, file_name: str, media_type:
     else:
         success, res = save_user_cover(user_id, file_name, file_bytes)
         return (True, "Cover saved successfully", res) if success else (False, res, None)
+
+
+async def async_save_user_media(user_id: str, file_bytes: bytes, file_name: str, media_type: str = "avatar") -> Tuple[bool, str, Optional[str]]:
+    """Non-blocking async variant of save_user_media executing disk I/O in thread pool."""
+    return await asyncio.to_thread(save_user_media, user_id, file_bytes, file_name, media_type)
 
 
 async def extract_upload_file(e: Any) -> Tuple[str, bytes]:

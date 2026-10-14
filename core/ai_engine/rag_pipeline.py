@@ -1,8 +1,10 @@
 import logging
 import uuid
 import os
+import re
 import time
 import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Tuple
 from core.config import settings as app_settings
@@ -10,11 +12,17 @@ from core.config import settings as app_settings
 # Setup Logger
 logger = logging.getLogger("TARS_ARCHIVE")
 
+CACHE_MAX_SIZE = 256
+CACHE_TTL_SECONDS = 180.0
+
+
 class TarsArchive:
     """
     Persistent Vector Knowledge Base using ChromaDB and SentenceTransformers.
-    Optimized with lazy initialization and thread safety.
+    Optimized with lazy initialization, thread safety, O(1) OrderedDict LRU caching,
+    and hybrid lexical + dense vector ranking.
     """
+
     def __init__(self):
         self.db_path = app_settings.CHROMA_PATH
         self.local_model_path = app_settings.BASE_DIR / "models" / "all-MiniLM-L6-v2"
@@ -23,9 +31,9 @@ class TarsArchive:
         self.embedding_fn = None
         self._init_lock = threading.Lock()
         self._is_initialized = False
-        self._query_cache: Dict[tuple, Any] = {}
+        self._query_cache: "OrderedDict[tuple, Tuple[float, List[dict]]]" = OrderedDict()
         self._cache_lock = threading.Lock()
-        logger.info("TARS Archive registered (Lazy Loading Mode).")
+        logger.info("TARS Archive registered (Lazy Loading Mode with LRU Cache).")
 
     def _ensure_local_model_links(self):
         """Ensures local offline model can be discovered by HuggingFace / ChromaDB under standard aliases."""
@@ -76,7 +84,6 @@ class TarsArchive:
 
                 self.db_path.mkdir(parents=True, exist_ok=True)
 
-                # Offline Embedding Model check & directory aliases
                 if self.local_model_path.exists():
                     logger.info(f"OFFLINE MODE: Using local embedding model at {self.local_model_path}")
                     os.environ["TRANSFORMERS_OFFLINE"] = "1"
@@ -95,11 +102,9 @@ class TarsArchive:
 
                 self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
                     model_name=model_target,
-                    device="cpu"  # Keep CPU to save VRAM for the LLM
+                    device="cpu"
                 )
 
-                # Pre-register loaded model across all ChromaDB embedding function cache keys
-                # This completely prevents Chroma from attempting remote HuggingFace network requests
                 if hasattr(self.embedding_fn, "_model") and self.embedding_fn._model is not None:
                     cached_m = self.embedding_fn._model
                     embedding_functions.SentenceTransformerEmbeddingFunction.models["all-MiniLM-L6-v2"] = cached_m
@@ -136,6 +141,28 @@ class TarsArchive:
         with self._cache_lock:
             self._query_cache.clear()
 
+    def _get_cached(self, cache_key: tuple, now: float) -> Optional[List[dict]]:
+        """O(1) LRU cache read with TTL validation."""
+        with self._cache_lock:
+            entry = self._query_cache.get(cache_key)
+            if entry is None:
+                return None
+            ts, hits = entry
+            if now - ts < CACHE_TTL_SECONDS:
+                self._query_cache.move_to_end(cache_key)
+                return [dict(h) for h in hits]
+            del self._query_cache[cache_key]
+            return None
+
+    def _set_cached(self, cache_key: tuple, now: float, output: List[dict]):
+        """O(1) LRU cache write that evicts only the oldest entry when full."""
+        with self._cache_lock:
+            if cache_key in self._query_cache:
+                self._query_cache.move_to_end(cache_key)
+            self._query_cache[cache_key] = (now, output)
+            while len(self._query_cache) > CACHE_MAX_SIZE:
+                self._query_cache.popitem(last=False)
+
     def _clean_text(self, text: str) -> str:
         """Sanitizes text to remove Null bytes and encoding errors."""
         if not text:
@@ -157,14 +184,24 @@ class TarsArchive:
             )
             return text_splitter.split_text(text)
         except Exception:
-            # Fallback simple chunking if text splitter is unavailable
             chunks = []
             start = 0
+            step = max(1, chunk_size - overlap)
             while start < len(text):
                 end = min(start + chunk_size, len(text))
                 chunks.append(text[start:end])
-                start += chunk_size - overlap
+                start += step
             return chunks
+
+    @staticmethod
+    def _compute_lexical_boost(query: str, passage: str) -> float:
+        """Computes a lightweight lexical term-overlap bonus to complement dense cosine distance."""
+        q_terms = {t for t in re.findall(r"\w{3,}", query.lower())}
+        if not q_terms:
+            return 0.0
+        p_lower = passage.lower()
+        matched = sum(1 for t in q_terms if t in p_lower)
+        return (matched / len(q_terms)) * 0.20
 
     def ingest_text(self, text: str, filename: str, book_id: Optional[str] = None, title: Optional[str] = None) -> int:
         """Directly chunks and ingests extracted clean text into ChromaDB with metadata."""
@@ -175,7 +212,6 @@ class TarsArchive:
         if not clean or len(clean) < 20:
             return 0
 
-        # Check if already indexed
         try:
             where_check = {"book_id": book_id} if book_id else {"source": filename}
             existing = self.collection.get(where=where_check)
@@ -202,7 +238,6 @@ class TarsArchive:
             for i in range(len(chunks))
         ]
 
-        # Batch insert into ChromaDB (max 200 chunks per batch to prevent memory spikes)
         batch_size = 200
         persisted = 0
         for i in range(0, len(chunks), batch_size):
@@ -245,7 +280,6 @@ class TarsArchive:
             logger.warning(f"Skipping '{filename}': File not found or empty.")
             return 0
 
-        # Check if already indexed
         try:
             where_check = {"book_id": book_id} if book_id else {"source": filename}
             existing = self.collection.get(where=where_check)
@@ -258,7 +292,6 @@ class TarsArchive:
         from core.utils.text_extractor import extract_document_structure
         sections = extract_document_structure(str(file_p))
         if not sections:
-            # Fallback to direct text ingestion
             from core.utils.text_extractor import extract_text_from_file
             raw_text = extract_text_from_file(str(file_p))
             return self.ingest_text(raw_text, filename, book_id=book_id, title=title)
@@ -293,7 +326,6 @@ class TarsArchive:
         if not all_chunks:
             return 0
 
-        # Batch insert into ChromaDB
         batch_size = 200
         persisted = 0
         for i in range(0, len(all_chunks), batch_size):
@@ -323,6 +355,11 @@ class TarsArchive:
         logger.info(f"Persisted {persisted} structured page-aware chunks for '{filename}'.")
         return persisted
 
+    def reindex_document(self, file_path: str, filename: str, book_id: str, title: Optional[str] = None) -> int:
+        """Purges any partial/stale vectors for a book and re-runs structured ingestion."""
+        self.delete_source(filename, book_id=book_id)
+        return self.ingest_document(file_path, filename, book_id=book_id, title=title)
+
     def ingest_file(self, file_path: str, filename: str, book_id: Optional[str] = None) -> int:
         """Reads a file, chunks it with page metadata, and stores it in ChromaDB."""
         return self.ingest_document(file_path, filename, book_id=book_id)
@@ -337,19 +374,24 @@ class TarsArchive:
         max_distance: Optional[float] = 1.25
     ) -> List[dict]:
         """
-        Queries ChromaDB vector database with source metadata, page numbers, and similarity distances.
+        Queries ChromaDB vector database with source metadata, page numbers, and hybrid lexical-vector re-ranking.
         Supports filtering strictly by book_id or source filename without leaking cross-book data.
         """
         if not self.ensure_initialized() or not self.collection:
             return []
 
-        cache_key = (str(query).strip().lower(), top_k, str(filter_source or ""), str(book_id or ""), fallback_to_library, max_distance)
+        cache_key = (
+            str(query).strip().lower(),
+            top_k,
+            str(filter_source or ""),
+            str(book_id or ""),
+            fallback_to_library,
+            max_distance
+        )
         now = time.time()
-        with self._cache_lock:
-            if cache_key in self._query_cache:
-                ts, hits = self._query_cache[cache_key]
-                if now - ts < 120.0:
-                    return [dict(h) for h in hits]
+        cached_hits = self._get_cached(cache_key, now)
+        if cached_hits is not None:
+            return cached_hits
 
         try:
             if self.collection.count() == 0:
@@ -357,6 +399,7 @@ class TarsArchive:
 
             results = None
             has_scoped_hits = False
+            candidate_k = max(top_k * 2, 6)
             q_emb = self.embedding_fn([query]) if self.embedding_fn else None
             q_kwargs = {"query_embeddings": q_emb} if q_emb is not None else {"query_texts": [query]}
 
@@ -364,7 +407,7 @@ class TarsArchive:
             if book_id:
                 try:
                     res = self.collection.query(
-                        n_results=top_k,
+                        n_results=candidate_k,
                         where={"book_id": str(book_id)},
                         **q_kwargs
                     )
@@ -384,7 +427,7 @@ class TarsArchive:
                 for cand in candidate_sources:
                     try:
                         res = self.collection.query(
-                            n_results=top_k,
+                            n_results=candidate_k,
                             where={"source": cand},
                             **q_kwargs
                         )
@@ -395,49 +438,46 @@ class TarsArchive:
                     except Exception as query_err:
                         logger.debug(f"Scoped source query error: {query_err}")
 
-            # Security/Accuracy: Prevent cross-document contamination
-            # If a specific document was targeted and no hits were found, do NOT silently fall back to other books
             is_scoped = bool(book_id or filter_source)
             if is_scoped and not has_scoped_hits and not fallback_to_library:
-                logger.debug(f"Scoped search for book_id={book_id}, source={filter_source} yielded 0 hits. Suppressing general fallback.")
+                logger.debug(f"Scoped search for book_id={book_id}, source={filter_source} yielded 0 hits. Suppressing fallback.")
                 return []
 
             if not has_scoped_hits:
-                # Query without where clause (general library search across all documents)
                 results = self.collection.query(
-                    n_results=top_k,
+                    n_results=candidate_k,
                     **q_kwargs
                 )
 
             if not results or not results.get('documents') or len(results['documents']) == 0 or len(results['documents'][0]) == 0:
                 return []
 
-            output = []
+            candidates = []
             docs = results['documents'][0]
             metas = results['metadatas'][0] if results.get('metadatas') and len(results['metadatas']) > 0 else [{}] * len(docs)
             dists = results['distances'][0] if results.get('distances') and len(results['distances']) > 0 else [0.0] * len(docs)
 
             for doc, meta, dist in zip(docs, metas, dists):
-                # Filter out irrelevant noise if distance exceeds threshold
-                if max_distance is not None and dist is not None and dist > max_distance:
+                raw_dist = float(dist) if dist is not None else 0.0
+                lexical_bonus = self._compute_lexical_boost(query, doc)
+                effective_dist = max(0.0, raw_dist - lexical_bonus)
+                if max_distance is not None and effective_dist > max_distance:
                     continue
                 m = meta if isinstance(meta, dict) else {}
                 cleaned_doc = doc[:700].strip() if len(doc) > 700 else doc.strip()
-                output.append({
+                candidates.append({
                     "text": cleaned_doc,
                     "source": m.get('source', 'Library Document'),
                     "book_id": m.get('book_id', ''),
                     "title": m.get('title', m.get('source', 'Document')),
                     "page": m.get('page'),
                     "section_type": m.get('section_type', 'page'),
-                    "distance": dist
+                    "distance": round(effective_dist, 4)
                 })
 
-            with self._cache_lock:
-                if len(self._query_cache) >= 200:
-                    self._query_cache.clear()
-                self._query_cache[cache_key] = (now, output)
-
+            candidates.sort(key=lambda item: item["distance"])
+            output = candidates[:top_k]
+            self._set_cached(cache_key, now, output)
             return output
         except Exception as e:
             logger.error(f"Search Query Failed: {e}")
@@ -468,16 +508,18 @@ class TarsArchive:
             formatted.append(f"[Source: {source}{page_info}]\n{h.get('text', '')}")
         return formatted
 
-
     def get_collection_stats(self) -> dict:
         """Returns statistics about ChromaDB knowledge store."""
         if not self.ensure_initialized() or not self.collection:
             return {"total_chunks": 0, "status": "Offline"}
         try:
             cnt = self.collection.count()
+            with self._cache_lock:
+                cache_entries = len(self._query_cache)
             return {
                 "total_chunks": cnt,
                 "status": "Online",
+                "cache_entries": cache_entries,
                 "storage_path": str(self.db_path)
             }
         except Exception as e:
@@ -522,26 +564,24 @@ class TarsArchive:
 
         try:
             target_id = book_id or source_name
-            # Atomic native ChromaDB deletion by book_id
             try:
                 coll.delete(where={"book_id": str(target_id)})
             except Exception as e_bid:
                 logger.debug(f"Direct book_id deletion notice: {e_bid}")
 
-            # Atomic native ChromaDB deletion by source filename
             if source_name and source_name != target_id:
                 try:
                     coll.delete(where={"source": str(source_name)})
                 except Exception as e_src:
                     logger.debug(f"Direct source deletion notice: {e_src}")
 
-            # Always clear query cache to prevent returning deleted results
             self._clear_cache()
             logger.info(f"Purged vector embeddings and invalidated cache for: {source_name} / {book_id}")
             return True
         except Exception as e:
             logger.error(f"Failed to delete source '{source_name}': {e}")
             return False
+
 
 # Architectural Aliases & Singleton Instance
 RAGPipeline = TarsArchive

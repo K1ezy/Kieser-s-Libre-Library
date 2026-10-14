@@ -105,7 +105,7 @@ class BookCollection:
             tasks = [mongo_db.get_all_books(limit=2000, sort_by='newest', projection=catalog_proj)]
             if uid:
                 tasks.append(mongo_db.get_reading_history(uid, limit=1000))
-                tasks.append(mongo_db.get_favorite_books(limit=1000))
+                tasks.append(mongo_db.get_user_favorite_book_ids(uid))
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             all_books = results[0] if isinstance(results[0], list) else []
@@ -113,9 +113,9 @@ class BookCollection:
 
             if uid and len(results) >= 3:
                 prog_list = results[1] if isinstance(results[1], list) else []
-                fav_docs = results[2] if isinstance(results[2], list) else []
+                fav_ids = results[2] if isinstance(results[2], list) else []
                 self.user_progress = {p.get('book_id'): p for p in prog_list if p.get('book_id')}
-                self.user_favorites = {b.get('id') for b in fav_docs if b.get('id')}
+                self.user_favorites = set(fav_ids)
             else:
                 self.user_progress = {}
                 self.user_favorites = set()
@@ -164,7 +164,7 @@ class BookCollection:
         self.status_tab_container.clear()
 
         # Count per category
-        fav_count = sum(1 for b in self.books if b.get('is_favorite') or b.get('id') in self.user_favorites)
+        fav_count = sum(1 for b in self.books if b.get('id') in self.user_favorites)
         reading_count = sum(1 for b in self.books if self.user_progress.get(b.get('id'), {}).get('status') in ('reading', 'currently_reading'))
         want_count = sum(1 for b in self.books if self.user_progress.get(b.get('id'), {}).get('status') in ('want_to_read', 'to_read'))
         done_count = sum(1 for b in self.books if self.user_progress.get(b.get('id'), {}).get('status') in ('completed', 'done'))
@@ -181,20 +181,20 @@ class BookCollection:
             for tab_id, label, count, color_hint in tabs:
                 is_active = self.state['status_tab'] == tab_id
                 if is_active:
-                    pill_classes = 'bg-indigo-600 text-white font-bold shadow-sm'
-                    badge_classes = 'bg-white/20 text-white'
+                    pill_classes = 'bg-indigo-600 text-white font-bold shadow-md border border-indigo-500'
+                    badge_classes = 'bg-white/25 text-white'
                 else:
-                    pill_classes = 'bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium'
-                    badge_classes = 'bg-slate-200 text-slate-700'
+                    pill_classes = 'bg-slate-100 text-slate-700 hover:bg-slate-200 font-semibold border border-slate-200/80 shadow-xs'
+                    badge_classes = 'bg-slate-200/90 text-slate-700'
 
                 def make_click(tid=tab_id):
                     self.state['status_tab'] = tid
                     self.render_status_tabs()
                     self.apply_filters_and_sort()
 
-                with ui.button(on_click=make_click).props('unelevated rounded-full dense size=sm').classes(f'shrink-0 px-3 py-1 text-xs transition-all {pill_classes}'):
+                with ui.button(on_click=make_click).props('unelevated rounded-xl dense').classes(f'shrink-0 px-4 py-2 text-sm sm:text-base transition-all gap-2 cursor-pointer {pill_classes}'):
                     ui.label(label)
-                    with ui.element('span').classes(f'ml-1.5 px-1.5 py-0.2 rounded-full text-[10px] {badge_classes}'):
+                    with ui.element('span').classes(f'ml-1.5 px-2.5 py-0.5 rounded-full text-xs sm:text-sm font-bold {badge_classes}'):
                         ui.label(str(count))
 
     def apply_filters_and_sort(self):
@@ -204,7 +204,7 @@ class BookCollection:
         # 1. Reading Status Filter
         st = self.state['status_tab']
         if st == 'favorites':
-            temp_list = [b for b in temp_list if b.get('is_favorite') or b.get('id') in self.user_favorites]
+            temp_list = [b for b in temp_list if b.get('id') in self.user_favorites]
         elif st == 'reading':
             temp_list = [b for b in temp_list if self.user_progress.get(b.get('id'), {}).get('status') in ('reading', 'currently_reading')]
         elif st == 'want_to_read':
@@ -407,7 +407,7 @@ class BookCollection:
                         self.reset_filter_btn.set_visibility(False)
 
                 # 2. Reading Status Tabs
-                self.status_tab_container = ui.row().classes('w-full gap-1.5 sm:gap-2 items-center flex-nowrap overflow-x-auto no-scrollbar touch-pan-x py-1')
+                self.status_tab_container = ui.row().classes('w-full flex flex-wrap gap-2.5 items-center py-1.5')
 
                 # 3. Filter Controls: 4 Columns with Clean Micro-Headers (eliminates duplicate label rendering)
                 with ui.grid().classes('w-full grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pt-3 border-t border-slate-100'):

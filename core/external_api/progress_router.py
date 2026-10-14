@@ -78,12 +78,7 @@ async def sync_reading_progress(payload: ProgressSyncRequest):
     )
 
     if success:
-        try:
-            await mongo_db.update_book_reading_status(book_id, status)
-        except Exception:
-            pass
-
-        # Also update user global appearance settings if preferences were provided
+        # Update user global appearance settings if preferences were provided
         if payload.theme or payload.font_size or payload.font_family or payload.line_height:
             try:
                 pref_updates = {}

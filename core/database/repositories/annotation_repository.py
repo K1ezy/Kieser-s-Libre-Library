@@ -92,8 +92,8 @@ class AnnotationRepository(BaseRepository):
             logger.error(f"Get Annotation Error: {e}")
             return None
 
-    async def update_annotation(self, annotation_id: str, updates: Dict[str, Any]) -> bool:
-        """Modifies note commentary or color for an existing annotation."""
+    async def update_annotation(self, annotation_id: str, updates: Dict[str, Any], user_id: Optional[str] = None) -> bool:
+        """Modifies note commentary or color for an existing annotation with ownership validation."""
         if self.db is None or not annotation_id:
             return False
         clean_id = str(annotation_id).strip()
@@ -107,9 +107,12 @@ class AnnotationRepository(BaseRepository):
             return True
 
         allowed_updates["updated_at"] = time.time()
+        query = {"id": clean_id}
+        if user_id:
+            query["user_id"] = user_id.strip()
         try:
             res = await self.db['annotations'].update_one(
-                {"id": clean_id},
+                query,
                 {"$set": allowed_updates}
             )
             return res.acknowledged and res.matched_count > 0

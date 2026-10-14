@@ -70,8 +70,13 @@ class TestBookDetails(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(page.book['reading_status'], 'want_to_read')
         self.assertEqual(page.reading_progress['status'], 'want_to_read')
         self.assertEqual(page.reading_progress['current_page'], 0)
-        self.assertEqual(page.reading_progress['progress_percent'], 0.0)
-        mock_db.update_book_reading_status.assert_called_with('book-abc', 'want_to_read')
+        mock_db.progress.save_reading_progress.assert_called_with(
+            user_id='test-user-123',
+            book_id='book-abc',
+            current_page=0,
+            total_pages=200,
+            status='want_to_read'
+        )
         page.render_reading_card.assert_called()
 
         # 2. Currently Reading

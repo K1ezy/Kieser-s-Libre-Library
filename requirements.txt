@@ -1,9 +1,4 @@
-# ==============================================================================
-# Libre-Library Dependencies
-# AI-Powered Personal Library & Multi-Modal Research Assistant
-# ==============================================================================
-
-# --- Web & User Interface Framework ---
+# --- Web Server & UI Framework ---
 nicegui>=3.4.0,<4.0.0
 fastapi>=0.115.0,<1.0.0
 uvicorn>=0.34.0,<1.0.0
@@ -16,14 +11,16 @@ aiofiles>=24.1.0,<26.0.0
 motor>=3.6.0,<4.0.0
 pymongo>=4.10.0,<5.0.0
 
-# --- Vector Database & AI Inference ---
+# --- Vector Database, Chunking & AI Inference ---
 chromadb>=1.0.0,<2.0.0
 sentence-transformers>=5.0.0,<6.0.0
+langchain-text-splitters>=0.3.0,<1.0.0
 llama_cpp_python>=0.3.0,<1.0.0
 torch>=2.5.0,<3.0.0
 
-# --- Document Parsing & Text Extraction ---
+# --- Document Parsing, Cover Rendering & Text Extraction ---
 pypdf>=5.0.0,<7.0.0
+PyMuPDF>=1.24.0,<2.0.0
 python-docx>=1.1.0,<2.0.0
 python-pptx>=0.6.20,<1.0.0
 EbookLib>=0.18,<1.0.0

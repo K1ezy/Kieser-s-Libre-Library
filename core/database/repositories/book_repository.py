@@ -233,6 +233,9 @@ class BookRepository(BaseRepository):
             logger.error(f"Update Book Metadata Error: {e}")
             return False
 
+    update_book = update_book_metadata
+
+
     @staticmethod
     def _cleanup_disk_and_vectors(book_dir: Path, books_root: Path, book_id: str, local_path: Optional[str]):
         """Helper to run synchronous disk cleanup and vector purge in a worker thread without blocking the event loop."""
@@ -281,6 +284,9 @@ class BookRepository(BaseRepository):
                 self.db['tasks'].delete_many({"linked_book_id": book_id}),
                 self.db['planner'].delete_many({"linked_book_id": book_id}),
                 self.db['reading_progress'].delete_many({"book_id": book_id}),
+                self.db['annotations'].delete_many({"book_id": book_id}),
+                self.db['user_favorites'].delete_many({"book_id": book_id}),
+                self.db['faculty_requisitions'].update_many({"catalog_book_id": book_id}, {"$set": {"catalog_book_id": None}}),
                 return_exceptions=True
             )
 
@@ -343,10 +349,24 @@ class BookRepository(BaseRepository):
             logger.error(f"Update Shelves Error: {e}")
             return False
 
-    async def toggle_book_favorite(self, book_id: str) -> bool:
-        """Toggles favorite status on a book."""
+    async def toggle_book_favorite(self, book_id: str, user_id: Optional[str] = None) -> bool:
+        """Toggles favorite status on a book. Scopes to user_favorites if user_id is provided."""
         if self.db is None or not book_id: return False
         try:
+            if user_id:
+                clean_user = str(user_id).strip()
+                clean_book = str(book_id).strip()
+                existing = await self.db['user_favorites'].find_one({"user_id": clean_user, "book_id": clean_book})
+                if existing:
+                    await self.db['user_favorites'].delete_one({"user_id": clean_user, "book_id": clean_book})
+                    return False
+                else:
+                    await self.db['user_favorites'].insert_one({
+                        "user_id": clean_user,
+                        "book_id": clean_book,
+                        "added_at": time.time()
+                    })
+                    return True
             book = await self.get_book_by_id(book_id)
             if not book: return False
             curr = book.get("is_favorite", False)
