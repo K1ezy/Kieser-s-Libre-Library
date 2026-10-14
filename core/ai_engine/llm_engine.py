@@ -155,20 +155,24 @@ class TarsEngine:
                 )
                 gpu_layers = settings.GPU_LAYERS
                 cpu_ct = os.cpu_count() or 6
-                threads = min(8, max(4, cpu_ct - 2 if cpu_ct > 6 else cpu_ct))
+                # Optimal decoding threads (prevents CPU core oversubscription during token generation)
+                gen_threads = min(8, max(4, cpu_ct - 2 if cpu_ct > 6 else cpu_ct))
+                # Maximum batch evaluation threads for prompt prefill acceleration
+                batch_threads = min(10, max(4, cpu_ct))
 
                 try:
                     self.llm = Llama(
                         model_path=str(self.model_path),
                         n_ctx=self.context_window,
                         n_gpu_layers=gpu_layers,
-                        n_threads=threads,
-                        n_threads_batch=threads,
+                        n_threads=gen_threads,
+                        n_threads_batch=batch_threads,
                         flash_attn=True,
                         use_mmap=True,
                         use_mlock=False,
                         verbose=False,
-                        n_batch=512,
+                        n_batch=1024,
+                        n_ubatch=512,
                         chat_format="llama-3"
                     )
                 except Exception as fa_err:
@@ -177,17 +181,21 @@ class TarsEngine:
                         model_path=str(self.model_path),
                         n_ctx=self.context_window,
                         n_gpu_layers=gpu_layers,
-                        n_threads=threads,
-                        n_threads_batch=threads,
+                        n_threads=gen_threads,
+                        n_threads_batch=batch_threads,
                         use_mmap=True,
                         use_mlock=False,
                         verbose=False,
-                        n_batch=512,
+                        n_batch=1024,
+                        n_ubatch=512,
                         chat_format="llama-3"
                     )
 
                 self._is_loaded = True
-                logger.info(f"Local TARS Engine Initialization: COMPLETE (Threads: {threads}, CTX: {self.context_window})")
+                logger.info(
+                    f"Local TARS Engine Initialization: COMPLETE "
+                    f"(Gen Threads: {gen_threads}, Batch Threads: {batch_threads}, Batch: 1024, CTX: {self.context_window})"
+                )
                 return True
             except Exception as e:
                 logger.critical(f"TARS Engine FAILED to load model: {e}", exc_info=True)

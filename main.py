@@ -231,15 +231,23 @@ async def admin_route():
     FloatingChat()
 
 # --- STARTUP & SHUTDOWN LIFECYCLE ---
-_chroma_warmup_task = None
+_ai_warmup_task = None
+
+async def _background_ai_warmup():
+    """Non-blocking background worker to prewarm vector embedding and LLM models for zero-lag first response."""
+    try:
+        await asyncio.to_thread(tars_archive.ensure_initialized)
+        await asyncio.to_thread(tars_engine.ensure_loaded)
+    except Exception:
+        pass
 
 @app.on_startup
 async def startup():
-    global _chroma_warmup_task
+    global _ai_warmup_task
     await mongo_db.initialize()
     await tars_engine.ensure_db_settings_loaded()
-    # Non-blocking background warm-up of ChromaDB client for instant vector deletions
-    _chroma_warmup_task = asyncio.create_task(asyncio.to_thread(tars_archive._get_raw_collection))
+    # Non-blocking background warm-up of ChromaDB and LLM for zero cold-start delay
+    _ai_warmup_task = asyncio.create_task(_background_ai_warmup())
 
 @app.on_shutdown
 async def shutdown():

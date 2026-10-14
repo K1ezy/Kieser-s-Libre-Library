@@ -392,7 +392,7 @@ class ChatInterface:
                     first_token = False
                 response_buffer += token
                 now = time.time()
-                if now - last_render_time >= 0.035 or token in ('\n', '. ', '? ', '! '):
+                if now - last_render_time >= 0.065 or token in ('\n', '. ', '? ', '! '):
                     message_content.content = response_buffer
                     last_render_time = now
 
@@ -444,9 +444,9 @@ class ChatInterface:
         self._set_generating_state(True)
         self.abort_trigger = False
 
-        # 1. User Message
+        # 1. User Message (render immediately; log concurrently to DB without stalling RAG)
         self.render_user_message(text)
-        await mongo_db.add_message_to_session(self.session_id, "user", text)
+        asyncio.create_task(mongo_db.add_message_to_session(self.session_id, "user", text))
         self.scroll_to_bottom()
 
         # 2. Assistant Placeholder Card
@@ -466,7 +466,7 @@ class ChatInterface:
             rag_text, citations = "", []
             if status:
                 status.text = "Responding..."
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
 
         # 4. Resolve focus metadata
         focus_meta = None
@@ -508,7 +508,7 @@ class ChatInterface:
 
         # 5. Stream LLM Generation with Dynamic Token Scaling
         if status:
-            status.text = "Writing response..."
+            status.text = "Synthesizing answer..."
         response_buffer = ""
         is_summary = any(k in text.lower() for k in (
             "summarize", "summary", "overview", "everything", "all topics", "lecture", "study guide", "explain all", "all slides"
@@ -525,7 +525,7 @@ class ChatInterface:
                     first = False
                 response_buffer += token
                 now = time.time()
-                if now - last_render_time >= 0.035 or token in ('\n', '. ', '? ', '! '):
+                if now - last_render_time >= 0.065 or token in ('\n', '. ', '? ', '! '):
                     message_content.content = response_buffer
                     last_render_time = now
 

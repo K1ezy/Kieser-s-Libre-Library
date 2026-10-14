@@ -216,8 +216,9 @@ class ChatService:
         focus_book_id: Optional[str] = None
     ) -> List[dict]:
         """
-        Expands retrieved chunks with adjacent continuation pages (P+1, P+2, P-1)
-        for multi-slide presentations, enumerated principles, stages, and lists.
+        Fast, high-precision adjacent window expansion.
+        Expands multi-slide presentations, enumerated principles, and lists by at most 2 continuation
+        pages, avoiding context bloat while ensuring complete multi-page coverage.
         """
         if not raw_hits:
             return raw_hits
@@ -229,51 +230,85 @@ class ChatService:
             if p > 0:
                 retrieved_pages_by_source.setdefault(src, set()).add(p)
 
-        needed_pages_by_source = {}
-        list_markers = ('1.', '2.', '3.', '4.', '5.', 'principle', 'type', 'level', 'step', 'phase', 'stage', 'technique', 'difference')
         q_lower = query.lower()
-        is_list_query = any(k in q_lower for k in ('what are', 'list', 'principle', 'type', 'level', 'step', 'phase', 'stage', 'how many', 'explain the', 'all', '7', '6', '5', '4', '3'))
+        is_list_query = any(k in q_lower for k in (
+            'what are', 'list', 'principle', 'type', 'level', 'step', 'phase', 'stage',
+            'how many', 'explain the', 'all', '7', '6', '5', '4', '3', 'continue'
+        ))
 
+        target_source = None
+        target_page = None
+        target_bid = None
+        needs_backward = False
+
+        # Identify the primary sequential anchor chunk
         for h in raw_hits:
             p_val = int(h.get('page') or 0)
             if p_val <= 0:
                 continue
             h_txt = h.get('text', '').lower()
-            src_key = h.get('source', '')
-            already_retrieved = retrieved_pages_by_source.get(src_key, set())
+            src = h.get('source', '')
+            bid = h.get('book_id') or focus_book_id
 
-            if (is_list_query and any(m in h_txt for m in list_markers)) or ('1.' in h_txt and '2.' in h_txt) or ('principle' in h_txt):
-                b_id = h.get('book_id') or focus_book_id
-                if src_key not in needed_pages_by_source:
-                    needed_pages_by_source[src_key] = {'book_id': b_id, 'pages': set()}
+            # Case A: Explicit list start (e.g. "1. Testing shows..." and ("2." or "principle"))
+            if '1.' in h_txt and ('2.' in h_txt or any(k in h_txt for k in ('principle', 'step', 'phase', 'type', 'defect'))):
+                target_source = src
+                target_page = p_val
+                target_bid = bid
+                break
 
-                # Expand forward (+1, +2)
-                for offset in (1, 2):
-                    cand = p_val + offset
-                    if cand not in already_retrieved and len(needed_pages_by_source[src_key]['pages']) < 6:
-                        needed_pages_by_source[src_key]['pages'].add(cand)
+            # Case B: Mid-list hit on a numbered list query
+            if is_list_query and any(m in h_txt for m in ('3.', '4.', '5.', '6.')) and not any(m in h_txt for m in ('1.', '2.')):
+                target_source = src
+                target_page = p_val
+                target_bid = bid
+                needs_backward = True
+                break
 
-                # Expand backward (-1) if mid-list
-                if any(m in h_txt for m in ('3.', '4.', '5.', '6.')) and not any(m in h_txt for m in ('1.', '2.')):
-                    cand_prev = p_val - 1
-                    if cand_prev > 0 and cand_prev not in already_retrieved and len(needed_pages_by_source[src_key]['pages']) < 6:
-                        needed_pages_by_source[src_key]['pages'].add(cand_prev)
+            # Case C: Query asks for principles/types/levels and slide title introduces the topic
+            if is_list_query and any(k in q_lower for k in ('principle', 'type', 'level', 'step')) and any(k in h_txt for k in ('principles of', 'types of', 'levels of')):
+                if target_page is None:
+                    target_source = src
+                    target_page = p_val
+                    target_bid = bid
 
-        expanded_hits = list(raw_hits)
-        for src, info in needed_pages_by_source.items():
-            if info['pages']:
-                adj = await run.io_bound(
+        # Perform targeted continuation retrieval if anchor identified
+        if target_page and target_source:
+            already = retrieved_pages_by_source.get(target_source, set())
+            pages_to_fetch = []
+            if needs_backward and (target_page - 1) > 0 and (target_page - 1) not in already:
+                pages_to_fetch.append(target_page - 1)
+            for offset in (1, 2):
+                cand = target_page + offset
+                if cand not in already and cand not in pages_to_fetch:
+                    pages_to_fetch.append(cand)
+
+            if pages_to_fetch:
+                adj_chunks = await run.io_bound(
                     tars_archive.get_chunks_by_pages,
-                    info['book_id'],
-                    src,
-                    sorted(list(info['pages']))
+                    target_bid,
+                    target_source,
+                    sorted(pages_to_fetch)
                 )
-                if adj:
-                    expanded_hits.extend(adj)
+                if adj_chunks:
+                    # Keep anchor sequence + top other raw hits, up to 5 total chunks for fast TTFT
+                    seq_pages = set([target_page] + pages_to_fetch)
+                    selected_hits = [h for h in raw_hits if int(h.get('page') or 0) in seq_pages and h.get('source') == target_source]
+                    selected_hits.extend(adj_chunks)
 
-        # Chronologically sort by source and page so LLM receives coherent narrative
-        expanded_hits.sort(key=lambda x: (x.get('source', ''), int(x.get('page') or 0)))
-        return expanded_hits
+                    # Add top other hits not in sequence to retain catalog/document breadth
+                    for h in raw_hits:
+                        p = int(h.get('page') or 0)
+                        if (h.get('source') != target_source or p not in seq_pages) and len(selected_hits) < 5:
+                            selected_hits.append(h)
+
+                    selected_hits.sort(key=lambda x: (x.get('source', ''), int(x.get('page') or 0)))
+                    return selected_hits
+
+        # Default fallback: return top 5 raw hits sorted by page
+        capped_hits = list(raw_hits[:5])
+        capped_hits.sort(key=lambda x: (x.get('source', ''), int(x.get('page') or 0)))
+        return capped_hits
 
     @staticmethod
     async def perform_rag_search(
