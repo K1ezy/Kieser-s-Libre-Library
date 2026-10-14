@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Tuple, Any
 import logging
 import string
+import re
 import time
 from nicegui import run
 
@@ -22,10 +23,10 @@ logger = logging.getLogger("CHAT_SERVICE")
 # ==========================================
 
 STYLE_PROMPTS = {
-    'Balanced': "Provide clear, structured, well-formatted answers with citations where applicable.",
-    'Concise': "Provide direct, ultra-concise responses with short bullet points. Avoid filler.",
-    'Academic': "Provide an in-depth academic analysis with historical/theoretical context, critical critique, and comprehensive citations.",
-    'Exam Prep': "Provide high-yield study notes, key terms with definitions, potential test/exam questions, and memory mnemonics."
+    'Balanced': "Provide a thorough, well-structured, and clear answer. Use headings, bullet points, and exact page citations. Do not truncate essential concepts.",
+    'Concise': "Provide a direct, high-yield summary with concise bullet points. Avoid filler while retaining core definitions.",
+    'Academic': "Provide an in-depth academic lecture analysis with theoretical context, methodical critique, definitions, and comprehensive citations.",
+    'Exam Prep': "Provide an exhaustive exam preparation study guide with key definitions, principles, comparison tables, test questions, and mnemonics."
 }
 
 STARTER_PROMPTS_BOOK = [
@@ -44,6 +45,15 @@ STARTER_PROMPTS_LIBRARY = [
 
 IDENTITY_KEYWORDS = {"who are you", "what are you", "identify", "your function", "introduce yourself"}
 GREETING_KEYWORDS = {"hello", "hi", "hey", "tars", "yo", "greetings", "good morning", "good afternoon", "good evening"}
+SUMMARY_KEYWORDS = (
+    "summarize", "summary", "overview", "everything", "all topics", "whole lecture",
+    "whole book", "whole document", "full lecture", "full summary", "key takeaways",
+    "study guide", "lecture notes", "all of it", "explain everything", "entire document",
+    "breakdown", "all slides"
+)
+CONTINUE_KEYWORDS = (
+    "continue", "more", "tell me more", "what else", "go on", "keep going", "next part", "give me more"
+)
 
 
 class ChatService:
@@ -61,6 +71,31 @@ class ChatService:
             (len(clean_input.split()) <= 3 and any(g in clean_input for g in GREETING_KEYWORDS))
         )
         return is_identity or is_greeting
+
+    @staticmethod
+    def extract_catalog_search_term(text: str) -> str:
+        """Extracts author or title candidates from catalog inquiries."""
+        if not text:
+            return ""
+        cleaned = text.strip()
+        patterns = [
+            r'what\s+are\s+the\s+',
+            r'what\s+books\s+do\s+(we|i|you)\s+have\s+(by\s+|on\s+|about\s+|in\s+)?',
+            r'which\s+books\s+do\s+(we|i|you)\s+have\s+(by\s+|on\s+|about\s+|in\s+)?',
+            r'do\s+(we|you)\s+have\s+(any\s+)?books?\s+(by\s+|on\s+|about\s+|in\s+)?',
+            r'books?\s+(by\s+|on\s+|about\s+)?',
+            r'currently\s+have\s+in\s+this\s+library\s*\??',
+            r'currently\s+have\s*\??',
+            r'in\s+this\s+library\s*\??',
+            r'in\s+the\s+library\s*\??',
+            r'available\s+in\s+the\s+library\s*\??',
+            r'available\s+in\s+this\s+library\s*\??',
+            r'please\s*\??',
+        ]
+        for p in patterns:
+            cleaned = re.sub(p, ' ', cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r'[\?\.!,;]', ' ', cleaned).strip()
+        return cleaned
 
     @staticmethod
     def group_sessions_chronologically(sessions: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
@@ -107,11 +142,19 @@ class ChatService:
         rag_text: str = "",
         focus_book_meta: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Constructs lean, high-speed system prompt without prompt bloat."""
+        """Constructs high-accuracy, grounded system prompt with strict anti-hallucination guards."""
         active_style_prompt = STYLE_PROMPTS.get(chat_style, STYLE_PROMPTS['Balanced'])
         persona_lines = [
-            "You are TARS, the Digital Librarian. Assist users clearly, directly, and concisely.",
-            f"STYLE: {active_style_prompt}"
+            "You are TARS, the Digital Librarian for Libre-Library at "
+            "North Eastern Mindanao State University (NEMSU) – Tandag Campus (Surigao del Sur, Philippines).",
+            "Assist students and faculty with high factual accuracy, clarity, and comprehensive academic depth.",
+            f"STYLE: {active_style_prompt}",
+            "",
+            "CRITICAL ACCURACY & GROUNDING RULES:",
+            "1. GROUNDING: Base answers strictly on facts from [DOCUMENT EVIDENCE] or [LIBRARY CATALOG HOLDINGS].",
+            "2. NO FABRICATED SOURCES: NEVER invent or hallucinate document filenames or external book titles (e.g. do NOT invent fictional PDF names). Only cite documents actually listed in the provided evidence.",
+            "3. HONEST REFUSAL: If the provided documents do not contain the answer, state clearly and honestly: 'The library documents do not contain information regarding [topic].' Do not guess or extrapolate.",
+            "4. THOROUGH SUMMARIES: When asked to summarize or provide study notes, give a structured, comprehensive, and exhaustive breakdown covering all major concepts, principles, and categories present in the evidence."
         ]
 
         # Only inject inventory if non-empty (i.e. user explicitly inquired about catalog)
@@ -170,17 +213,19 @@ class ChatService:
     async def perform_rag_search(
         text: str,
         focus_book_id: Optional[str] = None,
-        focus_book_title: Optional[str] = None
+        focus_book_title: Optional[str] = None,
+        history: Optional[List[Dict[str, Any]]] = None
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
-        Executes vector retrieval and formats context snippets and citations.
-        Optimized with compact chunk sizes and strict relevance filtering for sub-second retrieval.
+        Executes vector retrieval, multi-page document coverage sampling, and catalog routing.
         """
         rag_text = ""
         citations: List[Dict[str, Any]] = []
         try:
+            clean_text = text.lower().strip()
             filter_source = None
             book_doc = None
+
             if focus_book_id:
                 book_doc = await mongo_db.get_book_details(focus_book_id)
                 if book_doc:
@@ -192,45 +237,161 @@ class ChatService:
                     else:
                         filter_source = focus_book_id
 
-            raw_hits = await run.io_bound(tars_archive.search_with_metadata, text, 3, filter_source, focus_book_id)
-            if raw_hits:
-                rag_parts = []
-                for h in raw_hits:
-                    src = h.get('source', 'Library Document')
-                    p_val = h.get('page')
-                    page_str = f" [Page {p_val}]" if p_val else ""
-                    chunk_text = h.get('text', '')[:650].strip()
-                    rag_parts.append(f"[{src}{page_str}]:\n{chunk_text}")
+            # Case 1: FOCUSED BOOK CONTEXT (Lecture / Book Active)
+            if focus_book_id and book_doc:
+                is_sum = any(k in clean_text for k in SUMMARY_KEYWORDS)
+                is_cont = any(k in clean_text for k in CONTINUE_KEYWORDS)
 
-                    cit_key = f"{src}_{p_val}"
-                    if not any(c.get('key') == cit_key for c in citations):
+                start_p = 1
+                if is_cont and history:
+                    # Detect previously cited page numbers to advance continuation
+                    found_pages = []
+                    for m in history:
+                        txt = m.get('content', '')
+                        matches = re.findall(r'Page\s+(\d+)', txt, re.IGNORECASE)
+                        for match in matches:
+                            try:
+                                found_pages.append(int(match))
+                            except Exception:
+                                pass
+                    if found_pages:
+                        start_p = max(found_pages) + 1
+
+                raw_hits = []
+                if is_sum or is_cont:
+                    # Use chronological multi-page coverage chunks across the entire document
+                    max_c = 12 if is_sum else 8
+                    raw_hits = await run.io_bound(
+                        tars_archive.get_document_coverage_chunks,
+                        focus_book_id,
+                        filter_source,
+                        max_c,
+                        start_p
+                    )
+
+                if not raw_hits:
+                    # Standard targeted vector search with top_k = 6
+                    raw_hits = await run.io_bound(
+                        tars_archive.search_with_metadata,
+                        text,
+                        6,
+                        filter_source,
+                        focus_book_id
+                    )
+
+                if raw_hits:
+                    rag_parts = []
+                    for h in raw_hits:
+                        src = h.get('source', 'Library Document')
+                        p_val = h.get('page')
+                        page_str = f" [Page {p_val}]" if p_val else ""
+                        chunk_text = h.get('text', '')[:850].strip()
+                        rag_parts.append(f"[{src}{page_str}]:\n{chunk_text}")
+
+                        cit_key = f"{src}_{p_val}"
+                        if not any(c.get('key') == cit_key for c in citations):
+                            citations.append({
+                                "key": cit_key,
+                                "source": src,
+                                "title": h.get('title') or src,
+                                "page": p_val,
+                                "book_id": h.get('book_id') or focus_book_id
+                            })
+                    rag_text = "\n[DOCUMENT EVIDENCE]:\n" + "\n---\n".join(rag_parts)
+                else:
+                    # Direct multi-page fallback using document structure or raw text
+                    resolved_p = mongo_db.resolve_document_path(focus_book_id, book_doc)
+                    if resolved_p and Path(resolved_p).exists():
+                        try:
+                            from core.utils.text_extractor import extract_document_structure, extract_text_from_file
+                            sections = await run.io_bound(extract_document_structure, resolved_p)
+                            if sections:
+                                total_sec = len(sections)
+                                if total_sec <= 10:
+                                    picked = sections
+                                else:
+                                    step = (total_sec - 1) / 9.0
+                                    picked = [sections[int(round(i * step))] for i in range(10)]
+                                rag_parts = []
+                                for s in picked:
+                                    p_num = s.get('page', 1)
+                                    s_txt = s.get('text', '')[:700].strip()
+                                    if s_txt:
+                                        rag_parts.append(f"[{Path(resolved_p).name} [Page {p_num}]]:\n{s_txt}")
+                                        cit_key = f"{Path(resolved_p).name}_{p_num}"
+                                        if not any(c.get('key') == cit_key for c in citations):
+                                            citations.append({
+                                                "key": cit_key,
+                                                "source": Path(resolved_p).name,
+                                                "title": book_doc.get('title') or Path(resolved_p).name,
+                                                "page": p_num,
+                                                "book_id": focus_book_id
+                                            })
+                                if rag_parts:
+                                    rag_text = "\n[DOCUMENT EVIDENCE]:\n" + "\n---\n".join(rag_parts)
+                            else:
+                                file_text = await run.io_bound(extract_text_from_file, resolved_p)
+                                if file_text and file_text.strip():
+                                    excerpt = file_text[:2500].strip()
+                                    rag_text = f"\n[DOCUMENT EXCERPT]:\n{excerpt}\n"
+                                    citations.append({
+                                        "key": f"{Path(resolved_p).name}_excerpt",
+                                        "source": Path(resolved_p).name,
+                                        "title": book_doc.get('title') or focus_book_title or Path(resolved_p).name,
+                                        "page": 1,
+                                        "book_id": focus_book_id
+                                    })
+                        except Exception as err:
+                            logger.debug(f"Direct text excerpt fallback note: {err}")
+
+            # Case 2: LIBRARY-WIDE CONTEXT (focus_book_id is None)
+            else:
+                # Check for catalog or author inquiry
+                catalog_query = ChatService.extract_catalog_search_term(text)
+                matched_books = []
+                if catalog_query and len(catalog_query) >= 3:
+                    matched_books = await mongo_db.books.search_books(catalog_query, limit=10)
+
+                if matched_books:
+                    lines = [f"Found {len(matched_books)} matching document(s) in the library catalog:"]
+                    for b in matched_books:
+                        b_title = b.get('title', 'Untitled')
+                        authors = b.get('display_author') or b.get('authors', 'Unknown')
+                        if isinstance(authors, list) and authors:
+                            authors = authors[0].get('name', str(authors[0])) if isinstance(authors[0], dict) else str(authors[0])
+                        ftype = (b.get('file_type') or 'E-Book').upper()
+                        lines.append(f"- '{b_title}' by {authors} ({ftype})")
+                        cit_key = str(b.get('id') or b.get('_id'))
                         citations.append({
                             "key": cit_key,
-                            "source": src,
-                            "title": h.get('title') or src,
-                            "page": p_val,
-                            "book_id": h.get('book_id') or focus_book_id
+                            "source": b_title,
+                            "title": b_title,
+                            "page": 1,
+                            "book_id": cit_key
                         })
-                rag_text = "\n[DOCUMENT EVIDENCE]:\n" + "\n---\n".join(rag_parts)
-            elif focus_book_id and book_doc:
-                # Fast fallback to direct text excerpt from disk capped to 1500 chars (prevents prompt freeze)
-                resolved_p = mongo_db.resolve_document_path(focus_book_id, book_doc)
-                if resolved_p and Path(resolved_p).exists():
-                    try:
-                        from core.utils.text_extractor import extract_text_from_file
-                        file_text = await run.io_bound(extract_text_from_file, resolved_p)
-                        if file_text and file_text.strip():
-                            excerpt = file_text[:1500].strip()
-                            rag_text = f"\n[DOCUMENT EXCERPT]:\n{excerpt}\n"
-                            citations.append({
-                                "key": f"{Path(resolved_p).name}_excerpt",
-                                "source": Path(resolved_p).name,
-                                "title": book_doc.get('title') or focus_book_title or Path(resolved_p).name,
-                                "page": 1,
-                                "book_id": focus_book_id
-                            })
-                    except Exception as err:
-                        logger.debug(f"Direct text excerpt fallback note: {err}")
+                    rag_text = "\n[LIBRARY CATALOG HOLDINGS]:\n" + "\n".join(lines)
+                else:
+                    # General semantic passage search across whole library
+                    raw_hits = await run.io_bound(tars_archive.search_with_metadata, text, 4, None, None)
+                    if raw_hits:
+                        rag_parts = []
+                        for h in raw_hits:
+                            src = h.get('source', 'Library Document')
+                            p_val = h.get('page')
+                            page_str = f" [Page {p_val}]" if p_val else ""
+                            chunk_text = h.get('text', '')[:700].strip()
+                            rag_parts.append(f"[{src}{page_str}]:\n{chunk_text}")
+
+                            cit_key = f"{src}_{p_val}"
+                            if not any(c.get('key') == cit_key for c in citations):
+                                citations.append({
+                                    "key": cit_key,
+                                    "source": src,
+                                    "title": h.get('title') or src,
+                                    "page": p_val,
+                                    "book_id": h.get('book_id') or ""
+                                })
+                        rag_text = "\n[DOCUMENT EVIDENCE]:\n" + "\n---\n".join(rag_parts)
         except Exception as e:
             logger.error(f"RAG Search Error: {e}")
 
@@ -238,7 +399,7 @@ class ChatService:
 
     @staticmethod
     def build_messages_payload(system_persona: str, history: List[Dict[str, Any]], max_turns: int = 4) -> List[Dict[str, str]]:
-        """Constructs and validates compact message payload for LLM streaming with token-efficient history pruning."""
+        """Constructs and validates message payload for LLM streaming with token-efficient history pruning."""
         recent = (history or [])[-max_turns:]
         valid_history = []
         for m in recent:
@@ -246,9 +407,9 @@ class ChatService:
                 continue
             role = m['role']
             content = m['content'].strip()
-            # Trim long previous assistant outputs to prevent compounding prompt lag
-            if role == 'assistant' and len(content) > 400:
-                content = content[:380] + " ... [trimmed]"
+            # Prevent compounding prompt lag while preserving core thoughts
+            if role == 'assistant' and len(content) > 600:
+                content = content[:580] + " ... [summary continued]"
             valid_history.append({"role": role, "content": content})
         return [{"role": "system", "content": system_persona}] + valid_history
 

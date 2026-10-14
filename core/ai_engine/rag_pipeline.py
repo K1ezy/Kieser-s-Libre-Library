@@ -508,6 +508,91 @@ class TarsArchive:
             formatted.append(f"[Source: {source}{page_info}]\n{h.get('text', '')}")
         return formatted
 
+    def get_document_coverage_chunks(
+        self,
+        book_id: Optional[str] = None,
+        filter_source: Optional[str] = None,
+        max_chunks: int = 10,
+        start_page: int = 1
+    ) -> List[dict]:
+        """
+        Retrieves representative chunks distributed chronologically across a document's pages
+        to provide comprehensive multi-page coverage for summaries, study guides, and lecture overviews.
+        """
+        if not self.ensure_initialized() or not self.collection:
+            return []
+
+        try:
+            res = None
+            if book_id:
+                try:
+                    res = self.collection.get(where={"book_id": str(book_id)})
+                except Exception:
+                    pass
+
+            if (not res or not res.get('documents') or len(res['documents']) == 0) and filter_source:
+                try:
+                    res = self.collection.get(where={"source": str(filter_source)})
+                except Exception:
+                    pass
+
+            if not res or not res.get('documents') or len(res['documents']) == 0:
+                return []
+
+            docs = res['documents']
+            metas = res.get('metadatas') or [{}] * len(docs)
+
+            combined = []
+            for d, m in zip(docs, metas):
+                if not d or not d.strip():
+                    continue
+                meta_dict = m if isinstance(m, dict) else {}
+                try:
+                    p = int(meta_dict.get('page') or 1)
+                except Exception:
+                    p = 1
+                try:
+                    idx = int(meta_dict.get('chunk_index') or 0)
+                except Exception:
+                    idx = 0
+                combined.append((p, idx, d, meta_dict))
+
+            if not combined:
+                return []
+
+            # Sort strictly by page number and chunk position
+            combined.sort(key=lambda x: (x[0], x[1]))
+
+            # If user asks to continue from a later page
+            if start_page > 1:
+                filtered_pages = [item for item in combined if item[0] >= start_page]
+                if filtered_pages:
+                    combined = filtered_pages
+
+            total = len(combined)
+            if total <= max_chunks:
+                selected = combined
+            else:
+                step = (total - 1) / float(max_chunks - 1) if max_chunks > 1 else total
+                selected = [combined[int(round(i * step))] for i in range(max_chunks)]
+
+            output = []
+            for p, idx, d, m in selected:
+                cleaned = d[:900].strip() if len(d) > 900 else d.strip()
+                output.append({
+                    "text": cleaned,
+                    "source": m.get('source', 'Library Document'),
+                    "book_id": m.get('book_id', book_id or ''),
+                    "title": m.get('title', m.get('source', 'Document')),
+                    "page": p,
+                    "section_type": m.get('section_type', 'page'),
+                    "distance": 0.0
+                })
+            return output
+        except Exception as e:
+            logger.error(f"Coverage Chunks Retrieval Error: {e}")
+            return []
+
     def get_collection_stats(self) -> dict:
         """Returns statistics about ChromaDB knowledge store."""
         if not self.ensure_initialized() or not self.collection:

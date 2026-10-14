@@ -358,23 +358,30 @@ class ChatInterface:
         self._set_generating_state(True)
         self.abort_trigger = False
 
-        card, status_label, message_content, copy_btn, tts_btn, _ = self.render_assistant_message(in_progress=True)
+        card, status_label, message_content, copy_btn, tts_btn, citations_container = self.render_assistant_message(in_progress=True)
         if status_label:
-            status_label.text = "Continuing response..."
+            status_label.text = "Continuing with next document sections..."
 
-        history_context = await mongo_db.get_recent_history(self.session_id, limit=4)
+        history_context = await mongo_db.get_recent_history(self.session_id, limit=6)
+        rag_text = ""
+        citations = []
+        if self.focus_book_id:
+            rag_text, citations = await chat_service.perform_rag_search("continue", self.focus_book_id, self.focus_book_title, history=history_context)
+
         persona_text = (
-            "You are TARS, the Digital Librarian. CONTINUE your last response exactly where it left off. "
-            "Maintain tone and formatting. Do not repeat the beginning."
+            "You are TARS, the Digital Librarian. CONTINUE your response by advancing to the next sections or principles of the document. "
+            "Do NOT repeat points already stated. Maintain academic depth and formatting."
         )
+        if rag_text:
+            persona_text += f"\n{rag_text}"
 
-        messages_payload = chat_service.build_messages_payload(persona_text, history_context, max_turns=4)
+        messages_payload = chat_service.build_messages_payload(persona_text, history_context, max_turns=6)
         await asyncio.sleep(0.05)
         response_buffer = ""
         try:
             first_token = True
             last_render_time = time.time()
-            async for token in tars_engine.stream_response(messages_payload, max_tokens=600):
+            async for token in tars_engine.stream_response(messages_payload, max_tokens=1500):
                 if self.abort_trigger:
                     response_buffer += " ... [STOPPED]"
                     message_content.content = response_buffer
@@ -392,6 +399,8 @@ class ChatInterface:
             message_content.content = response_buffer
             self.last_response_text = response_buffer
             await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
+            if citations:
+                render_citation_chips(citations, citations_container)
             self.scroll_to_bottom()
             setup_message_actions(response_buffer, copy_btn, tts_btn)
 
@@ -443,13 +452,16 @@ class ChatInterface:
         # 2. Assistant Placeholder Card
         card, status, message_content, copy_btn, tts_btn, citations_container = self.render_assistant_message(in_progress=True)
 
-        # 3. RAG Retrieval
+        # 3. History & RAG Retrieval
+        history = await mongo_db.get_recent_history(self.session_id, limit=4)
         skip_rag = chat_service.should_skip_rag(text)
         if not skip_rag:
             focus_desc = f"'{self.focus_book_title}'" if self.focus_book_title else "knowledge base"
             if status:
                 status.text = f"Searching {focus_desc}..."
-            rag_text, citations = await chat_service.perform_rag_search(text, self.focus_book_id, self.focus_book_title)
+            rag_text, citations = await chat_service.perform_rag_search(
+                text, self.focus_book_id, self.focus_book_title, history=history
+            )
         else:
             rag_text, citations = "", []
             if status:
@@ -472,7 +484,6 @@ class ChatInterface:
             except Exception as e:
                 logger.warning(f"Failed to resolve focus book title {self.focus_book_title}: {e}")
 
-        history = await mongo_db.get_recent_history(self.session_id, limit=4)
         inventory = ""
         if not self.focus_book_id and not self.focus_book_title:
             clean_q = text.lower()
@@ -482,7 +493,7 @@ class ChatInterface:
                 "books do i have", "recommend a book", "recommend book"
             )
             if any(k in clean_q for k in inventory_keywords):
-                inventory = await mongo_db.get_library_inventory_summary(limit=25)
+                inventory = await mongo_db.get_library_inventory_summary(limit=40)
 
         persona = chat_service.build_system_persona(
             chat_style=self.chat_style,
@@ -495,14 +506,18 @@ class ChatInterface:
         )
         messages = chat_service.build_messages_payload(persona, history, max_turns=4)
 
-        # 5. Stream LLM Generation
+        # 5. Stream LLM Generation with Dynamic Token Scaling
         if status:
             status.text = "Writing response..."
         response_buffer = ""
+        is_summary = any(k in text.lower() for k in (
+            "summarize", "summary", "overview", "everything", "all topics", "lecture", "study guide", "explain all", "all slides"
+        ))
+        effective_tokens = 1500 if (is_summary or self.chat_style in ('Academic', 'Exam Prep')) else 1000
         try:
             first = True
             last_render_time = time.time()
-            async for token in tars_engine.stream_response(messages, max_tokens=600):
+            async for token in tars_engine.stream_response(messages, max_tokens=effective_tokens):
                 if self.abort_trigger:
                     break
                 if first:
