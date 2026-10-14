@@ -206,19 +206,39 @@ class ChatInterface:
             app.storage.user.pop('chat_focus_book_title', None)
 
         self.update_focus_badges()
+        try:
+            ui.notify("Loaded conversation history.", type='info')
+        except Exception:
+            pass
         await self.initialize()
         self.history_drawer_comp.update_sessions(self.cached_sessions, self.session_id)
-        ui.notify("Loaded conversation history.", type='info')
 
     async def delete_session_ui(self, sid: str):
-        await mongo_db.delete_chat_session(sid)
-        ui.notify("Chat session deleted.", type='info')
-        if sid == self.session_id:
-            await self.start_new_chat()
-        else:
-            await self.load_and_refresh_history()
+        try:
+            ui.notify("Chat session deleted.", type='info')
+        except Exception:
+            pass
 
-    async def start_new_chat(self):
+        try:
+            await mongo_db.delete_chat_session(sid)
+            self.cached_sessions = [s for s in self.cached_sessions if s.get('id') != sid]
+            if self.history_top_badge:
+                self.history_top_badge.text = str(len(self.cached_sessions))
+
+            if sid == self.session_id:
+                await self.start_new_chat(show_notify=False)
+            else:
+                self.history_drawer_comp.update_sessions(self.cached_sessions, self.session_id)
+        except Exception as e:
+            logger.error(f"Session deletion error: {e}")
+
+    async def start_new_chat(self, show_notify: bool = True):
+        if show_notify:
+            try:
+                ui.notify("New chat started.", type='positive')
+            except Exception:
+                pass
+
         new_id = str(uuid.uuid4())
         app.storage.user['session_id'] = new_id
         self.session_id = new_id
@@ -230,7 +250,6 @@ class ChatInterface:
         self.render_welcome_state()
         self.history_drawer_comp.update_sessions(self.cached_sessions, self.session_id)
         self.history_drawer_comp.hide()
-        ui.notify("New chat started.", type='positive')
 
     async def export_chat(self):
         try:
@@ -248,14 +267,21 @@ class ChatInterface:
 
     async def clear_current_chat(self):
         try:
+            ui.notify("Conversation cleared.", type='info')
+        except Exception:
+            pass
+        try:
             await mongo_db.delete_chat_session(self.session_id)
             if self.log_container:
                 self.log_container.clear()
             self.render_welcome_state()
             await self.load_and_refresh_history()
-            ui.notify("Conversation cleared.", type='info')
         except Exception as e:
-            ui.notify(f"Clear failed: {e}", type='negative')
+            logger.error(f"Clear failed: {e}")
+            try:
+                ui.notify(f"Clear failed: {e}", type='negative')
+            except Exception:
+                pass
 
     def open_upload_dialog(self):
         open_upload_dialog(on_upload=self.handle_upload)
