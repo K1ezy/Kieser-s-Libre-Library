@@ -14,6 +14,38 @@ _STRUCTURE_CACHE: "OrderedDict[Tuple[str, float, int], List[dict]]" = OrderedDic
 _CACHE_LOCK = threading.Lock()
 _MAX_CACHE_SIZE = 32
 
+_OCR_ENGINE = None
+_OCR_LOCK = threading.Lock()
+
+def _get_ocr_engine():
+    global _OCR_ENGINE
+    if _OCR_ENGINE is None:
+        with _OCR_LOCK:
+            if _OCR_ENGINE is None:
+                try:
+                    from rapidocr_onnxruntime import RapidOCR
+                    _OCR_ENGINE = RapidOCR()
+                    logger.info("RapidOCR engine initialized for image-page extraction.")
+                except Exception as e:
+                    logger.debug(f"RapidOCR engine initialization note: {e}")
+    return _OCR_ENGINE
+
+def _run_page_ocr(page) -> str:
+    """Renders page pixmap and runs RapidOCR on image-only or low-text PDF pages."""
+    try:
+        engine = _get_ocr_engine()
+        if not engine:
+            return ""
+        pix = page.get_pixmap(dpi=150)
+        img_bytes = pix.tobytes("png")
+        res, _ = engine(img_bytes)
+        if res:
+            lines = [line[1].strip() for line in res if line and len(line) > 1 and line[1].strip()]
+            return "\n".join(lines).strip()
+    except Exception as err:
+        logger.debug(f"Page OCR extraction error: {err}")
+    return ""
+
 def extract_text_from_file(filepath: str) -> str:
     """
     High-performance native text extractor for documents.
@@ -48,8 +80,13 @@ def extract_text_from_file(filepath: str) -> str:
                 try:
                     for i, page in enumerate(doc):
                         t = page.get_text()
-                        if t and t.strip():
-                            extracted_pages.append(f"[Page {i+1}]\n{t.strip()}")
+                        clean = t.replace('\x00', '').strip() if t else ""
+                        if len(clean) < 20:
+                            ocr_txt = _run_page_ocr(page)
+                            if ocr_txt and len(ocr_txt) > len(clean):
+                                clean = ocr_txt
+                        if clean:
+                            extracted_pages.append(f"[Page {i+1}]\n{clean}")
                 finally:
                     doc.close()
             except Exception as fitz_err:
@@ -167,10 +204,13 @@ def extract_document_structure(filepath: str) -> list:
                 try:
                     for i, page in enumerate(doc):
                         t = page.get_text()
-                        if t and t.strip():
-                            clean = t.replace('\x00', '').strip()
-                            if clean:
-                                sections.append({"page": i + 1, "type": "page", "text": clean})
+                        clean = t.replace('\x00', '').strip() if t else ""
+                        if len(clean) < 20:
+                            ocr_txt = _run_page_ocr(page)
+                            if ocr_txt and len(ocr_txt) > len(clean):
+                                clean = ocr_txt
+                        if clean:
+                            sections.append({"page": i + 1, "type": "page", "text": clean})
                 finally:
                     doc.close()
             except Exception as fitz_err:

@@ -21,6 +21,7 @@ torch>=2.5.0,<3.0.0
 # --- Document Parsing, Cover Rendering & Text Extraction ---
 pypdf>=5.0.0,<7.0.0
 PyMuPDF>=1.24.0,<2.0.0
+rapidocr-onnxruntime>=1.3.0
 python-docx>=1.1.0,<2.0.0
 python-pptx>=0.6.20,<1.0.0
 EbookLib>=0.18,<1.0.0
