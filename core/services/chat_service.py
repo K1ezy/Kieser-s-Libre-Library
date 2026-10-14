@@ -6,7 +6,7 @@ and conversation formatting, decoupling AI domain operations from NiceGUI presen
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Optional, List, Dict, Tuple, Any, Set
 import logging
 import string
 import re
@@ -210,6 +210,72 @@ class ChatService:
         return "\n".join(persona_lines)
 
     @staticmethod
+    async def _expand_adjacent_chunks(
+        raw_hits: List[dict],
+        query: str,
+        focus_book_id: Optional[str] = None
+    ) -> List[dict]:
+        """
+        Expands retrieved chunks with adjacent continuation pages (P+1, P+2, P-1)
+        for multi-slide presentations, enumerated principles, stages, and lists.
+        """
+        if not raw_hits:
+            return raw_hits
+
+        retrieved_pages_by_source: Dict[str, Set[int]] = {}
+        for h in raw_hits:
+            src = h.get('source', '')
+            p = int(h.get('page') or 0)
+            if p > 0:
+                retrieved_pages_by_source.setdefault(src, set()).add(p)
+
+        needed_pages_by_source = {}
+        list_markers = ('1.', '2.', '3.', '4.', '5.', 'principle', 'type', 'level', 'step', 'phase', 'stage', 'technique', 'difference')
+        q_lower = query.lower()
+        is_list_query = any(k in q_lower for k in ('what are', 'list', 'principle', 'type', 'level', 'step', 'phase', 'stage', 'how many', 'explain the', 'all', '7', '6', '5', '4', '3'))
+
+        for h in raw_hits:
+            p_val = int(h.get('page') or 0)
+            if p_val <= 0:
+                continue
+            h_txt = h.get('text', '').lower()
+            src_key = h.get('source', '')
+            already_retrieved = retrieved_pages_by_source.get(src_key, set())
+
+            if (is_list_query and any(m in h_txt for m in list_markers)) or ('1.' in h_txt and '2.' in h_txt) or ('principle' in h_txt):
+                b_id = h.get('book_id') or focus_book_id
+                if src_key not in needed_pages_by_source:
+                    needed_pages_by_source[src_key] = {'book_id': b_id, 'pages': set()}
+
+                # Expand forward (+1, +2)
+                for offset in (1, 2):
+                    cand = p_val + offset
+                    if cand not in already_retrieved and len(needed_pages_by_source[src_key]['pages']) < 6:
+                        needed_pages_by_source[src_key]['pages'].add(cand)
+
+                # Expand backward (-1) if mid-list
+                if any(m in h_txt for m in ('3.', '4.', '5.', '6.')) and not any(m in h_txt for m in ('1.', '2.')):
+                    cand_prev = p_val - 1
+                    if cand_prev > 0 and cand_prev not in already_retrieved and len(needed_pages_by_source[src_key]['pages']) < 6:
+                        needed_pages_by_source[src_key]['pages'].add(cand_prev)
+
+        expanded_hits = list(raw_hits)
+        for src, info in needed_pages_by_source.items():
+            if info['pages']:
+                adj = await run.io_bound(
+                    tars_archive.get_chunks_by_pages,
+                    info['book_id'],
+                    src,
+                    sorted(list(info['pages']))
+                )
+                if adj:
+                    expanded_hits.extend(adj)
+
+        # Chronologically sort by source and page so LLM receives coherent narrative
+        expanded_hits.sort(key=lambda x: (x.get('source', ''), int(x.get('page') or 0)))
+        return expanded_hits
+
+    @staticmethod
     async def perform_rag_search(
         text: str,
         focus_book_id: Optional[str] = None,
@@ -227,7 +293,10 @@ class ChatService:
             book_doc = None
 
             if focus_book_id:
-                book_doc = await mongo_db.get_book_details(focus_book_id)
+                try:
+                    book_doc = await mongo_db.get_book_details(focus_book_id)
+                except Exception:
+                    book_doc = None
                 if book_doc:
                     resolved_p = mongo_db.resolve_document_path(focus_book_id, book_doc)
                     if resolved_p and Path(resolved_p).exists():
@@ -236,9 +305,11 @@ class ChatService:
                         filter_source = Path(book_doc.get('local_path')).name
                     else:
                         filter_source = focus_book_id
+                elif focus_book_title:
+                    filter_source = focus_book_title
 
             # Case 1: FOCUSED BOOK CONTEXT (Lecture / Book Active)
-            if focus_book_id and book_doc:
+            if focus_book_id:
                 is_sum = any(k in clean_text for k in SUMMARY_KEYWORDS)
                 is_cont = any(k in clean_text for k in CONTINUE_KEYWORDS)
 
@@ -278,6 +349,8 @@ class ChatService:
                         filter_source,
                         focus_book_id
                     )
+                    if raw_hits:
+                        raw_hits = await ChatService._expand_adjacent_chunks(raw_hits, text, focus_book_id)
 
                 if raw_hits:
                     rag_parts = []
@@ -298,7 +371,7 @@ class ChatService:
                                 "book_id": h.get('book_id') or focus_book_id
                             })
                     rag_text = "\n[DOCUMENT EVIDENCE]:\n" + "\n---\n".join(rag_parts)
-                else:
+                elif book_doc:
                     # Direct multi-page fallback using document structure or raw text
                     resolved_p = mongo_db.resolve_document_path(focus_book_id, book_doc)
                     if resolved_p and Path(resolved_p).exists():
@@ -372,7 +445,9 @@ class ChatService:
                     rag_text = "\n[LIBRARY CATALOG HOLDINGS]:\n" + "\n".join(lines)
                 else:
                     # General semantic passage search across whole library
-                    raw_hits = await run.io_bound(tars_archive.search_with_metadata, text, 4, None, None)
+                    raw_hits = await run.io_bound(tars_archive.search_with_metadata, text, 6, None, None)
+                    if raw_hits:
+                        raw_hits = await ChatService._expand_adjacent_chunks(raw_hits, text, None)
                     if raw_hits:
                         rag_parts = []
                         for h in raw_hits:

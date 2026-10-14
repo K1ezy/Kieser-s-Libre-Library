@@ -593,6 +593,61 @@ class TarsArchive:
             logger.error(f"Coverage Chunks Retrieval Error: {e}")
             return []
 
+    def get_chunks_by_pages(
+        self,
+        book_id: Optional[str] = None,
+        filter_source: Optional[str] = None,
+        pages: Optional[List[int]] = None
+    ) -> List[dict]:
+        """Retrieves exact chunks belonging to specified page numbers for adjacent window expansion."""
+        if not self.ensure_initialized() or not self.collection or not pages:
+            return []
+        try:
+            res = None
+            if book_id:
+                try:
+                    res = self.collection.get(where={"book_id": str(book_id)})
+                except Exception:
+                    pass
+            if (not res or not res.get('documents') or len(res['documents']) == 0) and filter_source:
+                try:
+                    res = self.collection.get(where={"source": str(filter_source)})
+                except Exception:
+                    pass
+            if not res or not res.get('documents') or len(res['documents']) == 0:
+                try:
+                    res = self.collection.get()
+                except Exception:
+                    pass
+            if not res or not res.get('documents'):
+                return []
+            target_pages = set(pages)
+            docs = res['documents']
+            metas = res.get('metadatas') or [{}] * len(docs)
+            out = []
+            for d, m in zip(docs, metas):
+                m_source = m.get('source', '')
+                m_book_id = m.get('book_id', '')
+                if filter_source and m_source and m_source != filter_source and m_book_id != str(book_id or ''):
+                    continue
+                p = int(m.get('page') or 0)
+                if p in target_pages:
+                    cleaned = d[:900].strip() if len(d) > 900 else d.strip()
+                    out.append({
+                        "text": cleaned,
+                        "source": m.get('source', 'Library Document'),
+                        "book_id": m.get('book_id', book_id or ''),
+                        "title": m.get('title', m.get('source', 'Document')),
+                        "page": p,
+                        "section_type": m.get('section_type', 'page'),
+                        "distance": 0.0
+                    })
+            out.sort(key=lambda x: (x['page'], x['text']))
+            return out
+        except Exception as e:
+            logger.error(f"Error in get_chunks_by_pages: {e}")
+            return []
+
     def get_collection_stats(self) -> dict:
         """Returns statistics about ChromaDB knowledge store."""
         if not self.ensure_initialized() or not self.collection:
