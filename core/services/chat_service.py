@@ -358,7 +358,7 @@ class ChatService:
                         src = h.get('source', 'Library Document')
                         p_val = h.get('page')
                         page_str = f" [Page {p_val}]" if p_val else ""
-                        chunk_text = h.get('text', '')[:850].strip()
+                        chunk_text = h.get('text', '')[:1500].strip()
                         rag_parts.append(f"[{src}{page_str}]:\n{chunk_text}")
 
                         cit_key = f"{src}_{p_val}"
@@ -454,7 +454,7 @@ class ChatService:
                             src = h.get('source', 'Library Document')
                             p_val = h.get('page')
                             page_str = f" [Page {p_val}]" if p_val else ""
-                            chunk_text = h.get('text', '')[:700].strip()
+                            chunk_text = h.get('text', '')[:1500].strip()
                             rag_parts.append(f"[{src}{page_str}]:\n{chunk_text}")
 
                             cit_key = f"{src}_{p_val}"

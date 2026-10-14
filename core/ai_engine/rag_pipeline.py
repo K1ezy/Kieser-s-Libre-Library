@@ -267,7 +267,14 @@ class TarsArchive:
         logger.info(f"Persisted {persisted} chunks from '{filename}' into vector store.")
         return persisted
 
-    def ingest_document(self, file_path: str, filename: str, book_id: Optional[str] = None, title: Optional[str] = None) -> int:
+    def ingest_document(
+        self,
+        file_path: str,
+        filename: str,
+        book_id: Optional[str] = None,
+        title: Optional[str] = None,
+        force_reindex: bool = False
+    ) -> int:
         """
         Extracts structured document units (pages/slides) and ingests them into ChromaDB
         with precise page numbers, book_id, and titles for pinpoint RAG citations.
@@ -284,8 +291,12 @@ class TarsArchive:
             where_check = {"book_id": book_id} if book_id else {"source": filename}
             existing = self.collection.get(where=where_check)
             if existing and len(existing['ids']) > 0:
-                logger.info(f"Document '{filename}' already in memory ({len(existing['ids'])} chunks).")
-                return len(existing['ids'])
+                if not force_reindex:
+                    logger.info(f"Document '{filename}' already in memory ({len(existing['ids'])} chunks).")
+                    return len(existing['ids'])
+                else:
+                    self.collection.delete(ids=existing['ids'])
+                    logger.info(f"Evicted {len(existing['ids'])} old chunks of '{filename}' for clean reindexing.")
         except Exception:
             pass
 
@@ -309,7 +320,10 @@ class TarsArchive:
             if not sec_text or len(sec_text) < 15:
                 continue
 
-            sec_chunks = self._smart_chunker(sec_text, chunk_size=900, overlap=150)
+            if len(sec_text) <= 1500:
+                sec_chunks = [sec_text]
+            else:
+                sec_chunks = self._smart_chunker(sec_text, chunk_size=1200, overlap=200)
             for c in sec_chunks:
                 all_chunks.append(c)
                 all_metas.append({
@@ -464,7 +478,7 @@ class TarsArchive:
                 if max_distance is not None and effective_dist > max_distance:
                     continue
                 m = meta if isinstance(meta, dict) else {}
-                cleaned_doc = doc[:700].strip() if len(doc) > 700 else doc.strip()
+                cleaned_doc = doc[:1500].strip() if len(doc) > 1500 else doc.strip()
                 candidates.append({
                     "text": cleaned_doc,
                     "source": m.get('source', 'Library Document'),
@@ -578,7 +592,7 @@ class TarsArchive:
 
             output = []
             for p, idx, d, m in selected:
-                cleaned = d[:900].strip() if len(d) > 900 else d.strip()
+                cleaned = d[:1500].strip() if len(d) > 1500 else d.strip()
                 output.append({
                     "text": cleaned,
                     "source": m.get('source', 'Library Document'),
@@ -632,7 +646,7 @@ class TarsArchive:
                     continue
                 p = int(m.get('page') or 0)
                 if p in target_pages:
-                    cleaned = d[:900].strip() if len(d) > 900 else d.strip()
+                    cleaned = d[:1500].strip() if len(d) > 1500 else d.strip()
                     out.append({
                         "text": cleaned,
                         "source": m.get('source', 'Library Document'),
