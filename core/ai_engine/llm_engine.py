@@ -23,14 +23,11 @@ class TarsEngine:
     """
     Multi-Provider AI Engine for Libre-Library:
     1. Local GGUF (llama-cpp-python) with lazy loading, bounded queue & GPU offloading
-    2. Ollama (local or network Ollama API: http://localhost:11434)
-    3. OpenAI-Compatible API (OpenAI, DeepSeek, Groq, OpenRouter, LM Studio, vLLM)
+    2. OpenAI-Compatible API (OpenAI, DeepSeek, Groq, OpenRouter, LM Studio, vLLM)
     """
 
     def __init__(self):
         self.provider = getattr(settings, 'AI_PROVIDER', 'local').lower()
-        self.ollama_url = getattr(settings, 'OLLAMA_BASE_URL', 'http://localhost:11434').rstrip('/')
-        self.ollama_model = getattr(settings, 'OLLAMA_MODEL', 'llama3.2:latest')
         self.openai_url = getattr(settings, 'OPENAI_API_BASE', 'https://api.openai.com/v1').rstrip('/')
         self.openai_key = getattr(settings, 'OPENAI_API_KEY', '')
         self.openai_model = getattr(settings, 'OPENAI_MODEL', 'gpt-4o-mini')
@@ -76,8 +73,6 @@ class TarsEngine:
                 sys_cfg = await mongo_db.get_system_settings()
                 if sys_cfg:
                     self.provider = sys_cfg.get("ai_provider", self.provider).lower()
-                    self.ollama_url = sys_cfg.get("ollama_url", self.ollama_url).rstrip('/')
-                    self.ollama_model = sys_cfg.get("ollama_model", self.ollama_model)
                     self.openai_url = sys_cfg.get("openai_url", self.openai_url).rstrip('/')
                     self.openai_key = sys_cfg.get("openai_key", self.openai_key)
                     self.openai_model = sys_cfg.get("openai_model", self.openai_model)
@@ -89,10 +84,6 @@ class TarsEngine:
     def configure(self, provider: str, config: Dict[str, Any]):
         """Dynamically updates active provider and endpoint credentials."""
         self.provider = provider.lower()
-        if "ollama_url" in config:
-            self.ollama_url = config["ollama_url"].rstrip('/')
-        if "ollama_model" in config:
-            self.ollama_model = config["ollama_model"]
         if "openai_url" in config:
             self.openai_url = config["openai_url"].rstrip('/')
         if "openai_key" in config:
@@ -106,8 +97,6 @@ class TarsEngine:
         """Returns True if the active provider is configured and ready."""
         if self.provider == 'local':
             return self.model_path.exists()
-        elif self.provider == 'ollama':
-            return bool(self.ollama_url and self.ollama_model)
         elif self.provider == 'openai':
             return bool(
                 self.openai_url and (self.openai_key or "localhost" in self.openai_url or "127.0.0.1" in self.openai_url)
@@ -127,10 +116,21 @@ class TarsEngine:
     def _has_openai_fallback(self) -> bool:
         return bool(self.openai_url and self.openai_key)
 
+    def _get_chat_format(self) -> str:
+        """Determines chat formatting based on active GGUF model architecture."""
+        model_name = self.model_path.name.lower()
+        if "qwen" in model_name:
+            return "chatml"
+        elif "llama-3" in model_name or "llama3" in model_name:
+            return "llama-3"
+        elif "mistral" in model_name:
+            return "mistral-instruct"
+        return "chatml"
+
     def ensure_loaded(self) -> bool:
         """
         Thread-safely loads local GGUF weights into memory/GPU if in local mode.
-        For Ollama or OpenAI, returns True immediately.
+        For OpenAI, returns True immediately.
         """
         if self.provider != 'local':
             return True
@@ -160,6 +160,7 @@ class TarsEngine:
                 # Maximum batch evaluation threads for prompt prefill acceleration
                 batch_threads = min(10, max(4, cpu_ct))
 
+                chat_fmt = self._get_chat_format()
                 try:
                     self.llm = Llama(
                         model_path=str(self.model_path),
@@ -173,7 +174,7 @@ class TarsEngine:
                         verbose=False,
                         n_batch=1024,
                         n_ubatch=512,
-                        chat_format="llama-3"
+                        chat_format=chat_fmt
                     )
                 except Exception as fa_err:
                     logger.debug(f"Flash attention init notice ({fa_err}). Falling back to standard attention.")
@@ -188,7 +189,7 @@ class TarsEngine:
                         verbose=False,
                         n_batch=1024,
                         n_ubatch=512,
-                        chat_format="llama-3"
+                        chat_format=chat_fmt
                     )
 
                 self._is_loaded = True
@@ -218,24 +219,6 @@ class TarsEngine:
                 "queue_depth": self._waiting_requests,
                 "message": "Local GGUF model loaded and operational." if ready else "Failed to load GGUF model into memory."
             }
-
-        elif self.provider == 'ollama':
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
-                    resp = await client.get(f"{self.ollama_url}/api/tags")
-                    if resp.status_code == 200:
-                        data = resp.json()
-                        models = [m.get('name', '') for m in data.get('models', [])]
-                        has_model = any(self.ollama_model in m for m in models)
-                        msg = (
-                            f"Ollama online. Model '{self.ollama_model}' detected."
-                            if has_model else
-                            f"Ollama online, but model '{self.ollama_model}' not installed."
-                        )
-                        return {"success": True, "provider": "ollama", "model": self.ollama_model, "message": msg}
-                    return {"success": False, "provider": "ollama", "message": f"Ollama returned HTTP status {resp.status_code}."}
-            except Exception as e:
-                return {"success": False, "provider": "ollama", "message": f"Cannot connect to Ollama at {self.ollama_url}: {e}"}
 
         elif self.provider == 'openai':
             try:
@@ -285,32 +268,8 @@ class TarsEngine:
         """Thread-safe and async-safe completion across all 3 providers with bounded local queue."""
         await self.ensure_db_settings_loaded()
 
-        # 1. Ollama Provider
-        if self.provider == 'ollama':
-            try:
-                client = self._get_http_client(timeout=60.0)
-                payload = {
-                    "model": self.ollama_model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "num_predict": max_tokens,
-                        "stop": stop or ["TEXT:", "Example:", "---"]
-                    }
-                }
-                resp = await client.post(f"{self.ollama_url}/api/generate", json=payload)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    return data.get("response", "").strip()
-                logger.error(f"Ollama generation failed ({resp.status_code}): {resp.text}")
-                return None
-            except Exception as e:
-                logger.error(f"Ollama create_completion error: {e}")
-                return None
-
-        # 2. OpenAI Compatible Provider
-        elif self.provider == 'openai':
+        # 1. OpenAI Compatible Provider
+        if self.provider == 'openai':
             return await self._complete_via_openai(prompt, max_tokens, temperature, stop)
 
         # 3. Local LLaMA GGUF Provider (Default) with Bounded Queue & Timeout
@@ -336,8 +295,10 @@ class TarsEngine:
                                 res = self.llm.create_completion(
                                     prompt=prompt,
                                     max_tokens=max_tokens,
-                                    temperature=temperature,
-                                    stop=stop or ["TEXT:", "Example:", "---"]
+                                    temperature=0.1 if temperature == 0.3 else temperature,
+                                    top_p=0.85,
+                                    repeat_penalty=1.12,
+                                    stop=stop or ["TEXT:", "Example:", "---", "<|im_end|>", "<|endoftext|>", "<|eot_id|>", "<|end_of_text|>"]
                                 )
                                 return res['choices'][0]['text']
                             except Exception as ex:
@@ -405,7 +366,7 @@ class TarsEngine:
             yield f"[API CONNECTION ERROR: {str(e)}]"
 
     async def stream_response(self, messages: list, max_tokens: Optional[int] = None) -> AsyncGenerator[str, None]:
-        """Streams chat tokens asynchronously across Local, Ollama, and OpenAI providers with bounded queuing."""
+        """Streams chat tokens asynchronously across Local (GGUF) and OpenAI providers with bounded queuing."""
         await self.ensure_db_settings_loaded()
         effective_max_tokens = max_tokens or DEFAULT_CHAT_MAX_TOKENS
 
@@ -420,41 +381,8 @@ class TarsEngine:
                     rag_content_truncated = rag_content[:MAX_RAG_CHARS] + "\n... [TRUNCATED]"
                     messages[0]['content'] = system_message[:rag_content_start_index] + rag_content_truncated
 
-        # 1. Ollama Streaming
-        if self.provider == 'ollama':
-            try:
-                client = self._get_http_client(timeout=120.0)
-                payload = {
-                    "model": self.ollama_model,
-                    "messages": messages,
-                    "stream": True,
-                    "options": {
-                        "temperature": 0.2,
-                        "num_predict": effective_max_tokens
-                    }
-                }
-                async with client.stream("POST", f"{self.ollama_url}/api/chat", json=payload) as response:
-                    if response.status_code != 200:
-                        yield f"[OLLAMA ERROR: Status {response.status_code}]"
-                        return
-                    async for line in response.aiter_lines():
-                        if line and line.strip():
-                            try:
-                                chunk_data = json.loads(line)
-                                msg = chunk_data.get("message", {})
-                                content = msg.get("content", "")
-                                if content:
-                                    yield content
-                            except Exception:
-                                pass
-                return
-            except Exception as e:
-                logger.error(f"Ollama streaming failure: {e}")
-                yield f"[OLLAMA CONNECTION ERROR: {str(e)}]"
-                return
-
-        # 2. OpenAI / Compatible Streaming
-        elif self.provider == 'openai':
+        # 1. OpenAI / Compatible Streaming
+        if self.provider == 'openai':
             async for chunk in self._stream_via_openai(messages, effective_max_tokens):
                 yield chunk
             return
@@ -492,9 +420,11 @@ class TarsEngine:
                         stream = self.llm.create_chat_completion(
                             messages=messages,
                             stream=True,
-                            temperature=0.2,
+                            temperature=0.1,
+                            top_p=0.85,
+                            repeat_penalty=1.12,
                             max_tokens=effective_max_tokens,
-                            stop=["<|eot_id|>", "<|end_of_text|>"]
+                            stop=["<|im_end|>", "<|endoftext|>", "<|eot_id|>", "<|end_of_text|>"]
                         )
                         for chunk in stream:
                             if stop_event.is_set():

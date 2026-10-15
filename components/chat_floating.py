@@ -61,18 +61,29 @@ class FloatingChat:
             response_buffer = ""
             first = True
             async for token in tars_engine.stream_response(messages):
+                if hasattr(content_label, '_client') and (content_label._client() is None or getattr(content_label._client(), '_deleted', False)):
+                    break
                 if first: 
-                    spinner.delete()
+                    try: spinner.delete()
+                    except Exception: pass
                     first = False
                 response_buffer += token
-                content_label.content = response_buffer
+                try:
+                    content_label.content = response_buffer
+                except Exception:
+                    break
             
-            await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
+            if response_buffer:
+                await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
 
         except Exception as e:
             try: spinner.delete() 
             except Exception: pass
-            with response_msg: ui.label("Response unavailable.").classes('text-red-500 text-xs')
+            if 'deleted' not in str(e).lower():
+                try:
+                    with response_msg: ui.label("Response unavailable.").classes('text-red-500 text-xs')
+                except Exception:
+                    pass
 
         self.thinking = False
 

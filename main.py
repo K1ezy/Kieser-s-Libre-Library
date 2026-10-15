@@ -284,5 +284,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         session_middleware_kwargs={"max_age": None},
         dark=False,
         reload=settings.RELOAD,
+        reconnect_timeout=20.0,
         uvicorn_reload_excludes=["data/*", "data/**", "data\\*", "data\\**", "chroma_db/*", "chroma_db/**", "chroma_db\\*", "chroma_db\\**", "*.log", "*.sqlite3*", "*all-MiniLM-L6-v2*"]
     )

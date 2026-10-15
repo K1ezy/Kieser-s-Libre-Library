@@ -150,11 +150,13 @@ class ChatService:
             "Assist students and faculty with high factual accuracy, clarity, and comprehensive academic depth.",
             f"STYLE: {active_style_prompt}",
             "",
-            "CRITICAL ACCURACY & GROUNDING RULES:",
-            "1. GROUNDING: Base answers strictly on facts from [DOCUMENT EVIDENCE] or [LIBRARY CATALOG HOLDINGS].",
-            "2. NO FABRICATED SOURCES: NEVER invent or hallucinate document filenames or external book titles (e.g. do NOT invent fictional PDF names). Only cite documents actually listed in the provided evidence.",
-            "3. HONEST REFUSAL: If the provided documents do not contain the answer, state clearly and honestly: 'The library documents do not contain information regarding [topic].' Do not guess or extrapolate.",
-            "4. THOROUGH SUMMARIES: When asked to summarize or provide study notes, give a structured, comprehensive, and exhaustive breakdown covering all major concepts, principles, and categories present in the evidence."
+            "CRITICAL ACCURACY & ANTI-HALLUCINATION RULES:",
+            "1. DIRECT ANSWER FIRST: Directly answer the user's specific inquiry in the opening 1-2 sentences. If asked 'What are the two main categories of X?', explicitly state them: 'The two main categories are: 1. [Category A] and 2. [Category B]' before providing detailed breakdowns.",
+            "2. STRICT CLASSIFICATION FIDELITY: Meticulously follow the exact category hierarchies in [DOCUMENT EVIDENCE]. Do NOT conflate, swap, or misattribute subcomponents or examples between different parent categories (e.g. do not assign attributes of System Documentation to Process Documentation).",
+            "3. COMPLETE ENUMERATION: If the evidence specifies multiple categories, principles, or steps, enumerate all of them completely. Never omit a category or stop after describing only one.",
+            "4. GROUNDING: Base answers strictly on facts from [DOCUMENT EVIDENCE] or [LIBRARY CATALOG HOLDINGS]. Do not extrapolate, guess, or invent unstated facts.",
+            "5. NO FABRICATED SOURCES: NEVER invent or hallucinate document filenames or external book titles. Only cite documents actually listed in the provided evidence.",
+            "6. HONEST REFUSAL: If the provided documents do not contain the answer, state clearly and honestly: 'The library documents do not contain information regarding [topic].' Do not guess."
         ]
 
         # Only inject inventory if non-empty (i.e. user explicitly inquired about catalog)
@@ -233,7 +235,7 @@ class ChatService:
         q_lower = query.lower()
         is_list_query = any(k in q_lower for k in (
             'what are', 'list', 'principle', 'type', 'level', 'step', 'phase', 'stage',
-            'how many', 'explain the', 'all', '7', '6', '5', '4', '3', 'continue'
+            'how many', 'explain the', 'all', '7', '6', '5', '4', '3', 'continue', 'categor', 'main'
         ))
 
         target_source = None
@@ -272,6 +274,14 @@ class ChatService:
                     target_page = p_val
                     target_bid = bid
 
+            # Case D: Category breakdown slide (e.g. Product Documentation on slide 9 followed by Process on slide 10)
+            if is_list_query and any(k in q_lower for k in ('categor', 'main', 'type', 'two')):
+                if any(k in h_txt for k in ('product documentation', 'process documentation', 'categories:')):
+                    if target_page is None or p_val > target_page:
+                        target_source = src
+                        target_page = p_val
+                        target_bid = bid
+
         # Perform targeted continuation retrieval if anchor identified
         if target_page and target_source:
             already = retrieved_pages_by_source.get(target_source, set())
@@ -291,7 +301,7 @@ class ChatService:
                     sorted(pages_to_fetch)
                 )
                 if adj_chunks:
-                    # Keep anchor sequence + top other raw hits, up to 5 total chunks for fast TTFT
+                    # Keep anchor sequence + top other raw hits, up to 8 total chunks for complete multi-page topic coverage
                     seq_pages = set([target_page] + pages_to_fetch)
                     selected_hits = [h for h in raw_hits if int(h.get('page') or 0) in seq_pages and h.get('source') == target_source]
                     selected_hits.extend(adj_chunks)
@@ -299,14 +309,14 @@ class ChatService:
                     # Add top other hits not in sequence to retain catalog/document breadth
                     for h in raw_hits:
                         p = int(h.get('page') or 0)
-                        if (h.get('source') != target_source or p not in seq_pages) and len(selected_hits) < 5:
+                        if (h.get('source') != target_source or p not in seq_pages) and len(selected_hits) < 8:
                             selected_hits.append(h)
 
                     selected_hits.sort(key=lambda x: (x.get('source', ''), int(x.get('page') or 0)))
                     return selected_hits
 
-        # Default fallback: return top 5 raw hits sorted by page
-        capped_hits = list(raw_hits[:5])
+        # Default fallback: return top 8 raw hits sorted by page
+        capped_hits = list(raw_hits[:8])
         capped_hits.sort(key=lambda x: (x.get('source', ''), int(x.get('page') or 0)))
         return capped_hits
 
@@ -376,11 +386,11 @@ class ChatService:
                     )
 
                 if not raw_hits:
-                    # Standard targeted vector search with top_k = 6
+                    # Standard targeted vector search with top_k = 8
                     raw_hits = await run.io_bound(
                         tars_archive.search_with_metadata,
                         text,
-                        6,
+                        8,
                         filter_source,
                         focus_book_id
                     )
@@ -394,7 +404,8 @@ class ChatService:
                         p_val = h.get('page')
                         page_str = f" [Page {p_val}]" if p_val else ""
                         chunk_text = h.get('text', '')[:1500].strip()
-                        rag_parts.append(f"[{src}{page_str}]:\n{chunk_text}")
+                        clean_chunk = re.sub(r'(?<!\n)\n(?!\n|\s*[-*•\d])', ' ', chunk_text)
+                        rag_parts.append(f"[{src}{page_str}]:\n{clean_chunk}")
 
                         cit_key = f"{src}_{p_val}"
                         if not any(c.get('key') == cit_key for c in citations):
@@ -480,7 +491,7 @@ class ChatService:
                     rag_text = "\n[LIBRARY CATALOG HOLDINGS]:\n" + "\n".join(lines)
                 else:
                     # General semantic passage search across whole library
-                    raw_hits = await run.io_bound(tars_archive.search_with_metadata, text, 6, None, None)
+                    raw_hits = await run.io_bound(tars_archive.search_with_metadata, text, 8, None, None)
                     if raw_hits:
                         raw_hits = await ChatService._expand_adjacent_chunks(raw_hits, text, None)
                     if raw_hits:
@@ -490,7 +501,8 @@ class ChatService:
                             p_val = h.get('page')
                             page_str = f" [Page {p_val}]" if p_val else ""
                             chunk_text = h.get('text', '')[:1500].strip()
-                            rag_parts.append(f"[{src}{page_str}]:\n{chunk_text}")
+                            clean_chunk = re.sub(r'(?<!\n)\n(?!\n|\s*[-*•\d])', ' ', chunk_text)
+                            rag_parts.append(f"[{src}{page_str}]:\n{clean_chunk}")
 
                             cit_key = f"{src}_{p_val}"
                             if not any(c.get('key') == cit_key for c in citations):

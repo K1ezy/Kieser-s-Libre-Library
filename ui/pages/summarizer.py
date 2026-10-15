@@ -104,32 +104,50 @@ class SummarizerTool:
             import time
             last_render = time.time()
             async for token in tars_engine.stream_response(messages, max_tokens=1000):
+                if hasattr(self.summary_output, '_client') and (self.summary_output._client() is None or getattr(self.summary_output._client(), '_deleted', False)):
+                    break
                 buffer += token
                 now = time.time()
                 if now - last_render >= 0.035 or token in ('\n', '. ', '? ', '! '):
-                    self.summary_output.content = buffer
+                    try:
+                        self.summary_output.content = buffer
+                    except Exception:
+                        break
                     last_render = now
 
-            self.summary_output.content = buffer
+            if hasattr(self.summary_output, '_client') and (self.summary_output._client() is None or getattr(self.summary_output._client(), '_deleted', False)):
+                return
 
-            self.current_summary_text = buffer
-            if self.copy_btn:
-                self.copy_btn.set_visibility(True)
-            if self.save_doc_btn:
-                self.save_doc_btn.text = 'Save to Book'
-                self.save_doc_btn.enable()
-                self.save_doc_btn.set_visibility(True)
-            if self.study_deck_btn:
-                self.study_deck_btn.set_visibility(True)
-            if self.chat_ask_btn:
-                self.chat_ask_btn.set_visibility(True)
-            ui.notify("✨ Study summary completed successfully!", type='positive')
+            try:
+                self.summary_output.content = buffer
+                self.current_summary_text = buffer
+                if self.copy_btn:
+                    self.copy_btn.set_visibility(True)
+                if self.save_doc_btn:
+                    self.save_doc_btn.text = 'Save to Book'
+                    self.save_doc_btn.enable()
+                    self.save_doc_btn.set_visibility(True)
+                if self.study_deck_btn:
+                    self.study_deck_btn.set_visibility(True)
+                if self.chat_ask_btn:
+                    self.chat_ask_btn.set_visibility(True)
+                ui.notify("✨ Study summary completed successfully!", type='positive')
+            except Exception:
+                pass
         except Exception as e:
+            if 'deleted' in str(e).lower():
+                return
             logger.error(f"Summarizer generation error: {e}", exc_info=True)
-            ui.notify(f"Generation Error: {e}", type='negative')
+            try:
+                ui.notify(f"Generation Error: {e}", type='negative')
+            except Exception:
+                pass
         finally:
-            if self.generate_btn:
-                self.generate_btn.enable()
+            try:
+                if self.generate_btn and hasattr(self.generate_btn, '_client') and self.generate_btn._client() is not None:
+                    self.generate_btn.enable()
+            except Exception:
+                pass
 
     async def save_to_document(self):
         """Saves current summary directly to the book record in MongoDB."""

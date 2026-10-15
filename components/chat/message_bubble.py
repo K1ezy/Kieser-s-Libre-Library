@@ -5,56 +5,71 @@ from ui.pages.chat_service import STARTER_PROMPTS_BOOK, STARTER_PROMPTS_LIBRARY
 
 def setup_message_actions(content: str, copy_btn, tts_btn) -> None:
     """Binds 1-click clipboard copy and text-to-speech audio playback."""
-    if not content:
+    if not content or not copy_btn or not tts_btn:
         return
 
-    # Clipboard action
-    copy_btn.on('click', lambda c=content: (
-        ui.run_javascript(f"navigator.clipboard.writeText({repr(c)});"),
-        ui.notify("Response copied to clipboard!", type='positive')
-    ))
+    try:
+        # Check if client was deleted
+        if hasattr(copy_btn, '_client') and (copy_btn._client() is None or getattr(copy_btn._client(), '_deleted', False)):
+            return
 
-    # Text-to-speech action
-    clean_text = content.replace("`", "").replace("*", "").replace("#", "")
-    tts_btn.on('click', lambda c=clean_text: ui.run_javascript(f"""
-        if (window.speechSynthesis.speaking) {{
-            window.speechSynthesis.cancel();
-        }} else {{
-            const u = new SpeechSynthesisUtterance({repr(c[:1500])});
-            u.rate = 1.0;
-            window.speechSynthesis.speak(u);
-        }}
-    """))
+        # Clipboard action
+        copy_btn.on('click', lambda c=content: (
+            ui.run_javascript(f"navigator.clipboard.writeText({repr(c)});"),
+            ui.notify("Response copied to clipboard!", type='positive')
+        ))
+
+        # Text-to-speech action
+        clean_text = content.replace("`", "").replace("*", "").replace("#", "")
+        tts_btn.on('click', lambda c=clean_text: ui.run_javascript(f"""
+            if (window.speechSynthesis.speaking) {{
+                window.speechSynthesis.cancel();
+            }} else {{
+                const u = new SpeechSynthesisUtterance({repr(c[:1500])});
+                u.rate = 1.0;
+                window.speechSynthesis.speak(u);
+            }}
+        """))
+    except Exception:
+        pass
 
 
 def render_citation_chips(citations: list, container) -> None:
     """Renders interactive citation chips linking to document reader."""
-    if not container:
+    if not container or not citations:
         return
-    container.set_visibility(True)
-    with container:
-        ui.label("Sources & Citations:").classes('text-[10px] font-bold uppercase tracking-wider text-slate-400')
-        for cit in citations:
-            label_txt = cit.get('title') or cit.get('source', 'Document')
-            if len(label_txt) > 28:
-                label_txt = label_txt[:28] + '...'
-            if cit.get('page'):
-                label_txt += f" (p.{cit['page']})"
 
-            b_id = cit.get('book_id')
-            badge_row = ui.row().classes(
-                'items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 '
-                'border border-indigo-200 text-[11px] text-indigo-700 '
-                'font-semibold shadow-sm transition-all hover:scale-105'
-            )
-            if b_id:
-                badge_row.classes('cursor-pointer hover:bg-indigo-100')
-                badge_row.on('click', lambda b=b_id: ui.navigate.to(f'/read/{b}'))
-                badge_row.tooltip("Click to open document in Reader")
+    try:
+        # Check if the element's client is still alive
+        if hasattr(container, '_client') and (container._client() is None or getattr(container._client(), '_deleted', False)):
+            return
 
-            with badge_row:
-                ui.icon('menu_book' if b_id else 'description', size='12px').classes('text-indigo-500')
-                ui.label(label_txt)
+        container.set_visibility(True)
+        with container:
+            ui.label("Sources & Citations:").classes('text-[10px] font-bold uppercase tracking-wider text-slate-400')
+            for cit in citations:
+                label_txt = cit.get('title') or cit.get('source', 'Document')
+                if len(label_txt) > 28:
+                    label_txt = label_txt[:28] + '...'
+                if cit.get('page'):
+                    label_txt += f" (p.{cit['page']})"
+
+                b_id = cit.get('book_id')
+                badge_row = ui.row().classes(
+                    'items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 '
+                    'border border-indigo-200 text-[11px] text-indigo-700 '
+                    'font-semibold shadow-sm transition-all hover:scale-105'
+                )
+                if b_id:
+                    badge_row.classes('cursor-pointer hover:bg-indigo-100')
+                    badge_row.on('click', lambda b=b_id: ui.navigate.to(f'/read/{b}'))
+                    badge_row.tooltip("Click to open document in Reader")
+
+                with badge_row:
+                    ui.icon('menu_book' if b_id else 'description', size='12px').classes('text-indigo-500')
+                    ui.label(label_txt)
+    except Exception:
+        return
 
 
 def render_user_message(container, text: str) -> None:

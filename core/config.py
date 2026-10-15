@@ -62,17 +62,15 @@ class Settings(BaseSettings):
     BOOKS_DIR: Path = _BASE_DIR / "E-Books"
     BOOKS_INFO_DIR: Path = _BASE_DIR / "data" / "books"
     MODEL_DIR: Path = _BASE_DIR / "models"
-    MODEL_FILENAME: str = "Llama-3.2-3B-Instruct-Q8_0.gguf"
+    MODEL_FILENAME: str = "qwen2.5-3b-instruct-q4_k_m.gguf"
     
-    GPU_LAYERS: int = 20  # Use -1 for full GPU usage
-    CONTEXT_WINDOW: int = 8192
+    GPU_LAYERS: int = -1  # Offloads 100% of layers directly into RTX 3050 VRAM for 25-35 tok/s speed
+    CONTEXT_WINDOW: int = 4096
     CHROMA_PATH: Path = _BASE_DIR / "data" / "chroma_db"
-    VERBOSE: bool = True
+    VERBOSE: bool = False
     
     # --- AI PROVIDER CONFIGURATION ---
-    AI_PROVIDER: str = "local"  # "local", "ollama", "openai"
-    OLLAMA_BASE_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "llama3.2:latest"
+    AI_PROVIDER: str = "local"  # "local" (direct offline GGUF inference via llama-cpp-python), "openai"
     OPENAI_API_BASE: str = "https://api.openai.com/v1"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"

@@ -348,6 +348,21 @@ class ChatInterface:
             teaching_mode=self.teaching_mode,
         )
 
+    def _is_client_connected(self) -> bool:
+        """Returns True if the current NiceGUI client is alive and connected."""
+        try:
+            if not hasattr(self, 'log_container') or not self.log_container:
+                return False
+            client_ref = getattr(self.log_container, '_client', None)
+            if client_ref is None:
+                return False
+            c = client_ref()
+            if c is None or getattr(c, '_deleted', False) or getattr(c, 'has_been_deleted', False):
+                return False
+            return True
+        except Exception:
+            return False
+
     async def initialize(self):
         if not self.log_container:
             return
@@ -408,42 +423,70 @@ class ChatInterface:
             first_token = True
             last_render_time = time.time()
             async for token in tars_engine.stream_response(messages_payload, max_tokens=1500):
-                if self.abort_trigger:
+                if self.abort_trigger or not self._is_client_connected():
                     response_buffer += " ... [STOPPED]"
-                    message_content.content = response_buffer
+                    try:
+                        message_content.content = response_buffer
+                    except Exception:
+                        pass
                     break
                 if first_token:
                     if status_label:
-                        status_label.delete()
+                        try: status_label.delete()
+                        except Exception: pass
                     first_token = False
                 response_buffer += token
                 now = time.time()
                 if now - last_render_time >= 0.065 or token in ('\n', '. ', '? ', '! '):
-                    message_content.content = response_buffer
+                    try:
+                        message_content.content = response_buffer
+                    except Exception:
+                        if not self._is_client_connected():
+                            break
                     last_render_time = now
 
-            message_content.content = response_buffer
-            self.last_response_text = response_buffer
-            await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
-            if citations:
-                render_citation_chips(citations, citations_container)
-            self.scroll_to_bottom()
-            setup_message_actions(response_buffer, copy_btn, tts_btn)
+            if not self._is_client_connected():
+                if response_buffer:
+                    await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
+                return
 
-            if self.continue_btn:
-                has_ended = response_buffer.strip().endswith(('.', '!', '?', ':', ';', '```'))
-                if not has_ended:
-                    self.continue_btn.enable()
-                else:
-                    self.continue_btn.disable()
+            try:
+                message_content.content = response_buffer
+                self.last_response_text = response_buffer
+                await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
+                if citations and citations_container:
+                    render_citation_chips(citations, citations_container)
+                self.scroll_to_bottom()
+                setup_message_actions(response_buffer, copy_btn, tts_btn)
+
+                if self.continue_btn:
+                    has_ended = response_buffer.strip().endswith(('.', '!', '?', ':', ';', '```'))
+                    if not has_ended:
+                        self.continue_btn.enable()
+                    else:
+                        self.continue_btn.disable()
+            except RuntimeError as re:
+                if 'deleted' in str(re).lower():
+                    return
+                raise
         except Exception as e:
             if status_label:
                 try: status_label.delete()
                 except Exception: pass
-            with self.log_container:
-                ui.label(f"SYSTEM FAILURE: {str(e)}").classes('text-rose-500 font-bold')
-
-        self._set_generating_state(False)
+            err_msg = str(e).lower()
+            if 'deleted' in err_msg or 'client' in err_msg:
+                logger.info("Continue generation ended cleanly after client disconnected.")
+                return
+            logger.error(f"Continue generation failure: {e}", exc_info=True)
+            if self._is_client_connected() and self.log_container:
+                try:
+                    with self.log_container:
+                        ui.label(f"SYSTEM FAILURE: {str(e)}").classes('text-rose-500 font-bold')
+                except Exception:
+                    pass
+        finally:
+            if self._is_client_connected():
+                self._set_generating_state(False)
 
     async def send_message(self):
         text = self.input_bar_comp.value.strip()
@@ -544,53 +587,83 @@ class ChatInterface:
             first = True
             last_render_time = time.time()
             async for token in tars_engine.stream_response(messages, max_tokens=effective_tokens):
-                if self.abort_trigger:
+                if self.abort_trigger or not self._is_client_connected():
                     break
                 if first:
-                    if status: status.delete()
+                    if status:
+                        try: status.delete()
+                        except Exception: pass
                     first = False
                 response_buffer += token
                 now = time.time()
                 if now - last_render_time >= 0.065 or token in ('\n', '. ', '? ', '! '):
-                    message_content.content = response_buffer
+                    try:
+                        message_content.content = response_buffer
+                    except Exception:
+                        if not self._is_client_connected():
+                            break
                     last_render_time = now
 
-            message_content.content = response_buffer
-            setup_message_actions(response_buffer, copy_btn, tts_btn)
+            if not self._is_client_connected():
+                # Client disconnected or refreshed - persist response to database
+                if response_buffer:
+                    await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
+                return
 
-            if citations:
-                render_citation_chips(citations, citations_container)
+            try:
+                message_content.content = response_buffer
+                setup_message_actions(response_buffer, copy_btn, tts_btn)
 
-            self.last_response_text = response_buffer
-            await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
-            self.scroll_to_bottom()
+                if citations and citations_container:
+                    render_citation_chips(citations, citations_container)
 
-            title = text[:35] + ("..." if len(text) > 35 else "")
-            uid = app.storage.user.get('user_id')
-            await mongo_db.save_chat_metadata(
-                self.session_id,
-                title,
-                book_id=self.focus_book_id,
-                book_title=self.focus_book_title,
-                user_id=uid
-            )
-            await self.load_and_refresh_history()
+                self.last_response_text = response_buffer
+                await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
+                self.scroll_to_bottom()
 
-            if self.continue_btn:
-                has_ended = response_buffer.strip().endswith(('.', '!', '?', ':', ';', '```'))
-                if not has_ended:
-                    self.continue_btn.enable()
-                else:
-                    self.continue_btn.disable()
+                title = text[:35] + ("..." if len(text) > 35 else "")
+                uid = app.storage.user.get('user_id')
+                await mongo_db.save_chat_metadata(
+                    self.session_id,
+                    title,
+                    book_id=self.focus_book_id,
+                    book_title=self.focus_book_title,
+                    user_id=uid
+                )
+                await self.load_and_refresh_history()
+
+                if self.continue_btn:
+                    has_ended = response_buffer.strip().endswith(('.', '!', '?', ':', ';', '```'))
+                    if not has_ended:
+                        self.continue_btn.enable()
+                    else:
+                        self.continue_btn.disable()
+            except RuntimeError as re:
+                if 'deleted' in str(re).lower():
+                    if response_buffer:
+                        await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
+                    return
+                raise
         except Exception as e:
             if status:
                 try: status.delete()
                 except Exception: pass
-            logger.error(f"LLM Generation failure: {e}", exc_info=True)
-            with self.log_container:
-                ui.label("Generation encountered an issue. Check system logs.").classes('text-rose-500 font-bold')
 
-        self._set_generating_state(False)
+            err_msg = str(e).lower()
+            if 'deleted' in err_msg or 'client' in err_msg:
+                logger.info("Chat stream completed or cancelled after client disconnected.")
+                return
+
+            logger.error(f"LLM Generation failure: {e}", exc_info=True)
+            if self._is_client_connected() and self.log_container:
+                try:
+                    with self.log_container:
+                        ui.label("Generation encountered an issue. Check system logs.").classes('text-rose-500 font-bold')
+                except Exception:
+                    pass
+        finally:
+            if self._is_client_connected():
+                self._set_generating_state(False)
 
     def _build_top_control_bar(self, drawer):
         with ui.header().classes(

@@ -7,7 +7,7 @@
 ![NiceGUI](https://img.shields.io/badge/NiceGUI-2.0+-5c6ac4?logo=vue.js&logoColor=white)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Motor%20Async%207.0-green?logo=mongodb&logoColor=white)
 ![ChromaDB](https://img.shields.io/badge/ChromaDB-LRU%20Cached%20Vector%20Store-orange?logo=databricks&logoColor=white)
-![Local LLM](https://img.shields.io/badge/Local%20LLM-Llama%203.2%203B%20%7C%20Failover-purple?logo=meta&logoColor=white)
+![Local LLM](https://img.shields.io/badge/Local%20LLM-Qwen%202.5%203B%20%7C%20100%25%20GPU-purple?logo=openai&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Multi--Container%20Compose-2496ED?logo=docker&logoColor=white)
 ![CI Pipeline](https://img.shields.io/badge/CI-GitHub%20Actions%20Matrix-2088FF?logo=githubactions&logoColor=white)
 ![Tests](https://img.shields.io/badge/Tests-116%2F116%20Passing-brightgreen?logo=pytest&logoColor=white)
@@ -34,7 +34,7 @@ Engineered to resolve traditional operational bottlenecks of university librarie
 
 1. **Multi-Format Academic Ingestion & Reading**: High-fidelity support for PDF, EPUB, DOCX, PPTX, TXT, and Markdown with dedicated in-browser viewers (PDF.js, EPUB.js), 4-theme appearance engine (Light, Warm Sepia, Slate Dark, OLED Black), persistent CFI & page progress synchronization, and contextual next-action workflows.
 2. **Interactive Highlighting & Study Notes Drawer**: 4-color pastel highlighters (Yellow, Green, Blue, Pink), inline sticky note composer, citation copy, floating in-reader TARS AI Socratic explainer, and aggregated slide-out study drawer with 1-click Markdown study guide export.
-3. **Autonomous Local AI Companion (TARS)**: 100% private, on-premise Retrieval-Augmented Generation (RAG) powered by ChromaDB vector embeddings and local Llama 3.2 3B weights—ensuring zero student data leakage to external cloud APIs (complying with RA 10173 Philippine Data Privacy Act).
+3. **Autonomous Local AI Companion (TARS)**: 100% private, on-premise Retrieval-Augmented Generation (RAG) powered by ChromaDB vector embeddings and local Qwen 2.5 3B Instruct weights (`qwen2.5-3b-instruct-q4_k_m.gguf`) with 100% CUDA GPU offloading—ensuring zero student data leakage to external cloud APIs (complying with RA 10173 Philippine Data Privacy Act).
 4. **Resilient LLM Inference Engine**: Multi-provider runtime with bounded concurrency queuing (`MAX_LOCAL_QUEUE_DEPTH = 4`), 45-second lock acquisition timeouts, automatic fallback to configured OpenAI-compatible endpoints during load spikes, and client disconnect cancellation via `asyncio.CancelledError`.
 5. **Hybrid Vector & Lexical RAG Pipeline**: Thread-safe $O(1)$ `OrderedDict` LRU and TTL caching, lexical keyword overlap boosting combined with dense neural embeddings, and precise page/section citation attribution.
 6. **Hardened Ingestion Pipeline**: Binary magic-byte header validation (`%PDF-`, `PK\x03\x04`), 100 MB upload ceiling, strict Pydantic v2 metadata validation, and one-click recovery of unindexed documents from the Admin Console.
@@ -54,7 +54,7 @@ Developed strictly in accordance with the Software Requirement Specifications (S
 | Specific Objective (Ch. 1) | Institutional Need Addressed | System Implementation |
 | :--- | :--- | :--- |
 | **S.O. 1: Multi-Format Ingestion** | Modernize legacy library file formats and fragmented departmental learning materials. | Asynchronous parser for PDF, EPUB, DOCX, PPTX, TXT, MD with magic-byte verification, automated PyMuPDF cover rendering, metadata scraping, and ChromaDB vectorization. |
-| **S.O. 2: RAG & Socratic AI Librarian** | Enhance student research while protecting thesis drafts and intellectual property from foreign cloud services. | Local Llama 3.2 3B model streaming with bounded concurrency, cosine vector search citations, Socratic teaching mode, and scoped document analysis. |
+| **S.O. 2: RAG & Socratic AI Librarian** | Enhance student research while protecting thesis drafts and intellectual property from foreign cloud services. | Local Qwen 2.5 3B Instruct model streaming with 100% GPU offload, bounded concurrency, cosine vector search citations, Socratic teaching mode, and scoped document analysis. |
 | **S.O. 3: Doorway Traffic Automation** | Eliminate morning logbook queues and hallway doorway congestion. | Camera QR scanner (`html5-qrcode`), barcode gun support, sub-second check-in/out toggling ($< 0.2\text{s}$), visit purpose tagging, and institutional FM-LIBS-009 CSV export. |
 | **S.O. 4: Faculty Requisitions** | Bridge disconnect between syllabus coursebook needs and library purchasing. | Faculty coursebook acquisition portal with procurement tracking, institutional FM-LIBS-002 export, and department utilization heatmaps. |
 | **S.O. 5: Institutional Analytics** | Provide quantitative empirical evidence for university quality assurance. | Departmental utilization heatmaps, hourly foot-traffic distribution (8 AM – 5 PM), and visitor purpose categorization. |
@@ -70,7 +70,7 @@ Developed strictly in accordance with the Software Requirement Specifications (S
 | **FR 4: QR Attendance System** | Contactless camera scan, dwell tracking, purpose tagging, year levels, and institutional FM-LIBS-009 CSV export. | [`/attendance`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/attendance.py) | **100% Compliant** |
 | **FR 5: Book Requisitions** | Curricular book request portal with FM-LIBS-002 export and 5-stage procurement lifecycle stepper. | [`/requisitions`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/requisitions.py) | **100% Compliant** |
 | **FR 6: Program Analytics** | College heatmaps, hourly congestion chart, and visitor purpose distribution. | [`/analytics`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/analytics.py) | **100% Compliant** |
-| **FR 7: Socratic AI Companion** | Local Llama 3.2 3B RAG, citation chips, 4-mode summarizer, and 3D flashcards. | [`/chat`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/chat.py), [`/summarizer`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/summarizer.py), [`/planner`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/planner.py) | **100% Compliant** |
+| **FR 7: Socratic AI Companion** | Local Qwen 2.5 3B Instruct RAG, citation chips, 4-mode summarizer, and 3D flashcards. | [`/chat`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/chat.py), [`/summarizer`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/summarizer.py), [`/planner`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/planner.py) | **100% Compliant** |
 | **FR 8: Role-Based Access Control** | 4 tiers (`Student`, `Faculty`, `Librarian`, `Admin IT`) with dynamic UI menus, JWT guards, and Bcrypt. | [`/admin`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/admin.py), [jwt_handler.py](file:///c:/Users/User/Desktop/Libre-Library/core/auth/jwt_handler.py) | **100% Compliant** |
 
 ---
@@ -94,7 +94,7 @@ graph TD
     end
 
     subgraph Intelligence["Tier 2: AI & Cognitive Engine"]
-        LLM["TARS Engine: Bounded Queue & Cloud Failover (llama-cpp / Ollama / OpenAI)"]
+        LLM["TARS Engine: Bounded Queue & Cloud Failover (llama-cpp / OpenAI)"]
         RAG["TARS Archive: O(1) LRU Cached Hybrid RAG (SentenceTransformers all-MiniLM-L6-v2)"]
         VectorDB[("ChromaDB Vector Store (Cosine Embeddings)")]
         Summarizer["4-Mode Document Summarizer"]
@@ -138,7 +138,7 @@ graph TD
 * **Peak-End Rule Next Actions**: Instant post-upload action ribbon offering direct shortcuts to "Read Now", "Ask TARS AI", or "Generate Study Deck".
 
 ### 2. 🤖 TARS AI Librarian & RAG Pipeline ([`/chat`](file:///c:/Users/User/Desktop/Libre-Library/ui/pages/chat.py))
-* **100% Offline & Private**: Zero cloud dependency; inference executes locally using quantized Llama 3.2 3B weights via `llama-cpp-python` or Ollama.
+* **100% Offline & Private**: Zero cloud dependency; inference executes locally using quantized Qwen 2.5 3B Instruct weights (`qwen2.5-3b-instruct-q4_k_m.gguf`) via `llama-cpp-python` with 100% CUDA GPU offloading for instant ~3–5s responses.
 * **Bounded Concurrency & Failover**: Managed queue depth (`MAX_LOCAL_QUEUE_DEPTH = 4`), 45-second lock acquisition timeout, automatic failover to configured cloud/OpenAI endpoints, and immediate cancellation when tabs close.
 * **Hybrid Lexical & Vector Search**: Queries dense vector embeddings while computing dynamic keyword overlap boosts for precise factual recall.
 * **Citation Chips**: Every AI response references exact document sources and page passages.
@@ -219,7 +219,7 @@ The user interface was built strictly adhering to **10 Foundational Human-Comput
 | **Document Handle Safety** | Guaranteed `try ... finally: doc.close()` for all PyMuPDF (`fitz`) handles. | Eliminates operating system file descriptor leaks on long-running servers. |
 | **Reading Progress API** | Dedicated high-throughput REST endpoint (`/api/progress/sync`) with sub-second client debouncing and CFI preservation. | Asynchronous state updates execute with **$< 5\text{ms}$** latency without interrupting reading flow. |
 | **Vector Collection Access** | Non-blocking raw collection accessor (`_get_raw_collection()`) without loading heavy embedding weights during purges. | Vector purges and deletions resolve in **$< 0.3\text{s}$** instead of multiple seconds. |
-| **LLM Connection Pooling** | Persistent HTTP client (`httpx.Limits(max_keepalive_connections=10, max_connections=20)`). | Cuts 50–150ms TCP handshake overhead per Ollama / OpenAI inference request. |
+| **LLM Connection Pooling** | Persistent HTTP client (`httpx.Limits(max_keepalive_connections=10, max_connections=20)`). | Cuts 50–150ms TCP handshake overhead per external API inference request. |
 | **Database Indexing** | Compound B-tree index on `attendance_logs` (`[("student_id", 1), ("date_str", 1), ("status", 1)]`) and `reading_progress`. | Doorway QR check-ins resolve in **$< 1\text{ms}$** without collection scans. |
 
 ---
@@ -234,7 +234,7 @@ The user interface was built strictly adhering to **10 Foundational Human-Comput
 | **Domain Models** | [Pydantic v2](https://docs.pydantic.dev/) | Strict typed validation for metadata, users, attendance, and requisitions |
 | **Vector Engine** | [ChromaDB](https://www.trychroma.com/) | Persistent vector database for RAG embeddings with $O(1)$ LRU cache |
 | **Embeddings** | `SentenceTransformers` (`all-MiniLM-L6-v2`) | High-speed offline semantic text vectorization |
-| **Local LLM** | Meta Llama 3.2 3B Instruct (`llama-cpp-python` / Ollama) | Localized, private generative AI inference with bounded concurrency |
+| **Local LLM** | Qwen 2.5 3B Instruct (`llama-cpp-python` / GGUF Q4_K_M) | Localized, private generative AI inference with bounded concurrency & 100% CUDA GPU offloading |
 | **Containerization** | Docker & Docker Compose | Multi-container automated orchestration with MongoDB 7.0 |
 | **CI / Automation** | GitHub Actions & Ruff | Automated cross-platform matrix testing and static linting |
 | **Reader Engines** | PDF.js + EPUB.js | Full-fidelity in-browser reading with persistent tracking |
@@ -261,7 +261,7 @@ Libre-Library/
 │   └── sidebar.py                   # Desktop navigation drawer with dynamic role links
 ├── core/                            # Core backend logic & services
 │   ├── ai_engine/                   # AI & LLM integration layer
-│   │   ├── llm_engine.py            # Local Llama-3.2 runner, bounded queue & cloud failover
+│   │   ├── llm_engine.py            # Local Qwen-2.5 3B runner, bounded queue & cloud failover
 │   │   └── rag_pipeline.py          # ChromaDB semantic query, O(1) LRU cache & hybrid boost
 │   ├── auth/                        # Authentication & session layer
 │   │   └── jwt_handler.py           # JWT token issuance, verification & role helpers

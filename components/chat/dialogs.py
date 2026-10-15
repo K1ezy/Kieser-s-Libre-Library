@@ -130,7 +130,7 @@ def show_architecture_dialog() -> None:
         with ui.row().classes('items-center gap-2 mb-2'):
             ui.icon('memory', size='24px').classes('text-indigo-600')
             ui.label("TARS AI Architecture").classes('text-base font-bold text-slate-900')
-        ui.label("• Engine: Multi-provider Local GGUF, Ollama, & OpenAI endpoints").classes('text-xs text-slate-600')
+        ui.label("• Engine: Offline Local GGUF (Qwen 2.5 7B Instruct) via llama-cpp-python").classes('text-xs text-slate-600')
         ui.label("• Vector DB: ChromaDB with all-MiniLM-L6-v2 embeddings").classes('text-xs text-slate-600')
         ui.label("• Scoped RAG: Document-level & Library-wide semantic retrieval").classes('text-xs text-slate-600')
         ui.label("• Citations: Clickable document page references").classes('text-xs text-slate-600')
