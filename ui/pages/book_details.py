@@ -7,6 +7,7 @@ from typing import Optional, Dict, Any, List
 
 from components.sidebar import sidebar
 from components.header import header
+from components.book_card import has_disk_cover
 from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import get_current_user_role
 from ui.pages.book_details_service import book_details_service
@@ -183,7 +184,18 @@ class BookDetailsPage:
 
         title = self.book.get('title') or "Untitled Document"
         author_name = self.book.get('display_author') or (self.book.get('authors', ['Unknown'])[0] if self.book.get('authors') else 'Unknown')
-        cover_url = self.book.get('cover_url') or "/static/default_cover.png"
+        bid = self.book_id or str(self.book.get('id') or self.book.get('_id') or '')
+        if has_disk_cover(bid):
+            cover_url = f"/static_books/{bid}/cover.jpg"
+        elif self.book.get('cover_image') and not str(self.book.get('cover_image')).endswith(('default_cover.png', 'default_cover.svg')):
+            cover_url = self.book.get('cover_image')
+        elif self.book.get('cover_url') and not str(self.book.get('cover_url')).endswith(('default_cover.png', 'default_cover.svg')):
+            cover_url = self.book.get('cover_url')
+        else:
+            cover_url = "/static/default_cover.svg"
+
+        self.book['cover_url'] = cover_url
+        self.book['cover_image'] = cover_url
         raw_synopsis = self.book.get('description') or (self.book.get('summaries', [''])[0] if self.book.get('summaries') else '')
         synopsis_text = self.format_synopsis_text(raw_synopsis)
         has_real_synopsis = bool(synopsis_text and len(synopsis_text.strip()) > 30 and not synopsis_text.startswith("No synopsis"))

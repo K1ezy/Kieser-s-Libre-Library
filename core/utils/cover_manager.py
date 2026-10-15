@@ -1,6 +1,7 @@
 import os
 import io
 import re
+import json
 import zipfile
 import logging
 import asyncio
@@ -378,10 +379,17 @@ class CoverManager:
         if sync_mongodb and mongo_db.db is not None:
             try:
                 missing_cursor = mongo_db.db['books'].find(
-                    {"$or": [{"cover_image": None}, {"cover_image": "/static/default_cover.svg"}, {"file_type": "UNKNOWN"}, {"file_type": None}]},
+                    {"$or": [
+                        {"cover_image": None},
+                        {"cover_image": ""},
+                        {"cover_image": "/static/default_cover.svg"},
+                        {"cover_image": "/static/default_cover.png"},
+                        {"file_type": "UNKNOWN"},
+                        {"file_type": None}
+                    ]},
                     {"id": 1}
                 )
-                missing_docs = await missing_cursor.to_list(length=1000)
+                missing_docs = await missing_cursor.to_list(length=2000)
                 missing_ids = {d['id'] for d in missing_docs if d.get('id')}
             except Exception as e:
                 logger.debug(f"Failed to fetch missing cover candidates: {e}")
@@ -423,10 +431,9 @@ class CoverManager:
                 candidate_folders.append(folder)
 
         results["total"] = len(candidate_folders)
-        if not candidate_folders:
-            return results
 
-        logger.info(f"Starting batch cover generation for {len(candidate_folders)} books...")
+        if candidate_folders:
+            logger.info(f"Starting batch cover generation for {len(candidate_folders)} books...")
 
         for folder in candidate_folders:
             book_id = folder.name
@@ -437,12 +444,6 @@ class CoverManager:
                 f for f in folder.iterdir()
                 if f.is_file() and f.suffix.lower() in ('.pdf', '.epub', '.pptx', '.ppt', '.docx', '.doc', '.txt', '.md')
             ]
-            if not content_files:
-                results["failed"] += 1
-                continue
-
-            content_file = content_files[0]
-            ext = content_file.suffix.lower()
 
             # Attempt to read title & author from metadata.json if present
             meta_path = folder / 'metadata.json'
@@ -461,6 +462,20 @@ class CoverManager:
                             author = authors_val
                 except Exception:
                     pass
+
+            if not content_files:
+                # Fallback to typographic cover if source file is missing but directory exists
+                if not title:
+                    title = book_id.replace('_', ' ').replace('-', ' ').title()
+                ok = cls._generate_typographic_cover(title=title, author=author or "Unknown Author", output_path=cover_path, file_type="BOOK")
+                if ok and cover_path.exists():
+                    results["success"] += 1
+                else:
+                    results["failed"] += 1
+                continue
+
+            content_file = content_files[0]
+            ext = content_file.suffix.lower()
 
             if not title:
                 title = content_file.stem.replace('_', ' ').replace('-', ' ').title()
@@ -498,6 +513,37 @@ class CoverManager:
                         logger.warning(f"MongoDB update notice for {book_id}: {db_err}")
             else:
                 results["failed"] += 1
+
+        # Check for any books registered in MongoDB that are missing physical covers on disk
+        if sync_mongodb and mongo_db.db is not None:
+            try:
+                all_db_books = await mongo_db.db['books'].find({}, {"id": 1, "title": 1, "display_author": 1, "authors": 1, "file_type": 1, "local_path": 1}).to_list(length=2000)
+                for b_doc in all_db_books:
+                    bid = b_doc.get('id')
+                    if not bid:
+                        continue
+                    b_cover = base_dir / bid / 'cover.jpg'
+                    if not b_cover.exists() or b_cover.stat().st_size < 500:
+                        b_cover.parent.mkdir(parents=True, exist_ok=True)
+                        b_title = b_doc.get('title') or bid.replace('_', ' ').title()
+                        b_author = b_doc.get('display_author') or 'Unknown Author'
+                        b_ftype = b_doc.get('file_type') or 'BOOK'
+                        b_local = Path(b_doc['local_path']) if b_doc.get('local_path') else None
+                        
+                        gen_ok = False
+                        if b_local and b_local.exists():
+                            gen_ok = await cls.extract_cover_async(b_local, b_cover, title=b_title, author=b_author, file_type=b_ftype)
+                        if not gen_ok:
+                            gen_ok = cls._generate_typographic_cover(title=b_title, author=b_author, output_path=b_cover, file_type=b_ftype)
+                        
+                        if gen_ok and b_cover.exists():
+                            results["success"] += 1
+                            await mongo_db.db['books'].update_one(
+                                {"id": bid},
+                                {"$set": {"cover_image": f"/static_books/{bid}/cover.jpg"}}
+                            )
+            except Exception as mongo_check_err:
+                logger.debug(f"DB cover verification notice: {mongo_check_err}")
 
         logger.info(f"Batch cover generation complete: {results['success']} generated, {results['failed']} failed, {results['skipped']} previously existed.")
         return results

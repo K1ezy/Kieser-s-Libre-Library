@@ -437,10 +437,12 @@ class UserRepository(BaseRepository):
                 book = await self.db['books'].find_one({"id": b_id})
                 if book:
                     enriched.append({
+                        "id": b_id,
                         "book_id": b_id,
                         "title": book.get('title', 'Untitled'),
                         "display_author": book.get('display_author') or 'Unknown Author',
                         "cover_image": book.get('cover_image') or f"/static_books/{b_id}/cover.jpg",
+                        "cover_url": book.get('cover_image') or f"/static_books/{b_id}/cover.jpg",
                         "file_type": book.get('file_type', 'E-BOOK'),
                         "current_page": item.get('current_page', 1),
                         "total_pages": item.get('total_pages', 1),

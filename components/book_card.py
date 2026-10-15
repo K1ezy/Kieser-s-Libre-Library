@@ -44,6 +44,13 @@ def has_disk_cover(book_id: str) -> bool:
     _COVER_CACHE[book_id] = exists
     return exists
 
+def invalidate_cover_cache(book_id: Optional[str] = None) -> None:
+    """Invalidates the in-memory cover existence cache."""
+    if book_id:
+        _COVER_CACHE.pop(book_id, None)
+    else:
+        _COVER_CACHE.clear()
+
 def book_card(
     book: Dict[str, Any],
     action_target: str = 'book',
@@ -58,7 +65,7 @@ def book_card(
         action_target: 'book' for book details page, 'read' for direct reader
         on_delete: Optional async/sync callback when delete button is pressed
     """
-    book_id = str(book.get('id', ''))
+    book_id = str(book.get('id') or book.get('book_id') or book.get('_id') or '')
     title = book.get('title', 'Untitled')
     author_display = book.get('display_author') or format_author(book.get('authors', []))
     
@@ -67,6 +74,8 @@ def book_card(
         cover_url = f"/static_books/{book_id}/cover.jpg"
     elif book.get('cover_image') and not str(book.get('cover_image')).endswith(('default_cover.png', 'default_cover.svg')):
         cover_url = book.get('cover_image')
+    elif book.get('cover_url') and not str(book.get('cover_url')).endswith(('default_cover.png', 'default_cover.svg')):
+        cover_url = book.get('cover_url')
     else:
         cover_url = "/static/default_cover.svg"
 

@@ -14,11 +14,13 @@ def get_greeting() -> str:
 
 def get_reading_cover_url(book_doc: Dict[str, Any]) -> str:
     """Safely retrieves the best cover image URL for active reading cards."""
-    b_id = str(book_doc.get('id', ''))
+    b_id = str(book_doc.get('id') or book_doc.get('book_id') or book_doc.get('_id') or '')
     if has_disk_cover(b_id):
         return f"/static_books/{b_id}/cover.jpg"
     elif book_doc.get('cover_image') and not str(book_doc.get('cover_image')).endswith(('default_cover.png', 'default_cover.svg')):
         return book_doc.get('cover_image')
+    elif book_doc.get('cover_url') and not str(book_doc.get('cover_url')).endswith(('default_cover.png', 'default_cover.svg')):
+        return book_doc.get('cover_url')
     return "/static/default_cover.svg"
 
 def action_card(title: str, subtitle: str, icon: str, color: str, target: str):
@@ -45,7 +47,7 @@ def action_card(title: str, subtitle: str, icon: str, color: str, target: str):
 
 def continue_reading_card(book_prog: Dict[str, Any]):
     """Renders a high-scannability active reading card with cover art and direct resume action."""
-    b_id = str(book_prog.get('id', ''))
+    b_id = str(book_prog.get('id') or book_prog.get('book_id') or book_prog.get('_id') or '')
     b_title = book_prog.get('title', 'Untitled')
     b_author = book_prog.get('display_author') or 'Unknown'
     b_pct = min(100, max(0, round(float(book_prog.get('progress_percent', 0)))))
