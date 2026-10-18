@@ -150,21 +150,53 @@ class UserRepository(BaseRepository):
 
     async def get_library_stats(self, user_id: Optional[str] = None) -> Dict[str, Any]:
         """Calculates real-time library, study and task completion statistics with parallel counts."""
-        if self.db is None: return {"books": 0, "tasks_done": 0, "total_tasks": 0, "reading_count": 0}
+        if self.db is None:
+            return {
+                "books": 0,
+                "tasks_done": 0,
+                "total_tasks": 0,
+                "reading_count": 0,
+                "completed_books": 0,
+                "notes_count": 0,
+                "attendance_visits": 0,
+                "ai_conversations": 0,
+            }
         try:
             task_filter: Dict[str, Any] = {"$or": [{"completed": True}, {"status": "done"}]}
             total_filter: Dict[str, Any] = {}
             reading_q: Dict[str, Any] = {}
+            completed_q: Dict[str, Any] = {"$or": [{"status": "completed"}, {"progress_percent": {"$gte": 95}}]}
+            notes_q: Dict[str, Any] = {}
+            attendance_q: Dict[str, Any] = {}
+            chat_q: Dict[str, Any] = {}
+
             if user_id:
                 task_filter["user_id"] = user_id
                 total_filter["user_id"] = user_id
                 reading_q["user_id"] = user_id
+                completed_q["user_id"] = user_id
+                notes_q["user_id"] = user_id
+                attendance_q["$or"] = [{"user_id": user_id}, {"student_id": user_id}]
+                chat_q["user_id"] = user_id
 
-            book_count, done_tasks, total_tasks, reading_count = await asyncio.gather(
+            (
+                book_count,
+                done_tasks,
+                total_tasks,
+                reading_count,
+                completed_books,
+                notes_count,
+                attendance_visits,
+                ai_conversations
+            ) = await asyncio.gather(
                 self.db['books'].count_documents({}),
                 self.db['tasks'].count_documents(task_filter),
                 self.db['tasks'].count_documents(total_filter),
-                self.db['reading_progress'].count_documents(reading_q)
+                self.db['reading_progress'].count_documents(reading_q),
+                self.db['reading_progress'].count_documents(completed_q),
+                self.db['annotations'].count_documents(notes_q),
+                self.db['attendance_logs'].count_documents(attendance_q),
+                self.db['chats'].count_documents(chat_q),
             )
 
             if done_tasks == 0 and not user_id:
@@ -177,11 +209,24 @@ class UserRepository(BaseRepository):
                 "books": book_count,
                 "tasks_done": done_tasks,
                 "total_tasks": total_tasks,
-                "reading_count": reading_count
+                "reading_count": reading_count,
+                "completed_books": completed_books,
+                "notes_count": notes_count,
+                "attendance_visits": attendance_visits,
+                "ai_conversations": ai_conversations
             }
         except Exception as e:
             logger.error(f"Stats Error: {e}")
-            return {"books": 0, "tasks_done": 0, "total_tasks": 0, "reading_count": 0}
+            return {
+                "books": 0,
+                "tasks_done": 0,
+                "total_tasks": 0,
+                "reading_count": 0,
+                "completed_books": 0,
+                "notes_count": 0,
+                "attendance_visits": 0,
+                "ai_conversations": 0
+            }
 
     async def update_user_role(self, user_id: str, new_role: str) -> bool:
         """Promotes or demotes user role (admin/user)."""
