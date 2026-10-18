@@ -55,7 +55,10 @@ def set_user_session(user: dict, token: str):
         'token': token,
         'user_id': user.get('id'),
         'role': user.get('role', 'user'),
-        'username': user.get('username', '')
+        'username': user.get('username', ''),
+        'avatar_url': user.get('avatar_url') or '',
+        'cover_url': user.get('cover_url') or '',
+        'name': user.get('name') or user.get('username', ''),
     })
 
 def clear_user_session():
@@ -63,7 +66,7 @@ def clear_user_session():
     Safely clears authentication credentials from user storage while preserving
     client session state.
     """
-    for key in ['token', 'user_id', 'role', 'username']:
+    for key in ['token', 'user_id', 'role', 'username', 'avatar_url', 'cover_url', 'name']:
         app.storage.user.pop(key, None)
 
 def get_current_user_info() -> Dict[str, Any]:
@@ -71,6 +74,8 @@ def get_current_user_info() -> Dict[str, Any]:
     return {
         'user_id': app.storage.user.get('user_id'),
         'username': app.storage.user.get('username'),
+        'name': app.storage.user.get('name'),
+        'avatar_url': app.storage.user.get('avatar_url', ''),
         'role': app.storage.user.get('role', 'user'),
         'is_admin': app.storage.user.get('role') == 'admin'
     }

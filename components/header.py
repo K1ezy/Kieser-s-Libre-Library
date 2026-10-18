@@ -3,7 +3,20 @@ from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import clear_user_session, get_current_user_role
 import logging
 
-logger = logging.getLogger("APP_HEADER")
+_client_avatar_refreshers = {}
+
+
+def refresh_header_avatar():
+    """Triggers real-time synchronization of the top navbar profile picture across the app."""
+    try:
+        from nicegui import context
+        client_id = context.client.id
+        ref = _client_avatar_refreshers.get(client_id)
+        if ref:
+            ref.refresh()
+    except Exception as err:
+        logger.debug(f"Navbar avatar refresh skipped: {err}")
+
 
 def header(drawer_reference=None):
     """
@@ -103,23 +116,86 @@ def header(drawer_reference=None):
                 .classes('md:hidden')
 
             user_name = app.storage.user.get('username') or 'Account'
+            full_name = app.storage.user.get('name') or user_name
             user_role = get_current_user_role()
 
-            with ui.button().props('flat round dense no-caps size=md').classes('p-0.5 ml-0.5 sm:ml-1'):
-                ui.avatar(icon='person', color='indigo-50', text_color='indigo', size='32px') \
-                    .classes('border border-indigo-200 shadow-sm')
-                with ui.menu().props('anchor="bottom right" self="top right"').classes('bg-white shadow-2xl border border-slate-200 rounded-2xl p-2 min-w-[200px]'):
-                    with ui.row().classes('px-3 py-2 border-b border-slate-100 mb-1 items-center gap-2.5'):
-                        ui.icon('account_circle', size='sm').classes('text-indigo-600')
-                        with ui.column().classes('gap-0 flex-1 min-w-0'):
-                            ui.label(user_name).classes('text-xs font-bold text-slate-900 truncate w-full')
-                            ui.label(user_role.upper()).classes('text-[9px] font-bold text-indigo-600 uppercase tracking-wider')
+            def _get_header_initials(name_val: str, user_val: str) -> str:
+                clean = (name_val or user_val or 'AD').strip()
+                parts = clean.split()
+                if len(parts) >= 2:
+                    return f"{parts[0][0]}{parts[1][0]}".upper()
+                return clean[:2].upper() if clean else 'AD'
 
-                    ui.menu_item('Account Profile', on_click=lambda: ui.navigate.to('/profile')).props('prepend-icon=person').classes('text-xs font-medium')
+            initials = _get_header_initials(full_name, user_name)
 
-                    ui.separator().classes('my-1')
-                    def sign_out():
-                        clear_user_session()
-                        ui.notify("Signed out successfully.", type='info')
-                        ui.navigate.to('/login')
-                    ui.menu_item('Sign Out', on_click=sign_out).props('prepend-icon=logout').classes('text-xs font-bold text-rose-600')
+            # Lazy background sync for users with active sessions before storage migration
+            if 'avatar_url' not in app.storage.user and app.storage.user.get('user_id'):
+                async def _sync_missing_avatar():
+                    try:
+                        u_profile = await mongo_db.get_user_profile(user_id=app.storage.user.get('user_id'))
+                        if u_profile:
+                            app.storage.user['avatar_url'] = u_profile.get('avatar_url') or ''
+                            app.storage.user['cover_url'] = u_profile.get('cover_url') or ''
+                            app.storage.user['name'] = u_profile.get('name') or ''
+                            refresh_header_avatar()
+                    except Exception:
+                        pass
+                ui.timer(0.05, _sync_missing_avatar, once=True)
+
+            @ui.refreshable
+            def render_navbar_avatar():
+                avatar_url = app.storage.user.get('avatar_url')
+                with ui.button().props('flat round dense no-caps size=md').classes('p-0.5 ml-0.5 sm:ml-1 relative group'):
+                    # 1. Profile Photo Wrapper with fallback initials
+                    with ui.element('div').classes(
+                        'relative w-8 h-8 rounded-full border border-slate-200 shadow-xs '
+                        'navbar-avatar overflow-hidden shrink-0 flex items-center justify-center bg-slate-100'
+                    ):
+                        if avatar_url:
+                            ui.image(avatar_url).classes('w-full h-full object-cover rounded-full').props('no-spinner')
+                        else:
+                            ui.element('div').classes(
+                                'w-full h-full bg-gradient-to-tr from-indigo-600 to-violet-500 '
+                                'flex items-center justify-center text-white text-[11px] font-bold select-none'
+                            ).text = initials
+
+                    # 2. Dynamic 10px Green Online Status Ring / Dot
+                    ui.element('span').classes(
+                        'absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 '
+                        'border-2 border-white ring-1 ring-emerald-500/20 pointer-events-none'
+                    )
+
+                    # 3. Dropdown Menu
+                    with ui.menu().props('anchor="bottom right" self="top right"').classes(
+                        'bg-white shadow-2xl border border-slate-200 rounded-2xl p-2 min-w-[210px]'
+                    ):
+                        with ui.row().classes('px-3 py-2 border-b border-slate-100 mb-1 items-center gap-2.5'):
+                            with ui.element('div').classes(
+                                'w-9 h-9 rounded-full overflow-hidden border border-slate-200 shrink-0 flex items-center justify-center bg-slate-100 shadow-xs'
+                            ):
+                                if avatar_url:
+                                    ui.image(avatar_url).classes('w-full h-full object-cover')
+                                else:
+                                    ui.element('div').classes(
+                                        'w-full h-full bg-indigo-600 flex items-center justify-center text-white text-xs font-bold'
+                                    ).text = initials
+                            with ui.column().classes('gap-0 flex-1 min-w-0'):
+                                ui.label(user_name).classes('text-xs font-bold text-slate-900 truncate w-full')
+                                ui.label(user_role.upper()).classes('text-[9px] font-bold text-indigo-600 uppercase tracking-wider')
+
+                        ui.menu_item('Account Profile', on_click=lambda: ui.navigate.to('/profile')).props('prepend-icon=person').classes('text-xs font-medium')
+
+                        ui.separator().classes('my-1')
+                        def sign_out():
+                            clear_user_session()
+                            ui.notify("Signed out successfully.", type='info')
+                            ui.navigate.to('/login')
+                        ui.menu_item('Sign Out', on_click=sign_out).props('prepend-icon=logout').classes('text-xs font-bold text-rose-600')
+
+            try:
+                from nicegui import context
+                _client_avatar_refreshers[context.client.id] = render_navbar_avatar
+            except Exception:
+                pass
+
+            render_navbar_avatar()

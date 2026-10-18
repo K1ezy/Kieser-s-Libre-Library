@@ -1,7 +1,7 @@
 from nicegui import ui, app
 from core.database.mongo_manager import mongo_db
 from components.sidebar import sidebar
-from components.header import header
+from components.header import header, refresh_header_avatar
 import asyncio
 from typing import Optional, Dict, Any
 
@@ -45,11 +45,17 @@ class UserProfile:
     async def load_data(self):
         """Loads profile and stats strictly isolated to the current user."""
         user_id = app.storage.user.get('user_id')
-        import asyncio
         self.profile_data, self.stats = await asyncio.gather(
             mongo_db.get_user_profile(user_id=user_id),
             mongo_db.get_library_stats(user_id=user_id)
         )
+        if self.profile_data:
+            if self.profile_data.get('avatar_url') is not None:
+                app.storage.user['avatar_url'] = self.profile_data.get('avatar_url') or ''
+            if self.profile_data.get('cover_url') is not None:
+                app.storage.user['cover_url'] = self.profile_data.get('cover_url') or ''
+            if self.profile_data.get('name'):
+                app.storage.user['name'] = self.profile_data.get('name')
         self.render_content.refresh()
 
     async def save_changes(self):
@@ -96,8 +102,9 @@ class UserProfile:
 
         async def on_uploaded(url: str):
             self.profile_data['avatar_url'] = url
-            app.storage.user['avatar_url'] = url
+            app.storage.user['avatar_url'] = url or ''
             self.render_content.refresh()
+            refresh_header_avatar()
 
         open_avatar_modal(
             user_id=user_id,
@@ -111,7 +118,7 @@ class UserProfile:
 
         async def on_uploaded(url: str):
             self.profile_data['cover_url'] = url
-            app.storage.user['cover_url'] = url
+            app.storage.user['cover_url'] = url or ''
             self.render_content.refresh()
 
         open_cover_modal(

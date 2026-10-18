@@ -740,7 +740,42 @@ GLOBAL_THEME_STYLES = '''
                 padding-bottom: max(20px, env(safe-area-inset-bottom, 20px)) !important;
             }
         }
+
+        /* 5. Scoped Cropper.js Alignment & Precision Crop Overlays */
+        .cropper-avatar .cropper-view-box,
+        .cropper-avatar .cropper-face {
+            border-radius: 50% !important;
+            outline: none !important;
+        }
+        .cropper-avatar .cropper-view-box {
+            box-shadow: 0 0 0 2px #4f46e5, 0 0 0 9999px rgba(15, 23, 42, 0.78) !important;
+        }
+        .cropper-cover .cropper-view-box,
+        .cropper-cover .cropper-face {
+            border-radius: 0.75rem !important;
+            outline: none !important;
+        }
+        .cropper-cover .cropper-view-box {
+            box-shadow: 0 0 0 2px #4f46e5, 0 0 0 9999px rgba(15, 23, 42, 0.78) !important;
+        }
+        .cropper-line, .cropper-point {
+            background-color: #6366f1 !important;
+        }
+        .cropper-point.point-se {
+            width: 8px !important;
+            height: 8px !important;
+        }
+        .navbar-avatar {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .navbar-avatar:hover {
+            transform: scale(1.05);
+            border-color: #4F46E5 !important;
+        }
     </style>
+    <!-- Cropper.js for Interactive Align, Crop & Scale Overlays -->
+    <link rel="stylesheet" href="/static/js/cropper.min.css">
+    <script src="/static/js/cropper.min.js"></script>
     <script src="/static/js/keyboard_navigation.js" defer></script>
 '''
 
