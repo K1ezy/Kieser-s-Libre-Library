@@ -1,5 +1,6 @@
 from nicegui import ui, app
 from datetime import datetime
+from typing import Optional, Dict, Any, List
 import logging
 
 from components.sidebar import sidebar
@@ -9,6 +10,21 @@ from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import get_current_user_role
 
 logger = logging.getLogger("LIBRARIAN_UI")
+
+
+def status_badge(text: Optional[str], variant: str = 'indigo'):
+    """Renders high-contrast pill badge only if text is non-empty, preventing empty ghost pills."""
+    if not text or not str(text).strip():
+        return None
+    palettes = {
+        'indigo': 'bg-indigo-50 text-indigo-700 border-indigo-200',
+        'amber': 'bg-amber-50 text-amber-800 border-amber-200',
+        'emerald': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        'purple': 'bg-purple-50 text-purple-700 border-purple-200',
+        'slate': 'bg-slate-100 text-slate-700 border-slate-200',
+    }
+    cls = palettes.get(variant, palettes['slate'])
+    return ui.label(str(text).strip()).classes(f'px-2.5 py-0.5 rounded-full text-xs font-semibold border {cls}')
 
 
 async def librarian_dashboard():
@@ -54,8 +70,7 @@ async def librarian_dashboard():
                         ui.label('Librarian Operations Console').classes('text-2xl sm:text-3xl font-black text-slate-900 tracking-tight')
                         ui.label('Collection curation, curricular requisitions (FM-LIBS-002), and circulation terminal (NEMSU Tandag Campus)').classes('text-xs sm:text-sm text-slate-500')
             with ui.row().classes('items-center gap-2'):
-                ui.element('span').classes('text-xs font-black uppercase tracking-wider bg-purple-50 text-purple-700 px-3 py-1 rounded-full border border-purple-200') \
-                    .text = '📚 Operations Lead'
+                status_badge('📚 Operations Lead', 'purple')
                 if user_role == 'admin':
                     ui.button('Go to Admin IT Console', icon='shield', on_click=lambda: ui.navigate.to('/admin')) \
                         .props('flat rounded-xl color=indigo size=sm font-bold border border-indigo-200 bg-white')
@@ -110,7 +125,7 @@ async def librarian_dashboard():
                         with ui.row().classes('items-center gap-2'):
                             ui.icon('assignment_late', size='sm').classes('text-amber-600')
                             ui.label('Faculty Requisition Queue').classes('text-sm sm:text-base font-black text-slate-900')
-                            ui.element('span').classes('text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-002'
+                            status_badge('FM-LIBS-002', 'indigo')
                         ui.button('View All Requests', icon='arrow_forward', on_click=lambda: ui.navigate.to('/requisitions')) \
                             .props('flat rounded-xl color=indigo size=xs font-bold')
 
@@ -156,8 +171,7 @@ async def librarian_dashboard():
                                         ui.label(b.get('title', 'Untitled')).classes('text-xs sm:text-sm font-bold text-slate-900 truncate')
                                         ui.label(b.get('display_author', 'Unknown Author')).classes('text-[11px] text-slate-400 truncate')
                                 with ui.row().classes('items-center gap-2 shrink-0'):
-                                    ui.element('span').classes('text-[10px] font-black uppercase px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200') \
-                                        .text = ft
+                                    status_badge(ft, 'slate')
                                     ui.button(icon='arrow_forward', on_click=lambda bid=b_id: ui.navigate.to(f'/book/{bid}')) \
                                         .props('flat round dense size=sm color=indigo')
 
@@ -171,13 +185,13 @@ async def librarian_dashboard():
                         ui.label('OPDS E-READER FEED').classes('text-sm font-black text-slate-900')
                     ui.label('Broadcast your institutional catalog over Wi-Fi directly to dedicated e-readers and mobile reading apps.').classes('text-xs text-slate-500 mb-3 leading-snug')
 
-                    with ui.column().classes('w-full p-3 bg-slate-50 rounded-2xl border border-slate-200 gap-2 mb-3'):
-                        opds_lbl = ui.label("http://<host>:8080/opds").classes('font-mono text-xs font-bold text-slate-800 break-all')
-                        ui.run_javascript(f'const el = document.getElementById("{opds_lbl.id}"); if(el) el.innerText = window.location.origin + "/opds";')
-                        ui.button('Copy OPDS Feed URL', icon='content_copy', on_click=lambda: ui.run_javascript("""
-                            navigator.clipboard.writeText(window.location.origin + '/opds');
-                            alert('OPDS Feed URL copied! Enter this URL in your e-reader app.');
-                        """)).props('unelevated rounded-xl color=indigo size=xs font-bold w-full')
+                    with ui.column().classes('w-full p-3.5 bg-slate-50 rounded-2xl border border-slate-200 gap-2.5 mb-3'):
+                        opds_lbl = ui.label("http://<host>:8080/opds/v1.2/catalog.xml").classes('font-mono text-xs font-bold text-slate-800 break-all select-all')
+                        ui.run_javascript(f'const el = document.getElementById("{opds_lbl.id}"); if(el) el.innerText = window.location.origin + "/opds/v1.2/catalog.xml";')
+                        ui.button('Copy OPDS Feed URL', icon='content_copy', on_click=lambda: (
+                            ui.run_javascript("navigator.clipboard.writeText(window.location.origin + '/opds/v1.2/catalog.xml');"),
+                            ui.notify('OPDS Feed URL copied! Enter this in your e-reader app.', type='positive')
+                        )).props('unelevated rounded-xl color=indigo size=sm font-bold w-full')
 
                     with ui.column().classes('w-full gap-1 text-[11px] text-slate-500'):
                         ui.label('📱 Compatible with: Apple Books, Moon+ Reader, KOReader (Kindle/Kobo), Foliate, and Thorium Reader.').classes('italic')
@@ -214,13 +228,19 @@ async def librarian_dashboard():
                         with ui.row().classes('items-center gap-2'):
                             ui.icon('door_front', size='sm').classes('text-emerald-600')
                             ui.label('Entrance Doorway Summary').classes('text-sm font-black text-slate-900')
-                        ui.element('span').classes('text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-009'
+                        status_badge('FM-LIBS-009', 'indigo')
 
                     ui.label('Student QR check-ins actively recorded at the library main entrance door today.').classes('text-xs text-slate-500 mb-3')
                     
-                    with ui.row().classes('w-full p-3 bg-slate-50 rounded-2xl border border-slate-100 items-center justify-between mb-3'):
+                    with ui.row().classes('w-full p-3.5 bg-slate-50 rounded-2xl border border-slate-200 items-center justify-between mb-1'):
                         with ui.column().classes('gap-0'):
-                            ui.label('Active in Library').classes('text-[11px] font-bold text-slate-400 uppercase tracking-wider')
+                            ui.label('Active in Library').classes('text-[11px] font-bold text-slate-500 uppercase tracking-wider')
                             ui.label(f"{active_visitors} Visitors").classes('text-lg font-black text-slate-900')
-                        ui.button('Open Gate Terminal', icon='qr_code_scanner', on_click=lambda: ui.navigate.to('/attendance')) \
-                            .props('unelevated rounded-xl color=emerald size=xs font-bold')
+                        ui.button(
+                            'OPEN GATE TERMINAL',
+                            icon='open_in_new',
+                            on_click=lambda: ui.navigate.to('/attendance'),
+                        ).props('unelevated no-caps').classes(
+                            'px-3.5 py-2 rounded-lg text-xs font-semibold bg-white text-slate-700 '
+                            'border border-slate-300 hover:bg-slate-100 hover:text-slate-900 shadow-2xs transition-all'
+                        )

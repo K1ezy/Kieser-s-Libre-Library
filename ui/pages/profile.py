@@ -138,113 +138,126 @@ class UserProfile:
         cover_url = self.profile_data.get('cover_url')
         initials = get_user_initials(user_name, username)
 
-        # 1. Cover Photo Banner
-        with ui.element('div').classes('w-full h-40 sm:h-56 md:h-64 rounded-2xl sm:rounded-3xl relative overflow-hidden shadow-md border border-slate-200/90'):
-            if cover_url:
-                ui.image(cover_url).classes('w-full h-full object-cover')
-            else:
-                with ui.element('div').classes('w-full h-full bg-gradient-to-r from-indigo-800 via-purple-800 to-slate-900 flex items-center justify-end p-6'):
-                    ui.icon('auto_stories', size='5rem').classes('text-white/10')
+        # 1. Single Unified Container Wrapping Cover Banner & Profile Details (Zero Overhang)
+        with ui.element('div').classes('w-full max-w-4xl mx-auto bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden'):
+            # Cover Banner (100% flush with parent container)
+            with ui.element('div').classes('relative w-full h-44 sm:h-56 md:h-60 bg-gradient-to-r from-indigo-950 via-purple-900 to-slate-950 overflow-hidden'):
+                if cover_url:
+                    ui.image(cover_url).classes('w-full h-full object-cover')
+                else:
+                    ui.icon('auto_stories').classes('text-white/10 text-8xl absolute right-6 bottom-2 select-none pointer-events-none')
 
-            with ui.row().classes('absolute top-3 right-3 sm:top-4 sm:right-4 z-10'):
-                ui.button('Edit Cover', icon='photo_camera', on_click=self.open_cover_modal).props('unelevated rounded-xl size=sm').classes(
-                    'bg-slate-900/60 hover:bg-slate-900/80 text-white backdrop-blur-md border border-white/20 text-xs font-bold shadow-md transition-all'
+                # Edit Cover Button
+                ui.button('EDIT COVER', icon='photo_camera', on_click=self.open_cover_modal).props(
+                    'unelevated no-caps'
+                ).classes(
+                    'absolute top-4 right-4 z-10 px-3.5 py-1.5 rounded-lg text-xs font-semibold '
+                    'bg-slate-900/60 hover:bg-slate-900/80 text-white backdrop-blur-md '
+                    'border border-white/20 transition-all duration-200 shadow-sm'
                 )
 
-        # 2. Main Profile Card
-        with ui.column().classes('w-full max-w-5xl mx-auto -mt-16 sm:-mt-20 px-1 sm:px-4'):
-            with ui.card().classes('w-full p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl shadow-xl bg-white border border-slate-200'):
-                with ui.row().classes('w-full items-center sm:items-end gap-4 sm:gap-6 flex-col sm:flex-row text-center sm:text-left'):
-                    # Circular Avatar
-                    with ui.element('div').classes('relative w-24 h-24 sm:w-32 sm:h-32 rounded-full border-4 border-white shadow-xl overflow-hidden bg-slate-100 shrink-0 group'):
-                        if avatar_url:
-                            ui.image(avatar_url).classes('w-full h-full object-cover')
-                        else:
-                            with ui.element('div').classes('w-full h-full flex items-center justify-center bg-gradient-to-br from-indigo-500 via-indigo-600 to-purple-600 text-white font-black text-2xl sm:text-3xl select-none'):
-                                ui.label(initials)
+            # Profile Body Content
+            with ui.element('div').classes('px-5 sm:px-8 pb-8'):
+                with ui.element('div').classes('flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-6 border-b border-slate-100'):
+                    with ui.element('div').classes('flex flex-col sm:flex-row sm:items-end gap-5'):
+                        # AVATAR: Outer is relative (unclipped), Inner is overflow-hidden
+                        with ui.element('div').classes('relative w-28 h-28 sm:w-32 sm:h-32 -mt-14 sm:-mt-16 shrink-0'):
+                            with ui.element('div').classes(
+                                'w-full h-full rounded-full overflow-hidden ring-4 ring-white shadow-md '
+                                'bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center'
+                            ):
+                                if avatar_url:
+                                    ui.image(avatar_url).classes('w-full h-full object-cover')
+                                else:
+                                    ui.label(initials).classes('text-2xl sm:text-3xl font-black text-white tracking-wider select-none')
 
-                        ui.button(icon='photo_camera', on_click=self.open_avatar_modal).props('flat round dense size=sm').classes(
-                            'absolute bottom-1 right-1 bg-indigo-600 hover:bg-indigo-700 text-white border-2 border-white shadow-md transition-all'
-                        ).tooltip('Upload Avatar Photo')
+                            # Floating Camera Badge outside overflow-hidden circle (NEVER CLIPPED)
+                            ui.button(
+                                icon='photo_camera',
+                                on_click=self.open_avatar_modal,
+                            ).props('round unelevated dense').classes(
+                                'absolute bottom-0.5 right-0.5 z-10 w-9 h-9 rounded-full '
+                                'bg-indigo-600 hover:bg-indigo-700 text-white ring-2 ring-white '
+                                'shadow-md transition-transform duration-200 hover:scale-105'
+                            ).tooltip('Change Profile Photo')
 
-                    # Profile Core Metadata
-                    with ui.column().classes('mb-1 sm:mb-2 flex-grow min-w-0 w-full sm:w-auto items-center sm:items-start'):
-                        if not self.is_editing:
-                            with ui.row().classes('items-center gap-2 flex-wrap justify-center sm:justify-start'):
-                                ui.label(user_name).classes('text-2xl sm:text-3xl font-black text-slate-900 leading-tight tracking-tight')
-                                with ui.element('div').classes(f'text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border flex items-center gap-1 {role_cfg["badge_bg"]}'):
-                                    ui.icon(role_cfg['icon'], size='14px')
-                                    ui.label(norm_role)
+                        # Profile Core Metadata
+                        with ui.column().classes('mb-1 sm:mb-2 flex-grow min-w-0 w-full sm:w-auto items-center sm:items-start'):
+                            if not self.is_editing:
+                                with ui.row().classes('items-center gap-2 flex-wrap justify-center sm:justify-start'):
+                                    ui.label(user_name).classes('text-2xl sm:text-3xl font-black text-slate-900 leading-tight tracking-tight')
+                                    with ui.element('div').classes(f'text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border flex items-center gap-1 {role_cfg["badge_bg"]}'):
+                                        ui.icon(role_cfg['icon'], size='14px')
+                                        ui.label(norm_role)
 
-                            with ui.row().classes('items-center gap-2 mt-1.5 flex-wrap justify-center sm:justify-start'):
-                                with ui.element('span').classes('text-xs font-mono font-bold text-slate-800 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-lg shadow-2xs'):
-                                    ui.label(f"{role_cfg['id_name']}: {inst_id}")
-                                if norm_role == 'STUDENT':
-                                    ui.label(f"{program} • {year_level}").classes('text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 rounded-lg')
-                                elif norm_role == 'FACULTY':
-                                    ui.label(dept).classes('text-xs font-black text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-0.5 rounded-lg')
-                                elif norm_role == 'LIBRARIAN':
-                                    ui.label(branch).classes('text-xs font-black text-purple-700 bg-purple-50 border border-purple-100 px-2.5 py-0.5 rounded-lg')
-                                elif norm_role == 'ADMIN':
-                                    ui.label("System Governance").classes('text-xs font-black text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-0.5 rounded-lg')
+                                with ui.row().classes('items-center gap-2 mt-1.5 flex-wrap justify-center sm:justify-start'):
+                                    with ui.element('span').classes('text-xs font-mono font-bold text-slate-800 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-lg shadow-2xs'):
+                                        ui.label(f"{role_cfg['id_name']}: {inst_id}")
+                                    if norm_role == 'STUDENT':
+                                        ui.label(f"{program} • {year_level}").classes('text-xs font-black text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-0.5 rounded-lg')
+                                    elif norm_role == 'FACULTY':
+                                        ui.label(dept).classes('text-xs font-black text-blue-700 bg-blue-50 border border-blue-100 px-2.5 py-0.5 rounded-lg')
+                                    elif norm_role == 'LIBRARIAN':
+                                        ui.label(branch).classes('text-xs font-black text-purple-700 bg-purple-50 border border-purple-100 px-2.5 py-0.5 rounded-lg')
+                                    elif norm_role == 'ADMIN':
+                                        ui.label("System Governance").classes('text-xs font-black text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-0.5 rounded-lg')
 
-                                ui.label(self.profile_data.get('headline', 'Academic Scholar & Researcher')).classes('text-xs text-slate-500 font-medium')
-                        else:
-                            self.name_input = ui.input(value=user_name, label='Full Legal Name').props('outlined dense rounded bg-color=white').classes('w-full text-sm')
-                            with ui.row().classes('w-full gap-2.5 flex-wrap sm:flex-nowrap'):
-                                self.id_input = ui.input(value=inst_id, label=role_cfg['id_name']).props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
-                                if norm_role == 'STUDENT':
-                                    self.program_input = ui.select(PROGRAM_OPTIONS, value=program, label='Program').props('outlined dense rounded bg-color=white options-dense').classes('w-32 text-sm')
-                                    self.year_input = ui.select(YEAR_LEVEL_OPTIONS, value=year_level, label='Year Level').props('outlined dense rounded bg-color=white options-dense').classes('w-32 text-sm')
-                                elif norm_role == 'FACULTY':
-                                    self.dept_input = ui.input(value=dept, label='Department / College').props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
-                                elif norm_role == 'LIBRARIAN':
-                                    self.branch_input = ui.input(value=branch, label='Library Branch / Section').props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
-                                elif norm_role == 'ADMIN':
-                                    self.branch_input = ui.input(value=admin_code, label='Admin Verification Code').props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
+                                    ui.label(self.profile_data.get('headline', 'Academic Scholar & Researcher')).classes('text-xs text-slate-500 font-medium')
+                            else:
+                                self.name_input = ui.input(value=user_name, label='Full Legal Name').props('outlined dense rounded bg-color=white').classes('w-full text-sm')
+                                with ui.row().classes('w-full gap-2.5 flex-wrap sm:flex-nowrap'):
+                                    self.id_input = ui.input(value=inst_id, label=role_cfg['id_name']).props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
+                                    if norm_role == 'STUDENT':
+                                        self.program_input = ui.select(PROGRAM_OPTIONS, value=program, label='Program').props('outlined dense rounded bg-color=white options-dense').classes('w-32 text-sm')
+                                        self.year_input = ui.select(YEAR_LEVEL_OPTIONS, value=year_level, label='Year Level').props('outlined dense rounded bg-color=white options-dense').classes('w-32 text-sm')
+                                    elif norm_role == 'FACULTY':
+                                        self.dept_input = ui.input(value=dept, label='Department / College').props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
+                                    elif norm_role == 'LIBRARIAN':
+                                        self.branch_input = ui.input(value=branch, label='Library Branch / Section').props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
+                                    elif norm_role == 'ADMIN':
+                                        self.branch_input = ui.input(value=admin_code, label='Admin Verification Code').props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
 
-                            self.headline_input = ui.input(
-                                value=self.profile_data.get('headline', 'Academic Scholar & Researcher'),
-                                label='Academic Headline / Discipline'
-                            ).props('outlined dense rounded bg-color=white').classes('w-full text-sm')
+                                self.headline_input = ui.input(
+                                    value=self.profile_data.get('headline', 'Academic Scholar & Researcher'),
+                                    label='Academic Headline / Discipline'
+                                ).props('outlined dense rounded bg-color=white').classes('w-full text-sm')
 
                     # Action Buttons
                     if not self.is_editing:
-                        ui.button('Edit Profile', icon='edit', on_click=self.toggle_edit).props(
-                            'flat rounded-xl color=indigo font-bold size=sm'
-                        ).classes('self-center sm:self-end border border-slate-200 hover:bg-slate-50 shadow-2xs')
+                        ui.button('EDIT PROFILE', icon='edit', on_click=self.toggle_edit).props(
+                            'outline no-caps color=grey-8 size=sm font-bold'
+                        ).classes('self-center sm:self-end border border-slate-300 text-slate-700 hover:bg-slate-50 shadow-2xs rounded-lg px-4 py-1.5 transition-all')
                     else:
                         with ui.row().classes('gap-2 self-center sm:self-end mt-2'):
-                            ui.button('Cancel', on_click=self.toggle_edit).props('flat rounded-xl color=red size=sm font-bold')
-                            ui.button('Save Changes', icon='save', on_click=self.save_changes).props('unelevated rounded-xl color=indigo size=sm font-bold shadow-md')
-
-                ui.separator().classes('my-5 opacity-60')
+                            ui.button('Cancel', on_click=self.toggle_edit).props('outline rounded-lg color=grey-7 size=sm font-bold no-caps')
+                            ui.button('Save Changes', icon='save', on_click=self.save_changes).props('unelevated rounded-lg color=indigo size=sm font-bold no-caps shadow-xs')
 
                 # 3. Institutional Digital PVC ID Badge
-                render_pvc_id_card(
-                    user_name=user_name,
-                    norm_role=norm_role,
-                    role_cfg=role_cfg,
-                    inst_id=inst_id,
-                    program=program,
-                    year_level=year_level,
-                    dept=dept,
-                    branch=branch,
-                    admin_code=admin_code,
-                    avatar_url=avatar_url,
-                    initials=initials,
-                )
+                with ui.element('div').classes('mt-6'):
+                    render_pvc_id_card(
+                        user_name=user_name,
+                        norm_role=norm_role,
+                        role_cfg=role_cfg,
+                        inst_id=inst_id,
+                        program=program,
+                        year_level=year_level,
+                        dept=dept,
+                        branch=branch,
+                        admin_code=admin_code,
+                        avatar_url=avatar_url,
+                        initials=initials,
+                    )
 
                 # 4. Biography Section
-                ui.label('BIOGRAPHY & RESEARCH INTERESTS').classes('text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5')
+                ui.separator().classes('my-6 opacity-60')
+                ui.label('BIOGRAPHY & RESEARCH INTERESTS').classes('text-xs font-bold uppercase tracking-wider text-slate-400 mb-2')
                 if not self.is_editing:
                     ui.label(self.profile_data.get('bio', 'Dedicated learner and researcher utilizing Libre-Library.')).classes('text-slate-700 leading-relaxed text-sm sm:text-base break-words')
                 else:
                     self.bio_input = ui.textarea(value=self.profile_data.get('bio', ''), label='Personal Bio / Research Goals').props('outlined rounded bg-color=white').classes('w-full text-sm')
 
-                ui.separator().classes('my-5 opacity-60')
-
                 # 5. Activity & Subsystem Stats
+                ui.separator().classes('my-6 opacity-60')
                 render_profile_stats(self.stats)
 
     def build_ui(self):

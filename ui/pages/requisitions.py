@@ -177,7 +177,7 @@ async def requisitions_page():
                                     with ui.element('div').classes(f'px-2.5 py-0.5 rounded-full text-xs font-black uppercase border flex items-center gap-1 {badge_style}'):
                                         ui.icon(badge_icon, size='14px')
                                         ui.label(st)
-                                    ui.element('span').classes('text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-002'
+                                    ui.label('FM-LIBS-002').classes('text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200')
 
                                 author_txt = r.get('author', 'Unknown Author')
                                 pub_txt = f" • Publisher: {r.get('publisher')}" if r.get('publisher') else ""
@@ -241,16 +241,16 @@ async def requisitions_page():
 
                                     if st != "Approved":
                                         ui.button('Approve', icon='check', on_click=make_status_updater(req_id, "Approved")) \
-                                            .props('unelevated rounded-xl color=blue size=xs font-bold')
+                                            .props('unelevated rounded-xl size=xs font-bold no-caps').classes('bg-blue-600 hover:bg-blue-700 text-white shadow-xs')
                                     if st != "In Procurement":
                                         ui.button('Order / Procure', icon='shopping_bag', on_click=make_status_updater(req_id, "In Procurement")) \
-                                            .props('unelevated rounded-xl color=purple size=xs font-bold')
+                                            .props('unelevated rounded-xl size=xs font-bold no-caps').classes('bg-purple-600 hover:bg-purple-700 text-white shadow-xs')
                                     if st != "Available in Library":
                                         ui.button('Mark Available', icon='library_add_check', on_click=make_status_updater(req_id, "Available in Library")) \
-                                            .props('unelevated rounded-xl color=emerald size=xs font-bold')
+                                            .props('unelevated rounded-xl size=xs font-bold no-caps').classes('bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs')
                                     if st != "Declined":
                                         ui.button('Decline', icon='close', on_click=make_status_updater(req_id, "Declined")) \
-                                            .props('flat rounded-xl color=rose size=xs font-bold')
+                                            .props('flat rounded-xl size=xs font-bold no-caps').classes('text-rose-600 hover:bg-rose-50 border border-rose-200')
 
         # Initial data load
         await load_requisitions_list()
@@ -264,7 +264,7 @@ async def requisitions_page():
                 with ui.row().classes('items-center gap-2'):
                     ui.icon('post_add', size='md').classes('text-indigo-600')
                     ui.label('Faculty Book Requisition Form').classes('text-base sm:text-xl font-black text-slate-900')
-                    ui.element('span').classes('text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-002'
+                    ui.label('FM-LIBS-002').classes('text-[10px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200')
                 ui.button(icon='close', on_click=req_dialog.close).props('flat round dense size=sm color=grey')
 
             # Scrollable Form Body (Keyboard safe)

@@ -155,7 +155,7 @@ async def attendance_page():
                                     ui.label('LIVE DOORWAY STREAM').classes('text-xs font-black text-slate-900 uppercase tracking-wider')
                                 ui.label('Real-time Logs').classes('text-[11px] font-bold text-slate-400')
 
-                            live_feed_container = ui.column().classes('w-full gap-2.5 max-h-[460px] overflow-y-auto')
+                            live_feed_container = ui.column().classes('w-full gap-2.5 max-h-[520px] overflow-y-auto')
 
                             async def refresh_doorway_stream():
                                 recent_logs = await mongo_db.get_today_attendance_logs(limit=10)
@@ -170,7 +170,7 @@ async def attendance_page():
                         with ui.column().classes('gap-0.5'):
                             with ui.row().classes('items-center gap-2'):
                                 ui.label('Daily Library Visitor / Entrance Log Summary').classes('text-base sm:text-lg font-black text-slate-900')
-                                ui.element('span').classes('text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded border border-indigo-200').text = 'FM-LIBS-009'
+                                ui.label('FM-LIBS-009').classes('text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full border border-indigo-200')
                             ui.label('Formal institutional visitor log record replacing pen-and-paper entrance sheets (NEMSU Tandag Campus)').classes('text-xs text-slate-500')
 
                         with ui.row().classes('items-center gap-2 flex-wrap'):

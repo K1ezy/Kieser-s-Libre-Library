@@ -3,11 +3,11 @@ from typing import Dict, Any, List, Callable, Optional
 
 
 PURPOSE_OPTIONS = [
-    "📚 Study / Review",
-    "🔬 Research / Thesis",
-    "📖 Book Borrow / Return",
-    "💻 E-Library / Digital OPAC",
-    "👥 Group Discussion"
+    ("Study / Review", "menu_book"),
+    ("Research / Thesis", "science"),
+    ("Book Borrow / Return", "swap_horiz"),
+    ("E-Library / Digital OPAC", "computer"),
+    ("Group Discussion", "groups"),
 ]
 
 
@@ -18,37 +18,67 @@ def render_scanner_station(
     feedback_banner_holder: Dict[str, Any]
 ) -> None:
     """Renders the entrance scanner card with camera runner, purpose selector, and barcode field."""
-    with ui.card().classes('w-full p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm'):
-        ui.label('ENTRANCE DOOR SCANNER').classes('text-xs font-black text-indigo-600 uppercase tracking-wider mb-2')
-        ui.label('Hold student QR code or NEMSU ID barcode in front of the camera').classes('text-sm text-slate-600 mb-4')
+    with ui.card().classes('w-full p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm gap-0'):
+        with ui.row().classes('items-center justify-between w-full mb-1'):
+            ui.label('ENTRANCE DOOR SCANNER').classes('text-xs font-black text-indigo-600 uppercase tracking-wider')
+            with ui.row().classes('items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200'):
+                ui.icon('bolt', size='14px').classes('text-amber-500')
+                ui.label('Latency: < 0.2s')
 
-        # Purpose Selection Chips
-        ui.label('Purpose of Visit:').classes('text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5')
-        with ui.row().classes('gap-2 mb-4 flex-wrap'):
-            chip_elements = {}
-            for p in PURPOSE_OPTIONS:
-                def select_purpose(chosen=p):
-                    active_purpose['val'] = chosen
-                    for opt, btn in chip_elements.items():
-                        if opt == chosen:
-                            btn.props('unelevated color=indigo')
-                        else:
-                            btn.props('flat color=grey-7')
+        ui.label('Hold student QR pass or NEMSU ID barcode in front of the camera').classes('text-xs text-slate-500 mb-4')
 
-                btn_el = ui.button(p, on_click=select_purpose).props(
-                    'rounded-xl size=sm font-bold ' + ('unelevated color=indigo' if p == active_purpose['val'] else 'flat color=grey-7')
-                )
-                chip_elements[p] = btn_el
+        # 1. Interactive Purpose of Visit Pill Selector (Hick's & Fitts's Law)
+        ui.label('PURPOSE OF VISIT:').classes('text-xs font-bold text-slate-500 uppercase tracking-wider mb-2')
+        purpose_row = ui.row().classes('w-full flex-wrap gap-2 mb-5')
 
-        # Camera Stream / HTML5 QR Scanner Viewport
-        with ui.element('div').classes('w-full rounded-2xl overflow-hidden bg-slate-900 border border-slate-300 relative flex flex-col items-center justify-center min-h-[260px] sm:min-h-[300px] shadow-inner'):
-            ui.add_body_html('''
-            <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-            <script>
-            window.libreScannerRunning = false;
-            window.startLibreScanner = function() {
-                if (window.libreScannerRunning) return;
-                const html5QrCode = new Html5Qrcode("reader");
+        # Normalize active_purpose value to match without leading emoji if present
+        current_val = active_purpose.get('val', 'Study / Review')
+        for label, _ in PURPOSE_OPTIONS:
+            if label.lower() in current_val.lower():
+                active_purpose['val'] = label
+                break
+
+        def render_purpose_chips():
+            purpose_row.clear()
+            with purpose_row:
+                for label, icon_name in PURPOSE_OPTIONS:
+                    is_active = (active_purpose['val'] == label)
+                    chip_cls = (
+                        'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        if is_active
+                        else 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                    )
+                    ui.button(
+                        label,
+                        icon=icon_name,
+                        on_click=lambda l=label: select_purpose(l),
+                    ).props('unelevated no-caps').classes(
+                        f'px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all duration-150 {chip_cls}'
+                    )
+
+        def select_purpose(selected_label: str):
+            active_purpose['val'] = selected_label
+            render_purpose_chips()
+
+        render_purpose_chips()
+
+        # 2. Camera Viewport with Intentional Standby State (Peak-End & Fitts's Law)
+        scanner_state = {'camera_active': False}
+        viewport_box = ui.element('div').classes(
+            'relative w-full aspect-video rounded-2xl bg-slate-900 border border-slate-800 '
+            'overflow-hidden flex flex-col items-center justify-center p-6 text-center shadow-inner'
+        )
+
+        ui.add_body_html('''
+        <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+        <script>
+        window.libreScannerRunning = false;
+        window.html5QrCodeInstance = null;
+
+        window.startLibreScanner = function() {
+            if (window.libreScannerRunning) return;
+            try {
+                window.html5QrCodeInstance = new Html5Qrcode("reader");
                 const qrCodeSuccessCallback = (decodedText, decodedResult) => {
                     const inputEl = document.querySelector('#attendance-manual-input input');
                     if (inputEl) {
@@ -58,41 +88,99 @@ def render_scanner_station(
                         if (submitBtn) submitBtn.click();
                     }
                 };
-                const config = { fps: 10, qrbox: { width: 220, height: 220 } };
-                html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
+                const config = { fps: 12, qrbox: { width: 240, height: 240 } };
+                window.html5QrCodeInstance.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
                     .then(() => { window.libreScannerRunning = true; })
                     .catch(err => {
                         console.warn("Camera start notice:", err);
                         const r = document.getElementById("reader");
-                        if (r) r.innerHTML = '<div class="text-slate-300 text-xs p-4 text-center">Camera stream offline or permission not granted. Use the manual/barcode input below.</div>';
+                        if (r) r.innerHTML = '<div class="text-slate-300 text-xs p-4 text-center">Camera stream unavailable or permission denied. Please use the barcode input below.</div>';
                     });
-            };
-            </script>
-            ''')
-            ui.html('<div id="reader" style="width: 100%; max-width: 480px; min-height: 240px; margin: auto;"></div>', sanitize=False, tag='div').classes('w-full')
+            } catch(e) {
+                console.error("Scanner init error:", e);
+            }
+        };
 
-        with ui.row().classes('w-full justify-between items-center gap-2 mt-3 flex-wrap'):
-            ui.button('Activate Camera Scanner', icon='videocam', on_click=lambda: ui.run_javascript('window.startLibreScanner();')) \
-                .props('unelevated rounded-xl color=indigo size=sm font-bold min-height=40px')
-            ui.label('⚡ Response Time: < 0.2s').classes('text-xs font-mono text-emerald-600 font-bold')
+        window.stopLibreScanner = function() {
+            if (window.html5QrCodeInstance && window.libreScannerRunning) {
+                window.html5QrCodeInstance.stop().then(() => {
+                    window.libreScannerRunning = false;
+                }).catch(err => console.warn("Stop scanner error:", err));
+            }
+        };
+        </script>
+        ''')
 
-        ui.separator().classes('my-4')
+        def render_camera_viewport():
+            viewport_box.clear()
+            with viewport_box:
+                # Top-right Latency Badge inside viewport
+                with ui.row().classes(
+                    'absolute top-3 right-3 z-10 items-center gap-1.5 px-3 py-1 rounded-full '
+                    'bg-slate-800/90 border border-slate-700 text-emerald-400 text-xs font-semibold backdrop-blur-xs'
+                ):
+                    ui.icon('bolt', size='14px').classes('text-amber-400')
+                    ui.label('Response Time: < 0.2s')
 
-        # Live Status Confirmation Banner Card
+                if not scanner_state['camera_active']:
+                    with ui.element('div').classes(
+                        'w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 '
+                        'text-indigo-400 flex items-center justify-center mb-3'
+                    ):
+                        ui.icon('qr_code_scanner', size='36px')
+                    ui.label('Camera Scanner on Standby').classes('text-base font-bold text-white')
+                    ui.label(
+                        'Hold student QR pass or NEMSU ID barcode in front of the lens once activated.'
+                    ).classes('text-xs text-slate-400 max-w-sm mt-1 mb-5 leading-normal')
+                    ui.button(
+                        'ACTIVATE CAMERA SCANNER',
+                        icon='videocam',
+                        on_click=toggle_camera,
+                    ).props('unelevated no-caps').classes(
+                        'px-5 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 '
+                        'text-white shadow-md transition-all hover:scale-105 min-h-[44px]'
+                    )
+                else:
+                    ui.html('<div id="reader" style="width: 100%; max-width: 480px; min-height: 240px; margin: auto;"></div>', sanitize=False, tag='div').classes('w-full')
+                    ui.run_javascript('setTimeout(function(){ window.startLibreScanner(); }, 150);')
+                    with ui.row().classes('absolute bottom-3 left-0 right-0 justify-center z-10'):
+                        ui.button(
+                            'STOP CAMERA SCANNER',
+                            icon='videocam_off',
+                            on_click=toggle_camera,
+                        ).props('unelevated no-caps').classes(
+                            'px-4 py-2 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-md'
+                        )
+
+        def toggle_camera():
+            if scanner_state['camera_active']:
+                ui.run_javascript('window.stopLibreScanner();')
+                scanner_state['camera_active'] = False
+            else:
+                scanner_state['camera_active'] = True
+            render_camera_viewport()
+
+        render_camera_viewport()
+
+        ui.separator().classes('my-5')
+
+        # 3. Live Status Confirmation Banner Card
         feedback_banner_holder['banner'] = ui.element('div').classes('w-full')
 
-        # Manual ID Input / Barcode Scanner Gun Field
-        with ui.row().classes('w-full items-center justify-between mb-1 flex-wrap gap-1'):
-            ui.label('Rapid ID / Barcode Input:').classes('text-xs font-bold text-slate-500 uppercase tracking-wider')
-            with ui.row().classes('items-center gap-1 cursor-pointer hover:opacity-80').on('click', lambda: set_self_input()):
+        # 4. Rapid ID / Barcode Input Bar
+        with ui.row().classes('w-full items-center justify-between mb-1.5 flex-wrap gap-1'):
+            ui.label('RAPID ID / BARCODE INPUT:').classes('text-xs font-bold text-slate-500 uppercase tracking-wider')
+            with ui.row().classes(
+                'items-center gap-1 cursor-pointer px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 transition-colors'
+            ).on('click', lambda: set_self_input()):
                 ui.icon('flash_on', size='14px').classes('text-amber-500')
-                ui.label(f'Fill My ID: {student_id}').classes('text-[11px] font-bold text-indigo-600')
+                ui.label(f'Fill My ID: {student_id}').classes('text-[11px] font-bold text-indigo-700')
 
-        with ui.row().classes('w-full items-center gap-2 flex-wrap sm:flex-nowrap'):
+        with ui.row().classes('w-full items-center gap-2.5 flex-wrap sm:flex-nowrap'):
             manual_input = ui.input(placeholder='Scan barcode gun or type Student ID (e.g. 2024-001)...') \
-                .classes('flex-1 text-base min-h-[44px]').props('id="attendance-manual-input" rounded outlined dense autofocus')
+                .classes('flex-1 text-sm min-h-[44px]').props('id="attendance-manual-input" rounded-xl outlined dense autofocus')
             year_select = ui.select(["1st Year", "2nd Year", "3rd Year", "4th Year", "Graduate"], value="1st Year") \
-                .classes('w-full sm:w-28 sm:shrink-0').props('rounded outlined dense options-dense')
+                .classes('w-full sm:w-32 sm:shrink-0 text-sm').props('rounded-xl outlined dense options-dense')
 
             def set_self_input():
                 manual_input.value = student_id
@@ -108,7 +196,7 @@ def render_scanner_station(
             manual_input.on('keydown.enter', do_submit)
             ui.button('Check In / Out', icon='login', on_click=do_submit) \
                 .props('id="attendance-submit-btn" unelevated rounded-xl color=slate-900 text-color=white size=md font-bold') \
-                .classes('w-full sm:w-auto min-h-[44px] px-5 shrink-0 shadow-sm hover:brightness-110 active:scale-95 transition-all')
+                .classes('w-full sm:w-auto min-h-[44px] px-6 shrink-0 shadow-sm hover:bg-slate-800 active:scale-95 transition-all text-xs')
 
 
 def render_live_doorway_feed(container: ui.column, recent_logs: List[Dict[str, Any]]) -> None:
@@ -136,3 +224,4 @@ def render_live_doorway_feed(container: ui.column, recent_logs: List[Dict[str, A
                     with ui.element('div').classes(f'px-2 py-0.5 rounded-full text-[10px] font-black uppercase border {status_bg}'):
                         ui.label(r.get('status'))
                     ui.label(r.get('time_in_str', '')).classes('text-[10px] font-mono text-slate-400')
+
