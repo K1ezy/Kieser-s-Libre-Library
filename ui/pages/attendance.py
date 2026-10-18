@@ -34,6 +34,7 @@ async def attendance_page():
     user_id = app.storage.user.get('user_id')
     user_name = app.storage.user.get('username') or 'Student'
     user_role = get_current_user_role()
+    is_staff = user_role in ['admin', 'librarian']
     user_profile = await mongo_db.get_user_profile(user_id)
     student_id = user_profile.get('student_id') or (f"2024-{str(user_id)[:5].upper()}" if user_id else "2024-001")
     user_program = user_profile.get('program') or "BSCS"
@@ -44,6 +45,7 @@ async def attendance_page():
         'date': datetime.now().strftime("%Y-%m-%d"),
         'program': 'All'
     }
+    refresh_table_data = None
 
     with ui.column().classes(
         'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
@@ -87,11 +89,12 @@ async def attendance_page():
 
         await refresh_stats()
 
-        # Tab Navigation
+        # Tab Navigation (RBAC Guarded: Daily Visitor Logs visible ONLY to Admin & Librarian)
         with ui.tabs().classes('w-full bg-slate-100/80 p-1 rounded-2xl mb-6 text-slate-600') as tabs:
             tab_scanner = ui.tab('scanner', label='Entrance Fast Scanner', icon='qr_code_scanner')
-            tab_logs = ui.tab('logs', label='Daily Visitor Logs', icon='receipt_long')
             tab_pass = ui.tab('pass', label='My Library QR Pass', icon='badge')
+            if is_staff:
+                tab_logs = ui.tab('logs', label='Daily Visitor Logs', icon='receipt_long')
 
         initial_tab = tab_pass if user_role == 'student' else tab_scanner
         with ui.tab_panels(tabs, value=initial_tab).classes('w-full bg-transparent p-0'):
@@ -135,7 +138,8 @@ async def attendance_page():
 
                                 await refresh_stats()
                                 await refresh_doorway_stream()
-                                await refresh_table_data()
+                                if is_staff and refresh_table_data is not None:
+                                    await refresh_table_data()
                             else:
                                 ui.notify(res.get('error', 'Check-in failed'), type='negative')
 
@@ -163,33 +167,7 @@ async def attendance_page():
 
                             await refresh_doorway_stream()
 
-            # TAB 2: Daily Visitor Log Summary (FM-LIBS-009)
-            with ui.tab_panel(tab_logs).classes('p-0'):
-                with ui.card().classes('w-full p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm'):
-                    with ui.row().classes('w-full items-center justify-between gap-3 mb-4 flex-wrap'):
-                        with ui.column().classes('gap-0.5'):
-                            with ui.row().classes('items-center gap-2'):
-                                ui.label('Daily Library Visitor / Entrance Log Summary').classes('text-base sm:text-lg font-black text-slate-900')
-                                ui.label('FM-LIBS-009').classes('text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full border border-indigo-200')
-                            ui.label('Formal institutional visitor log record replacing pen-and-paper entrance sheets (NEMSU Tandag Campus)').classes('text-xs text-slate-500')
-
-                        with ui.row().classes('items-center gap-2 flex-wrap'):
-                            prog_select = ui.select(PROGRAM_OPTIONS, value='All', label='Program').props('dense rounded outlined options-dense').classes('w-28 text-xs')
-                            date_input = ui.input(value=filter_state['date'], label='Date (YYYY-MM-DD)').props('dense rounded outlined').classes('w-36 text-xs')
-
-                    table_container = ui.element('div').classes('w-full overflow-x-auto')
-
-                    async def refresh_table_data():
-                        chosen_date = date_input.value.strip() or None
-                        chosen_prog = prog_select.value if prog_select.value != 'All' else None
-                        logs = await mongo_db.get_filtered_attendance_logs(chosen_date, chosen_prog, limit=200)
-                        render_visitor_logs_table(table_container, logs, date_input.value, prog_select.value)
-
-                    prog_select.on('update:model-value', refresh_table_data)
-                    date_input.on('keydown.enter', refresh_table_data)
-                    await refresh_table_data()
-
-            # TAB 3: Digital Pass
+            # TAB 2: Digital Pass (Default for Students)
             with ui.tab_panel(tab_pass).classes('p-0'):
                 async def handle_self_checkin():
                     res = await mongo_db.record_attendance_scan(
@@ -212,3 +190,31 @@ async def attendance_page():
                     user_role=user_role,
                     on_self_checkin=handle_self_checkin,
                 )
+
+            # TAB 3: Daily Visitor Log Summary (FM-LIBS-009) - Strictly Staff (Admin/Librarian) Only
+            if is_staff:
+                with ui.tab_panel(tab_logs).classes('p-0'):
+                    with ui.card().classes('w-full p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm'):
+                        with ui.row().classes('w-full items-center justify-between gap-3 mb-4 flex-wrap'):
+                            with ui.column().classes('gap-0.5'):
+                                with ui.row().classes('items-center gap-2'):
+                                    ui.label('Daily Library Visitor / Entrance Log Summary').classes('text-base sm:text-lg font-black text-slate-900')
+                                    ui.label('FM-LIBS-009').classes('text-[11px] font-bold bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full border border-indigo-200')
+                                ui.label('Formal institutional visitor log record replacing pen-and-paper entrance sheets (NEMSU Tandag Campus)').classes('text-xs text-slate-500')
+
+                            with ui.row().classes('items-center gap-2 flex-wrap'):
+                                prog_select = ui.select(PROGRAM_OPTIONS, value='All', label='Program').props('dense rounded outlined options-dense').classes('w-28 text-xs')
+                                date_input = ui.input(value=filter_state['date'], label='Date (YYYY-MM-DD)').props('dense rounded outlined').classes('w-36 text-xs')
+
+                        table_container = ui.element('div').classes('w-full overflow-x-auto')
+
+                        async def refresh_table_data_impl():
+                            chosen_date = date_input.value.strip() or None
+                            chosen_prog = prog_select.value if prog_select.value != 'All' else None
+                            logs = await mongo_db.get_filtered_attendance_logs(chosen_date, chosen_prog, limit=200)
+                            render_visitor_logs_table(table_container, logs, date_input.value, prog_select.value)
+
+                        refresh_table_data = refresh_table_data_impl
+                        prog_select.on('update:model-value', refresh_table_data)
+                        date_input.on('keydown.enter', refresh_table_data)
+                        await refresh_table_data()
