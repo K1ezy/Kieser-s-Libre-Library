@@ -1,8 +1,11 @@
+import logging
 import re
 import string
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 from core.ai_engine.rag_pipeline import tars_archive
 from core.config import RAG_MAX_DISTANCE
 

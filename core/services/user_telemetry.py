@@ -33,6 +33,34 @@ TELEMETRY_CSS = """
     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.25);
 }
 
+/* Mobile Touch & Momentum Scrolling Optimization */
+.heatmap-scroll {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: #CBD5E1 transparent;
+}
+.heatmap-scroll::-webkit-scrollbar {
+    height: 5px;
+}
+.heatmap-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+.heatmap-scroll::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 9999px;
+}
+.heatmap-scroll::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+}
+
+/* Touchscreen tap optimizations: eliminate sticky hover on mobile */
+@media (hover: none) and (pointer: coarse) {
+    .hm-cell[data-active="true"]:hover {
+        transform: none !important;
+        box-shadow: none !important;
+    }
+}
+
 /* Intensity Levels: Exact GitHub Contribution Palette */
 .hm-lvl-0 { background-color: #F1F5F9; border: 1px solid #E2E8F0; }
 .hm-lvl-1 { background-color: #A7F3D0; border: 1px solid #6EE7B7; }
@@ -706,7 +734,7 @@ def render_readership_and_activity_section(
                             )
 
                 # Column-Locked CSS Grid (Month labels share the exact column as their week!)
-                with ui.element('div').classes('w-full overflow-x-auto pb-1'):
+                with ui.element('div').classes('w-full overflow-x-auto heatmap-scroll pb-1'):
                     grid = ui.element('div').classes('libre-heatmap-grid').style(
                         f"--weeks-count: {data['total_weeks']};"
                     )

@@ -11,6 +11,9 @@ from core.ai_engine.rag_pipeline import tars_archive
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Enable NiceGUI orjson serializer to transparently handle BSON ObjectId as strings
 try:

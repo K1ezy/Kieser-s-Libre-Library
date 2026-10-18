@@ -3,6 +3,8 @@ from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import clear_user_session, get_current_user_role
 import logging
 
+logger = logging.getLogger(__name__)
+
 _client_avatar_refreshers = {}
 
 
