@@ -370,7 +370,7 @@ class BookReader:
 
             elif self.file_type == 'pdf':
                 viewer_path = (
-                    f"/static/pdf-viewer/index.html?file={self.file_url}"
+                    f"/static/pdf-viewer/index.html?v=2.0.2&file={self.file_url}"
                     f"&book_id={self.book_id}&user_id={self.user_id}"
                     f"&page={self.current_page}&total={self.total_pages}"
                 )
