@@ -82,9 +82,14 @@ class BookRepository(BaseRepository):
             logger.error(f"Recent Books Error: {e}")
             return []
 
-    async def search_books(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    async def search_books(
+        self,
+        query: str,
+        limit: int = 20,
+        projection: Optional[Dict[str, int]] = None
+    ) -> List[Dict[str, Any]]:
         """
-        Fast server-side indexed search on title, author, and subjects.
+        Fast server-side indexed search on title, author, and subjects with optional projection.
         """
         if self.db is None or not query: return []
         try:
@@ -98,7 +103,10 @@ class BookRepository(BaseRepository):
                     {"subjects": regex}
                 ]
             }
-            cursor = self.db['books'].find(filter_spec).sort("added_at", -1).limit(limit)
+            if projection:
+                cursor = self.db['books'].find(filter_spec, projection).sort("added_at", -1).limit(limit)
+            else:
+                cursor = self.db['books'].find(filter_spec).sort("added_at", -1).limit(limit)
             return await cursor.to_list(length=limit)
         except Exception as e:
             logger.error(f"Search Books Error: {e}")

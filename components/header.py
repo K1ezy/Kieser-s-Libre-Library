@@ -69,9 +69,9 @@ def header(drawer_reference=None):
                     .props('flat round dense color=grey-8 size=md') \
                     .tooltip('Toggle Sidebar')
 
-            with ui.row().classes('cursor-pointer items-center gap-2 min-w-0').on('click', lambda: ui.navigate.to('/')):
-                with ui.element('div').classes('p-1.5 sm:p-2 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 border border-indigo-100 shadow-sm'):
-                    ui.icon('local_library', size='sm')
+            with ui.row().classes('cursor-pointer items-center gap-2.5 min-w-0 group').on('click', lambda: ui.navigate.to('/')):
+                with ui.element('div').classes('p-1.5 rounded-xl bg-sky-50 flex items-center justify-center shrink-0 border border-sky-100/80 shadow-xs group-hover:scale-105 transition-transform'):
+                    ui.image('/static/Libre-Library_icon.svg').classes('w-7 h-7 sm:w-8 sm:h-8 object-contain').props('no-spinner')
                 ui.label('Libre Library').classes('text-base sm:text-xl font-black text-slate-900 tracking-tight truncate max-w-[130px] xs:max-w-none')
 
         ui.space()
@@ -85,8 +85,14 @@ def header(drawer_reference=None):
 
         ui.space()
 
-        # 3. RIGHT: MOBILE SEARCH, KEYBOARD SHORTCUTS & USER PROFILE
+        # 3. RIGHT: MOBILE SEARCH, KEYBOARD SHORTCUTS, TARS AI & USER PROFILE
         with ui.row().classes('items-center gap-1 sm:gap-2 shrink-0'):
+            with ui.button(on_click=lambda: ui.navigate.to('/chat')) \
+                .props('flat round dense color=grey-7 size=md') \
+                .tooltip('Ask TARS AI Librarian') \
+                .classes('hidden sm:inline-flex p-1'):
+                ui.image('/static/tars_icon.svg').classes('w-5 h-5 object-contain').props('no-spinner')
+
             ui.button(icon='keyboard', on_click=lambda: ui.run_javascript('window.LibreAccessibility && window.LibreAccessibility.showHelp()')) \
                 .props('flat round dense color=grey-7 size=md') \
                 .tooltip('Keyboard Shortcuts (?)') \
@@ -102,7 +108,7 @@ def header(drawer_reference=None):
             with ui.button().props('flat round dense no-caps size=md').classes('p-0.5 ml-0.5 sm:ml-1'):
                 ui.avatar(icon='person', color='indigo-50', text_color='indigo', size='32px') \
                     .classes('border border-indigo-200 shadow-sm')
-                with ui.menu().classes('bg-white shadow-2xl border border-slate-200 rounded-2xl p-2 min-w-[200px]'):
+                with ui.menu().props('anchor="bottom right" self="top right"').classes('bg-white shadow-2xl border border-slate-200 rounded-2xl p-2 min-w-[200px]'):
                     with ui.row().classes('px-3 py-2 border-b border-slate-100 mb-1 items-center gap-2.5'):
                         ui.icon('account_circle', size='sm').classes('text-indigo-600')
                         with ui.column().classes('gap-0 flex-1 min-w-0'):

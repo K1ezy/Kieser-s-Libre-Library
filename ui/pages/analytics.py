@@ -31,13 +31,22 @@ async def analytics_page():
     drawer = sidebar()
     header(drawer_reference=drawer)
 
-    # Load data
-    program_dist = await mongo_db.get_program_attendance_distribution(days=30)
-    hourly_dist = await mongo_db.get_hourly_attendance_distribution(days=7)
-    purpose_dist = await mongo_db.get_purpose_attendance_distribution()
-    dept_reqs = await mongo_db.get_department_requisition_counts()
-    book_count = await mongo_db.get_total_book_count()
-    visitor_count = await mongo_db.get_total_visitors_count()
+    # Load metrics concurrently in a single parallel wave
+    (
+        program_dist,
+        hourly_dist,
+        purpose_dist,
+        dept_reqs,
+        book_count,
+        visitor_count
+    ) = await asyncio.gather(
+        mongo_db.get_program_attendance_distribution(days=30),
+        mongo_db.get_hourly_attendance_distribution(days=7),
+        mongo_db.get_purpose_attendance_distribution(),
+        mongo_db.get_department_requisition_counts(),
+        mongo_db.get_total_book_count(),
+        mongo_db.get_total_visitors_count()
+    )
 
     total_prog_visits = sum(program_dist.values()) or 1
     sorted_programs = sorted(program_dist.items(), key=lambda x: x[1], reverse=True)

@@ -1,4 +1,5 @@
 import time
+import asyncio
 import logging
 from typing import Optional, List, Dict, Any
 from core.database.repositories.base_repository import BaseRepository
@@ -21,14 +22,21 @@ class ChatRepository(BaseRepository):
     async def get_recent_history(self, session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         if self.collection is None: return []
         try:
-            cursor = self.collection.find({"session_id": session_id}).sort("timestamp", 1)
-            history = await cursor.to_list(length=100)
-            return history[-limit:]
+            cursor = self.collection.find({"session_id": session_id}).sort("timestamp", -1).limit(limit)
+            history = await cursor.to_list(length=limit)
+            return list(reversed(history))
         except Exception as e:
             logger.error(f"History Error: {e}")
             return []
 
-    async def add_message_to_session(self, session_id: str, role: str, content: str):
+    async def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        citations: Optional[List[Dict[str, Any]]] = None,
+        book_id: Optional[str] = None
+    ):
         if self.collection is None: return
         try:
             doc = {
@@ -37,9 +45,16 @@ class ChatRepository(BaseRepository):
                 "content": content,
                 "timestamp": time.time()
             }
+            if citations:
+                doc["citations"] = citations
+            if book_id:
+                doc["book_id"] = book_id
             await self.collection.insert_one(doc)
         except Exception as e:
             logger.error(f"Save Message Error: {e}")
+
+    async def add_message_to_session(self, session_id: str, role: str, content: str):
+        await self.add_message(session_id=session_id, role=role, content=content)
 
     async def save_chat_metadata(
         self,
@@ -99,9 +114,10 @@ class ChatRepository(BaseRepository):
     async def delete_chat_session(self, session_id: str) -> bool:
         if self.db is None: return False
         try:
-            await self.db['chats'].delete_one({'id': session_id})
+            tasks = [self.db['chats'].delete_one({'id': session_id})]
             if self.collection is not None:
-                await self.collection.delete_many({'session_id': session_id})
+                tasks.append(self.collection.delete_many({'session_id': session_id}))
+            await asyncio.gather(*tasks)
             return True
         except Exception as e:
             logger.error(f"Delete Chat Session Error: {e}")

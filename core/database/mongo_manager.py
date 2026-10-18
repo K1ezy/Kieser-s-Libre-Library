@@ -52,7 +52,14 @@ class MongoManager:
     async def initialize(self):
         """Connects to MongoDB, configures optimized query indexes, and binds repositories."""
         try:
-            self.client = AsyncIOMotorClient(settings.MONGO_URI, serverSelectionTimeoutMS=3000)
+            self.client = AsyncIOMotorClient(
+                settings.MONGO_URI,
+                minPoolSize=5,
+                maxPoolSize=50,
+                maxIdleTimeMS=45000,
+                connectTimeoutMS=5000,
+                serverSelectionTimeoutMS=3000
+            )
             self.db = self.client[settings.DB_NAME]
             self.collection = self.db["chat_history"]
 
@@ -72,13 +79,16 @@ class MongoManager:
 
             # Optimized Indexes for high-speed queries
             try:
+                await self.collection.create_index([("session_id", 1), ("timestamp", -1)])
                 await self.collection.create_index([("session_id", 1), ("timestamp", 1)])
                 await self.db['books'].create_index("id", unique=True)
                 await self.db['books'].create_index([("added_at", -1)])
                 await self.db['books'].create_index("title")
+                await self.db['books'].create_index([("title", 1), ("display_author", 1)])
                 await self.db['books'].create_index([("file_type", 1), ("added_at", -1)])
                 await self.db['books'].create_index([("display_author", 1), ("added_at", -1)])
                 await self.db['books'].create_index("shelves")
+                await self.db['books'].create_index("subjects")
                 await self.db['chats'].create_index("id", unique=True)
                 await self.db['chats'].create_index([("user_id", 1), ("timestamp", -1)])
                 await self.db['chats'].create_index([("timestamp", -1)])
@@ -94,13 +104,23 @@ class MongoManager:
                 await self.db['users'].create_index("username", sparse=True)
                 await self.db['users'].create_index("student_id", sparse=True)
                 await self.db['users'].create_index("id", unique=True, sparse=True)
+                await self.db['users'].create_index("type")
+                await self.db['users'].create_index([("email", 1), ("type", 1)])
+                await self.db['users'].create_index([("id", 1), ("type", 1)])
+                await self.db['decks'].create_index("id", unique=True, sparse=True)
                 await self.db['decks'].create_index("task_id")
+                await self.db['attendance_logs'].create_index("id", unique=True, sparse=True)
                 await self.db['attendance_logs'].create_index([("student_id", 1), ("date_str", 1), ("status", 1)])
+                await self.db['attendance_logs'].create_index([("date_str", 1), ("timestamp_in", -1)])
+                await self.db['attendance_logs'].create_index([("user_id", 1), ("timestamp_in", -1)])
                 await self.db['attendance_logs'].create_index([("timestamp_in", -1)])
+                await self.db['faculty_requisitions'].create_index("id", unique=True, sparse=True)
                 await self.db['faculty_requisitions'].create_index([("faculty_id", 1), ("created_at", -1)])
                 await self.db['faculty_requisitions'].create_index("status")
+                await self.db['faculty_requisitions'].create_index([("status", 1), ("created_at", -1)])
                 await self.db['annotations'].create_index("id", unique=True)
                 await self.db['annotations'].create_index([("user_id", 1), ("book_id", 1), ("created_at", -1)])
+                await self.db['annotations'].create_index([("user_id", 1), ("book_id", 1), ("created_at", 1)])
                 await self.db['user_favorites'].create_index([("user_id", 1), ("book_id", 1)], unique=True)
                 await self.users.normalize_existing_users()
                 self._covers_task = asyncio.create_task(self._ensure_covers_background())
@@ -144,8 +164,8 @@ class MongoManager:
     async def get_recent_books(self, limit: int = 5) -> List[Dict[str, Any]]:
         return await self.books.get_recent_books(limit=limit)
 
-    async def search_books(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-        return await self.books.search_books(query=query, limit=limit)
+    async def search_books(self, query: str, limit: int = 20, projection: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
+        return await self.books.search_books(query=query, limit=limit, projection=projection)
 
     async def get_all_books(self, *args, **kwargs) -> List[Dict[str, Any]]:
         return await self.books.get_all_books(*args, **kwargs)
@@ -200,6 +220,16 @@ class MongoManager:
     # =========================================================================
     async def get_recent_history(self, session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         return await self.chats.get_recent_history(session_id, limit=limit)
+
+    async def add_message(
+        self,
+        session_id: str,
+        role: str,
+        content: str,
+        citations: Optional[List[Dict[str, Any]]] = None,
+        book_id: Optional[str] = None
+    ):
+        await self.chats.add_message(session_id, role, content, citations=citations, book_id=book_id)
 
     async def add_message_to_session(self, session_id: str, role: str, content: str):
         await self.chats.add_message_to_session(session_id, role, content)

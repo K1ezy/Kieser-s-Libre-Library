@@ -3,7 +3,6 @@ from components.sidebar import sidebar
 from components.header import header
 from components.book_card import book_card, has_disk_cover, get_format_color
 from core.database.mongo_manager import mongo_db
-from core.ai_engine.llm_engine import tars_engine
 from datetime import datetime
 from typing import Any, Dict
 
@@ -35,9 +34,12 @@ def action_card(title: str, subtitle: str, icon: str, color: str, target: str):
                 with ui.row().classes('items-center gap-3 min-w-0 flex-1'):
                     with ui.element('div').classes(
                         f'p-2.5 rounded-xl bg-{color}-50 text-{color}-600 '
-                        f'group-hover:bg-{color}-600 group-hover:text-white transition-colors duration-200 shadow-2xs shrink-0 border border-{color}-100'
+                        f'group-hover:bg-{color}-600 group-hover:text-white transition-colors duration-200 shadow-2xs shrink-0 border border-{color}-100 flex items-center justify-center'
                     ):
-                        ui.icon(icon, size='20px')
+                        if icon.endswith('.svg') or '/' in icon:
+                            ui.image(icon).classes('w-5 h-5 object-contain group-hover:brightness-0 group-hover:invert transition-all').props('no-spinner')
+                        else:
+                            ui.icon(icon, size='20px')
                     with ui.column().classes('gap-0 min-w-0 flex-1'):
                         ui.label(title).classes('text-xs sm:text-sm font-bold text-slate-900 leading-tight truncate w-full')
                         ui.label(subtitle).classes('text-[11px] text-slate-500 font-medium truncate w-full')
@@ -46,7 +48,7 @@ def action_card(title: str, subtitle: str, icon: str, color: str, target: str):
                 )
 
 def continue_reading_card(book_prog: Dict[str, Any]):
-    """Renders a high-scannability active reading card with cover art and direct resume action."""
+    """Renders a high-scannability active reading card with prominent cover art and direct resume action."""
     b_id = str(book_prog.get('id') or book_prog.get('book_id') or book_prog.get('_id') or '')
     b_title = book_prog.get('title', 'Untitled')
     b_author = book_prog.get('display_author') or 'Unknown'
@@ -58,33 +60,40 @@ def continue_reading_card(book_prog: Dict[str, Any]):
     txt_col, bg_col = get_format_color(file_type)
 
     with ui.card().classes(
-        'p-3.5 sm:p-4 bg-white border border-slate-200/90 rounded-2xl shadow-xs '
-        'hover:shadow-md hover:border-indigo-300 transition-all flex flex-col justify-between gap-3'
+        'p-4 sm:p-5 bg-white border border-slate-200/90 rounded-2xl shadow-xs '
+        'hover:shadow-md hover:border-indigo-300 transition-all flex flex-col justify-between gap-3 sm:gap-4'
     ):
-        with ui.row().classes('items-start gap-3.5 w-full'):
-            # Book Cover Thumbnail (2:3 aspect ratio with format tag)
-            with ui.element('div').classes('w-16 sm:w-20 h-24 sm:h-28 rounded-xl overflow-hidden bg-slate-100 relative shrink-0 border border-slate-200/60 shadow-2xs'):
-                ui.image(cover_url).classes('w-full h-full object-cover')
-                with ui.element('div').classes(f'absolute bottom-1 left-1 px-1.5 py-0.2 rounded text-[8px] sm:text-[9px] font-black border {txt_col} {bg_col}'):
+        with ui.row().classes('items-stretch gap-4 sm:gap-5 w-full'):
+            # Book Cover Thumbnail (Enlarged 2:3 aspect ratio with format tag and hover zoom)
+            with ui.element('div').classes(
+                'w-24 sm:w-28 md:w-32 lg:w-36 xl:w-40 aspect-[2/3] rounded-xl overflow-hidden bg-slate-100 '
+                'relative shrink-0 border border-slate-200/70 shadow-xs cursor-pointer group'
+            ).style('aspect-ratio: 2/3;').on('click', lambda id=b_id: ui.navigate.to(f"/read/{id}")):
+                ui.image(cover_url).classes('w-full h-full object-cover group-hover:scale-105 transition-transform duration-300')
+                with ui.element('div').classes(
+                    f'absolute bottom-1.5 left-1.5 sm:bottom-2 sm:left-2 px-1.5 sm:px-2 py-0.5 rounded text-[8px] sm:text-[9px] font-black border shadow-xs {txt_col} {bg_col}'
+                ):
                     ui.label(file_type)
 
             # Metadata & Location Tracking
-            with ui.column().classes('gap-1 flex-1 min-w-0'):
-                ui.label(b_title).classes('font-bold text-sm sm:text-base text-slate-900 leading-snug line-clamp-2')
-                ui.label(f"by {b_author}").classes('text-xs text-slate-500 truncate')
+            with ui.column().classes('gap-2 flex-1 min-w-0 justify-between self-stretch py-0.5'):
+                with ui.column().classes('gap-1 w-full'):
+                    ui.label(b_title).classes('font-bold text-sm sm:text-base md:text-lg text-slate-900 leading-snug line-clamp-2')
+                    ui.label(f"by {b_author}").classes('text-xs sm:text-sm text-slate-500 truncate')
 
-                # Progress indicator & Page count
-                with ui.row().classes('items-center justify-between gap-2 mt-1 w-full'):
-                    with ui.element('span').classes('text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-md'):
-                        ui.label(f"{b_pct}% read")
-                    ui.label(f"Page {b_cur} of {b_tot}").classes('text-xs text-slate-500 font-medium')
+                with ui.column().classes('gap-2 w-full mt-auto'):
+                    # Progress indicator & Page count
+                    with ui.row().classes('items-center justify-between gap-2 w-full'):
+                        with ui.element('span').classes('text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 sm:px-2.5 py-0.5 rounded-md'):
+                            ui.label(f"{b_pct}% read")
+                        ui.label(f"Page {b_cur} of {b_tot}").classes('text-xs text-slate-500 font-medium')
 
-                # Linear progress bar
-                with ui.element('div').classes('w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1 border border-slate-200/60'):
-                    ui.element('div').classes('bg-gradient-to-r from-indigo-500 to-indigo-600 h-full rounded-full transition-all duration-300').style(f'width: {b_pct}%')
+                    # Linear progress bar
+                    with ui.element('div').classes('w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200/60'):
+                        ui.element('div').classes('bg-gradient-to-r from-indigo-500 to-indigo-600 h-full rounded-full transition-all duration-300').style(f'width: {b_pct}%')
 
         # Action Buttons
-        with ui.row().classes('w-full justify-end items-center gap-2 pt-2 border-t border-slate-100'):
+        with ui.row().classes('w-full justify-end items-center gap-2 pt-2.5 border-t border-slate-100'):
             ui.button('Details', icon='info', on_click=lambda id=b_id: ui.navigate.to(f"/book/{id}"))\
                 .props('flat rounded-xl size=sm color=grey-8 font-bold').classes('text-xs')
             ui.button('Resume Reading', icon='play_arrow', on_click=lambda id=b_id: ui.navigate.to(f"/read/{id}"))\
@@ -135,11 +144,6 @@ async def home_page():
         total_books, recent_books = 0, []
         active_reading_items = []
 
-    # System Status values
-    is_tars_online = tars_engine.is_available
-    tars_status = "Online" if is_tars_online else "Offline"
-    tars_color = "emerald" if is_tars_online else "rose"
-
     greeting_str = f"{get_greeting()}, {user_name}" if user_name else f"{get_greeting()}"
 
     with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] md:pt-24 px-3 sm:px-6 md:px-10 max-w-[1700px] mx-auto pb-16'):
@@ -157,17 +161,11 @@ async def home_page():
                     ui.label(f"{greeting_str}!").classes('text-lg sm:text-2xl md:text-3xl font-black text-white tracking-tight leading-tight break-words')
                     ui.label('Welcome to your personal learning & reading workspace.').classes('text-xs sm:text-sm text-slate-300 font-medium')
 
-            # Multi-tier System Health Indicator (Transparent Operational Diagnostics)
-            with ui.element('div').classes('flex flex-wrap items-center gap-2 shrink-0 w-full md:w-auto'):
+            # Catalog Stats
+            with ui.element('div').classes('flex items-center gap-2 shrink-0'):
                 ui.link(f"{total_books} Books Cataloged", '/books').classes(
                     'no-underline text-xs font-bold px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 text-white transition-colors'
                 )
-                with ui.row().classes('items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-white text-xs font-bold'):
-                    ui.element('div').classes('w-2 h-2 rounded-full bg-emerald-400 animate-pulse')
-                    ui.label('App: Online')
-                with ui.row().classes(f'items-center gap-1.5 px-3 py-1.5 rounded-full bg-{tars_color}-500/20 border border-{tars_color}-400/30 text-white text-xs font-bold'):
-                    ui.element('div').classes(f'w-2 h-2 rounded-full bg-{tars_color}-400 animate-pulse')
-                    ui.label(f"AI: {tars_status}")
 
         # 2. Continue Reading (Primary Hero Focus)
         with ui.column().classes('w-full mb-6 sm:mb-8'):
@@ -197,10 +195,10 @@ async def home_page():
         # 3. Quick Actions (The 4 Core Pillars)
         ui.label('QUICK ACTIONS').classes('text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 px-1')
         with ui.grid().classes('w-full grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8'):
-            action_card("Ask TARS AI", "Chat with AI librarian", "smart_toy", "indigo", "/chat")
+            action_card("Ask TARS AI", "Chat with AI librarian", "/static/tars_icon.svg", "cyan", "/chat")
             action_card("Study Planner", "Spaced repetition decks", "event_note", "purple", "/planner")
             action_card("Library Pass", "Digital QR entrance", "badge", "emerald", "/attendance")
-            action_card("Library Archive", "Browse multi-format books", "local_library", "sky", "/books")
+            action_card("Library Archive", "Browse multi-format books", "/static/Libre-Library_icon.svg", "sky", "/books")
 
         # 4. Recent Additions Section
         with ui.row().classes('w-full justify-between items-end mb-4 px-1'):
@@ -219,6 +217,7 @@ async def home_page():
                 ui.label("Upload books or research papers to begin building your personal collection.").classes('text-slate-500 text-xs mb-4 max-w-sm')
                 ui.button('Upload First Document', icon='cloud_upload', on_click=lambda: ui.navigate.to('/upload')) \
                     .props('unelevated rounded-xl color=indigo size=sm font-bold').classes('shadow-xs')
+        else:
             with ui.element('div').classes('w-full fluid-book-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4 mb-8'):
                 for book in recent_books:
                     book_card(book, action_target='book')

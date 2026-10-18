@@ -353,13 +353,13 @@ class BookDetailsPage:
                                 app.storage.user['chat_focus_book_title'] = title
                                 ui.navigate.to('/chat')
 
-                            with ui.card().classes('p-4 sm:p-5 bg-white hover:bg-indigo-50/30 rounded-2xl border border-slate-200 hover:border-indigo-300 shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-3 cursor-pointer group').on('click', open_chat):
+                            with ui.card().classes('p-4 sm:p-5 bg-white hover:bg-cyan-50/30 rounded-2xl border border-slate-200 hover:border-cyan-300 shadow-xs hover:shadow-md transition-all flex flex-col justify-between gap-3 cursor-pointer group').on('click', open_chat):
                                 with ui.column().classes('gap-2'):
-                                    with ui.element('div').classes('w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 group-hover:scale-105 transition-transform'):
-                                        ui.icon('smart_toy', size='20px')
+                                    with ui.element('div').classes('w-10 h-10 rounded-xl bg-cyan-50 flex items-center justify-center border border-cyan-100 group-hover:scale-105 transition-transform p-1.5 shadow-2xs'):
+                                        ui.image('/static/tars_icon.svg').classes('w-full h-full object-contain').props('no-spinner')
                                     ui.label('Chat with Book').classes('font-bold text-slate-900 text-sm')
                                     ui.label('Ask TARS deep questions with pre-scoped document RAG citations.').classes('text-xs text-slate-500 leading-relaxed')
-                                with ui.row().classes('items-center gap-1 text-xs font-bold text-indigo-600'):
+                                with ui.row().classes('items-center gap-1 text-xs font-bold text-cyan-700'):
                                     ui.label('Ask TARS AI')
                                     ui.icon('arrow_forward', size='14px')
 

@@ -1,7 +1,7 @@
 from nicegui import ui
 from typing import List, Dict, Any, Callable, Optional
 from datetime import datetime
-from ui.pages.chat_service import group_sessions_chronologically
+from core.services.chat_service import group_sessions_chronologically
 
 
 class ChatHistoryDrawer:

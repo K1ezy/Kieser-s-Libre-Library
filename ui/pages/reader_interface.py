@@ -313,7 +313,7 @@ class BookReader:
                 with ui.row().classes('items-center gap-1.5 flex-1 min-w-0'):
                     ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/books')) \
                         .props('flat round dense color=indigo size=md').tooltip('Back to Library').classes('shrink-0')
-                    ui.label(self.file_name or 'Reading Mode').classes('font-bold text-xs sm:text-sm text-slate-900 truncate flex-1 min-w-0')
+                    ui.label(self.file_name or 'Reading Mode').classes('font-bold text-xs sm:text-sm text-slate-900 truncate max-w-[120px] xs:max-w-[200px] sm:max-w-xs md:max-w-md min-w-0')
 
                 # Center: Live Reading Position HUD & Stepper Controls
                 pct_val = round((self.current_page / max(self.total_pages, 1)) * 100.0, 1)
@@ -324,7 +324,7 @@ class BookReader:
                     self.hud_label = ui.label(
                         f"Page {self.current_page} of {self.total_pages} ({pct_val:.0f}%)"
                     ).props('id=reader-hud-text').classes(
-                        'text-[11px] sm:text-xs font-bold text-slate-700 min-w-0 sm:min-w-[130px] text-center font-mono inline-block'
+                        'text-[10px] sm:text-xs font-bold text-slate-700 min-w-0 sm:min-w-[130px] text-center font-mono inline-block px-1'
                     )
 
                     ui.button(icon='chevron_right', on_click=lambda: self.step_page(1))\

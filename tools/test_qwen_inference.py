@@ -56,8 +56,10 @@ async def test_qwen():
         print(token, end="", flush=True)
 
     total_stream_time = time.time() - stream_start
+    gen_time = total_stream_time - (first_token_time or 0)
+    tok_sec = len(tokens) / gen_time if gen_time > 0 else 0
     full_response = "".join(tokens)
-    print(f"\n\n[STREAM METRICS] Time to first token: {first_token_time:.2f}s | Total tokens: ~{len(tokens)} | Total time: {total_stream_time:.2f}s")
+    print(f"\n\n[STREAM METRICS] Time to first token: {first_token_time:.2f}s | Total tokens: ~{len(tokens)} | Generation speed: {tok_sec:.2f} tokens/sec")
 
     print("\n[STEP 3] Testing Direct Completion (create_completion)...")
     comp_start = time.time()

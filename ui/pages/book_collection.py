@@ -407,7 +407,7 @@ class BookCollection:
                         self.reset_filter_btn.set_visibility(False)
 
                 # 2. Reading Status Tabs
-                self.status_tab_container = ui.row().classes('w-full flex flex-wrap gap-2.5 items-center py-1.5')
+                self.status_tab_container = ui.row().classes('w-full mobile-scroll-row flex-nowrap sm:flex-wrap gap-2 sm:gap-2.5 items-center py-1.5 pb-2')
 
                 # 3. Filter Controls: 4 Columns with Clean Micro-Headers (eliminates duplicate label rendering)
                 with ui.grid().classes('w-full grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pt-3 border-t border-slate-100'):

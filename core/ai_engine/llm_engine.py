@@ -1,53 +1,144 @@
-import logging
 import asyncio
-import threading
 import json
+import logging
 from pathlib import Path
-from typing import AsyncGenerator, Optional, Dict, Any, List
+from typing import AsyncGenerator, Dict, List, Optional, Any
 import httpx
-from core.config import settings
 
-# Setup Logger
-logger = logging.getLogger("TARS_LLM")
+from core.config import (
+    AI_PROVIDER,
+    BATCH_SIZE,
+    CONTEXT_WINDOW,
+    GPU_LAYERS,
+    LLM_REPEAT_PENALTY,
+    LLM_TEMPERATURE,
+    LLM_TOP_P,
+    MODEL_DIR,
+    MODEL_FILENAME,
+    OPENAI_API_BASE,
+    OPENAI_API_KEY,
+    OPENAI_MODEL,
+    PREFERRED_MODELS,
+    settings,
+)
 
-# --- CONSTANTS ---
-FUNCTIONAL_CONTEXT_LIMIT = 4096
-DEFAULT_CHAT_MAX_TOKENS = 1500
-MAX_OUTPUT_TOKENS = 2048
-MAX_RAG_CHARS = 10000
-MAX_LOCAL_QUEUE_DEPTH = 4
-LOCAL_QUEUE_TIMEOUT = 45.0
+logger = logging.getLogger(__name__)
 
 
 class TarsEngine:
-    """
-    Multi-Provider AI Engine for Libre-Library:
-    1. Local GGUF (llama-cpp-python) with lazy loading, bounded queue & GPU offloading
-    2. OpenAI-Compatible API (OpenAI, DeepSeek, Groq, OpenRouter, LM Studio, vLLM)
-    """
+    """Singleton LLM engine supporting local GGUF (llama-cpp-python) and OpenAI endpoints."""
 
     def __init__(self):
-        self.provider = getattr(settings, 'AI_PROVIDER', 'local').lower()
-        self.openai_url = getattr(settings, 'OPENAI_API_BASE', 'https://api.openai.com/v1').rstrip('/')
-        self.openai_key = getattr(settings, 'OPENAI_API_KEY', '')
-        self.openai_model = getattr(settings, 'OPENAI_MODEL', 'gpt-4o-mini')
-
-        # Local Llama-cpp state & bounded concurrency controls
         self.llm = None
-        self._load_lock = threading.Lock()
-        self.lock = asyncio.Lock()
-        self._queue_semaphore = asyncio.Semaphore(MAX_LOCAL_QUEUE_DEPTH)
-        self._waiting_requests = 0
-        self.context_window = min(settings.CONTEXT_WINDOW, 4096)
-        self.model_path = settings.MODEL_DIR / settings.MODEL_FILENAME
-        self._is_loaded = False
-        self._db_loaded = False
+        self.model_name = MODEL_FILENAME
+        self.context_window = int(CONTEXT_WINDOW)
+        self.temperature = LLM_TEMPERATURE
+        self.top_p = LLM_TOP_P
+        self.repeat_penalty = LLM_REPEAT_PENALTY
+        self._stop_tokens = ["<|im_end|>", "<|eot_id|>", "</s>", "[/USER INQUIRY]"]
+        self.provider = AI_PROVIDER.lower()
+        self.openai_url = OPENAI_API_BASE.rstrip('/')
+        self.openai_key = OPENAI_API_KEY
+        self.openai_model = OPENAI_MODEL
         self._http_client: Optional[httpx.AsyncClient] = None
+        self.lock = asyncio.Lock()
+        self._db_loaded = False
 
-        logger.info(f"TARS Engine initialized (Active Provider: {self.provider.upper()}, CTX: {self.context_window})")
+    @property
+    def model_path(self) -> Path:
+        return self._resolve_model_path()
+
+    @property
+    def is_available(self) -> bool:
+        if self.provider == 'local':
+            return self._resolve_model_path().exists()
+        return bool(self.openai_url)
+
+    def _resolve_model_path(self) -> Path:
+        primary = MODEL_DIR / self.model_name
+        if primary.exists():
+            return primary
+        for fallback in PREFERRED_MODELS:
+            candidate = MODEL_DIR / fallback
+            if candidate.exists():
+                logger.info("Primary model missing; falling back to %s", fallback)
+                self.model_name = fallback
+                return candidate
+        return primary
+
+    async def ensure_db_settings_loaded(self) -> None:
+        """Loads persistent admin provider configurations from MongoDB on first use."""
+        if getattr(self, "_db_loaded", False):
+            return
+        try:
+            from core.database.mongo_manager import mongo_db
+            if mongo_db.db is not None:
+                sys_cfg = await mongo_db.get_system_settings()
+                if sys_cfg:
+                    self.provider = sys_cfg.get("ai_provider", self.provider).lower()
+                    self.openai_url = sys_cfg.get("openai_url", self.openai_url).rstrip('/')
+                    self.openai_key = sys_cfg.get("openai_key", self.openai_key)
+                    self.openai_model = sys_cfg.get("openai_model", self.openai_model)
+                    logger.info("TARS Engine re-configured from DB (Provider: %s).", self.provider.upper())
+            self._db_loaded = True
+        except Exception as e:
+            logger.debug("DB settings load note: %s", e)
+
+    def load_model(self) -> None:
+        if self.llm is not None or self.provider != "local":
+            return
+
+        from llama_cpp import Llama
+
+        model_path = self._resolve_model_path()
+        if not model_path.exists():
+            raise FileNotFoundError(f"GGUF model file not found at: {model_path}")
+
+        import os
+        cpu_ct = os.cpu_count() or 6
+        gen_threads = min(8, max(4, cpu_ct - 2 if cpu_ct > 6 else cpu_ct))
+        batch_threads = min(10, max(4, cpu_ct))
+
+        try:
+            self.llm = Llama(
+                model_path=str(model_path),
+                n_ctx=self.context_window,
+                n_gpu_layers=GPU_LAYERS,
+                n_batch=1024,
+                n_ubatch=512,
+                n_threads=gen_threads,
+                n_threads_batch=batch_threads,
+                flash_attn=True,
+                verbose=False,
+            )
+        except Exception as fa_err:
+            logger.debug("FlashAttention init notice (%s); falling back to standard attention.", fa_err)
+            self.llm = Llama(
+                model_path=str(model_path),
+                n_ctx=self.context_window,
+                n_gpu_layers=GPU_LAYERS,
+                n_batch=1024,
+                n_ubatch=512,
+                n_threads=gen_threads,
+                n_threads_batch=batch_threads,
+                verbose=False,
+            )
+        logger.info(
+            "Loaded GGUF model %s (n_ctx=%d, gpu_layers=%d, batch=1024, ubatch=512)",
+            self.model_name,
+            self.context_window,
+            GPU_LAYERS,
+        )
+
+    def ensure_loaded(self) -> bool:
+        try:
+            self.load_model()
+            return True
+        except Exception as e:
+            logger.error("Failed to load model: %s", e)
+            return False
 
     def _get_http_client(self, timeout: float = 60.0) -> httpx.AsyncClient:
-        """Returns or creates a persistent connection-pooled HTTP client for sub-50ms latency."""
         if self._http_client is None or self._http_client.is_closed:
             limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
             self._http_client = httpx.AsyncClient(timeout=timeout, limits=limits)
@@ -59,279 +150,18 @@ class TarsEngine:
             try:
                 await self._http_client.aclose()
             except Exception as e:
-                logger.debug(f"Error closing LLMEngine HTTP client: {e}")
+                logger.debug("Error closing LLMEngine HTTP client: %s", e)
             finally:
                 self._http_client = None
 
-    async def ensure_db_settings_loaded(self):
-        """Loads persistent admin provider configurations from MongoDB on first use."""
-        if self._db_loaded:
-            return
-        try:
-            from core.database.mongo_manager import mongo_db
-            if mongo_db.db is not None:
-                sys_cfg = await mongo_db.get_system_settings()
-                if sys_cfg:
-                    self.provider = sys_cfg.get("ai_provider", self.provider).lower()
-                    self.openai_url = sys_cfg.get("openai_url", self.openai_url).rstrip('/')
-                    self.openai_key = sys_cfg.get("openai_key", self.openai_key)
-                    self.openai_model = sys_cfg.get("openai_model", self.openai_model)
-                    logger.info(f"TARS Engine re-configured from DB (Provider: {self.provider.upper()}).")
-                self._db_loaded = True
-        except Exception as e:
-            logger.debug(f"DB Settings check notice: {e}")
-
-    def configure(self, provider: str, config: Dict[str, Any]):
-        """Dynamically updates active provider and endpoint credentials."""
-        self.provider = provider.lower()
-        if "openai_url" in config:
-            self.openai_url = config["openai_url"].rstrip('/')
-        if "openai_key" in config:
-            self.openai_key = config["openai_key"]
-        if "openai_model" in config:
-            self.openai_model = config["openai_model"]
-        logger.info(f"TARS Engine dynamically switched to: {self.provider.upper()}")
-
-    @property
-    def is_available(self) -> bool:
-        """Returns True if the active provider is configured and ready."""
-        if self.provider == 'local':
-            return self.model_path.exists()
-        elif self.provider == 'openai':
-            return bool(
-                self.openai_url and (self.openai_key or "localhost" in self.openai_url or "127.0.0.1" in self.openai_url)
-            )
-        return False
-
-    @property
-    def is_busy(self) -> bool:
-        """Returns True if the local model is currently executing inference."""
-        return self.lock.locked()
-
-    @property
-    def queue_depth(self) -> int:
-        """Returns the number of requests currently waiting for local inference."""
-        return self._waiting_requests
-
-    def _has_openai_fallback(self) -> bool:
-        return bool(self.openai_url and self.openai_key)
-
-    def _get_chat_format(self) -> str:
-        """Determines chat formatting based on active GGUF model architecture."""
-        model_name = self.model_path.name.lower()
-        if "qwen" in model_name:
-            return "chatml"
-        elif "llama-3" in model_name or "llama3" in model_name:
-            return "llama-3"
-        elif "mistral" in model_name:
-            return "mistral-instruct"
-        return "chatml"
-
-    def ensure_loaded(self) -> bool:
-        """
-        Thread-safely loads local GGUF weights into memory/GPU if in local mode.
-        For OpenAI, returns True immediately.
-        """
-        if self.provider != 'local':
-            return True
-
-        if self._is_loaded and self.llm is not None:
-            return True
-
-        with self._load_lock:
-            if self._is_loaded and self.llm is not None:
-                return True
-
-            if not self.model_path.exists():
-                logger.error(f"TARS Model missing at: {self.model_path}")
-                return False
-
-            try:
-                from llama_cpp import Llama
-                import os
-                logger.info(
-                    f"Loading Local TARS Engine: {settings.MODEL_FILENAME} "
-                    f"(CTX: {self.context_window}, GPU: {settings.GPU_LAYERS})"
-                )
-                gpu_layers = settings.GPU_LAYERS
-                cpu_ct = os.cpu_count() or 6
-                # Optimal decoding threads (prevents CPU core oversubscription during token generation)
-                gen_threads = min(8, max(4, cpu_ct - 2 if cpu_ct > 6 else cpu_ct))
-                # Maximum batch evaluation threads for prompt prefill acceleration
-                batch_threads = min(10, max(4, cpu_ct))
-
-                chat_fmt = self._get_chat_format()
-                try:
-                    self.llm = Llama(
-                        model_path=str(self.model_path),
-                        n_ctx=self.context_window,
-                        n_gpu_layers=gpu_layers,
-                        n_threads=gen_threads,
-                        n_threads_batch=batch_threads,
-                        flash_attn=True,
-                        use_mmap=True,
-                        use_mlock=False,
-                        verbose=False,
-                        n_batch=1024,
-                        n_ubatch=512,
-                        chat_format=chat_fmt
-                    )
-                except Exception as fa_err:
-                    logger.debug(f"Flash attention init notice ({fa_err}). Falling back to standard attention.")
-                    self.llm = Llama(
-                        model_path=str(self.model_path),
-                        n_ctx=self.context_window,
-                        n_gpu_layers=gpu_layers,
-                        n_threads=gen_threads,
-                        n_threads_batch=batch_threads,
-                        use_mmap=True,
-                        use_mlock=False,
-                        verbose=False,
-                        n_batch=1024,
-                        n_ubatch=512,
-                        chat_format=chat_fmt
-                    )
-
-                self._is_loaded = True
-                logger.info(
-                    f"Local TARS Engine Initialization: COMPLETE "
-                    f"(Gen Threads: {gen_threads}, Batch Threads: {batch_threads}, Batch: 1024, CTX: {self.context_window})"
-                )
-                return True
-            except Exception as e:
-                logger.critical(f"TARS Engine FAILED to load model: {e}", exc_info=True)
-                self.llm = None
-                self._is_loaded = False
-                return False
-
-    async def test_connection(self) -> Dict[str, Any]:
-        """Validates network connectivity and model readiness for the active provider."""
-        await self.ensure_db_settings_loaded()
-
-        if self.provider == 'local':
-            if not self.model_path.exists():
-                return {"success": False, "provider": "local", "message": f"GGUF model not found at {self.model_path}"}
-            ready = await asyncio.to_thread(self.ensure_loaded)
-            return {
-                "success": ready,
-                "provider": "local",
-                "model": settings.MODEL_FILENAME,
-                "queue_depth": self._waiting_requests,
-                "message": "Local GGUF model loaded and operational." if ready else "Failed to load GGUF model into memory."
-            }
-
-        elif self.provider == 'openai':
-            try:
-                headers = {"Authorization": f"Bearer {self.openai_key}"} if self.openai_key else {}
-                async with httpx.AsyncClient(timeout=6.0) as client:
-                    url = f"{self.openai_url}/models"
-                    resp = await client.get(url, headers=headers)
-                    if resp.status_code in (200, 404):
-                        return {"success": True, "provider": "openai", "model": self.openai_model, "message": f"OpenAI endpoint online ({url})."}
-                    return {"success": False, "provider": "openai", "message": f"Endpoint returned HTTP status {resp.status_code}."}
-            except Exception as e:
-                return {"success": False, "provider": "openai", "message": f"Cannot connect to API endpoint: {e}"}
-
-        return {"success": False, "provider": self.provider, "message": f"Unknown provider '{self.provider}'"}
-
-    async def _complete_via_openai(
-        self, prompt: str, max_tokens: int, temperature: float, stop: Optional[List[str]]
-    ) -> Optional[str]:
-        try:
-            headers = {"Authorization": f"Bearer {self.openai_key}"} if self.openai_key else {}
-            headers["Content-Type"] = "application/json"
-            client = self._get_http_client(timeout=60.0)
-            payload = {
-                "model": self.openai_model,
-                "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-                "stop": stop or ["TEXT:", "Example:", "---"]
-            }
-            resp = await client.post(f"{self.openai_url}/chat/completions", json=payload, headers=headers)
-            if resp.status_code == 200:
-                data = resp.json()
-                return data["choices"][0]["message"]["content"].strip()
-            logger.error(f"OpenAI completion failed ({resp.status_code}): {resp.text}")
-            return None
-        except Exception as e:
-            logger.error(f"OpenAI create_completion error: {e}")
-            return None
-
-    async def create_completion(
+    async def _stream_openai(
         self,
-        prompt: str,
-        max_tokens: int = 1500,
-        temperature: float = 0.3,
-        stop: Optional[List[str]] = None
-    ) -> Optional[str]:
-        """Thread-safe and async-safe completion across all 3 providers with bounded local queue."""
-        await self.ensure_db_settings_loaded()
-
-        # 1. OpenAI Compatible Provider
-        if self.provider == 'openai':
-            return await self._complete_via_openai(prompt, max_tokens, temperature, stop)
-
-        # 3. Local LLaMA GGUF Provider (Default) with Bounded Queue & Timeout
-        else:
-            if not await asyncio.to_thread(self.ensure_loaded):
-                logger.error("create_completion: Local model could not be loaded.")
-                return None
-
-            if self._waiting_requests >= MAX_LOCAL_QUEUE_DEPTH:
-                if self._has_openai_fallback():
-                    logger.warning("Local inference queue full; failing over to OpenAI-compatible endpoint.")
-                    return await self._complete_via_openai(prompt, max_tokens, temperature, stop)
-                logger.warning("Local inference queue saturated; rejecting request early.")
-                return None
-
-            self._waiting_requests += 1
-            try:
-                async with self._queue_semaphore:
-                    await asyncio.wait_for(self.lock.acquire(), timeout=LOCAL_QUEUE_TIMEOUT)
-                    try:
-                        def _infer():
-                            try:
-                                res = self.llm.create_completion(
-                                    prompt=prompt,
-                                    max_tokens=max_tokens,
-                                    temperature=0.1 if temperature == 0.3 else temperature,
-                                    top_p=0.85,
-                                    repeat_penalty=1.12,
-                                    stop=stop or ["TEXT:", "Example:", "---", "<|im_end|>", "<|endoftext|>", "<|eot_id|>", "<|end_of_text|>"]
-                                )
-                                return res['choices'][0]['text']
-                            except Exception as ex:
-                                logger.error(f"Inference error in create_completion: {ex}", exc_info=True)
-                                return None
-
-                        return await asyncio.to_thread(_infer)
-                    finally:
-                        self.lock.release()
-            except asyncio.TimeoutError:
-                logger.warning("Timed out waiting for local LLM lock in create_completion.")
-                if self._has_openai_fallback():
-                    return await self._complete_via_openai(prompt, max_tokens, temperature, stop)
-                return None
-            finally:
-                self._waiting_requests = max(0, self._waiting_requests - 1)
-
-    async def generate_response(
-        self,
-        prompt: str,
-        max_tokens: int = 1500,
-        temperature: float = 0.3,
-        stop: Optional[List[str]] = None
-    ) -> Optional[str]:
-        """Convenience method for direct prompt completion across all AI providers."""
-        return await self.create_completion(
-            prompt=prompt,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            stop=stop
-        )
-
-    async def _stream_via_openai(self, messages: list, effective_max_tokens: int) -> AsyncGenerator[str, None]:
+        messages: List[Dict[str, str]],
+        temperature: float,
+        top_p: float,
+        max_tokens: int,
+        cancel_event: Optional[asyncio.Event] = None,
+    ) -> AsyncGenerator[str, None]:
         try:
             headers = {"Authorization": f"Bearer {self.openai_key}"} if self.openai_key else {}
             headers["Content-Type"] = "application/json"
@@ -340,8 +170,9 @@ class TarsEngine:
                 "model": self.openai_model,
                 "messages": messages,
                 "stream": True,
-                "temperature": 0.2,
-                "max_tokens": effective_max_tokens
+                "temperature": temperature,
+                "top_p": top_p,
+                "max_tokens": max_tokens,
             }
             async with client.stream("POST", f"{self.openai_url}/chat/completions", json=payload, headers=headers) as response:
                 if response.status_code != 200:
@@ -349,6 +180,8 @@ class TarsEngine:
                     yield f"[API ERROR: Status {response.status_code} - {body.decode('utf-8', 'ignore')}]"
                     return
                 async for line in response.aiter_lines():
+                    if cancel_event and cancel_event.is_set():
+                        break
                     if line.startswith("data: ") and not line.startswith("data: [DONE]"):
                         raw_json = line[6:].strip()
                         try:
@@ -362,115 +195,182 @@ class TarsEngine:
                         except Exception:
                             pass
         except Exception as e:
-            logger.error(f"OpenAI streaming failure: {e}")
+            logger.error("OpenAI streaming failure: %s", e)
             yield f"[API CONNECTION ERROR: {str(e)}]"
 
-    async def stream_response(self, messages: list, max_tokens: Optional[int] = None) -> AsyncGenerator[str, None]:
-        """Streams chat tokens asynchronously across Local (GGUF) and OpenAI providers with bounded queuing."""
+    @property
+    def is_busy(self) -> bool:
+        return self.lock.locked()
+
+    def configure(self, provider: str, config: Dict[str, Any]):
+        self.provider = provider.lower()
+        if "openai_url" in config:
+            self.openai_url = config["openai_url"].rstrip('/')
+        if "openai_key" in config:
+            self.openai_key = config["openai_key"]
+        if "openai_model" in config:
+            self.openai_model = config["openai_model"]
+        logger.info("TARS Engine dynamically switched to: %s", self.provider.upper())
+
+    async def test_connection(self) -> Dict[str, Any]:
+        """Validates network connectivity and model readiness for the active provider."""
         await self.ensure_db_settings_loaded()
-        effective_max_tokens = max_tokens or DEFAULT_CHAT_MAX_TOKENS
+        if self.provider == 'local':
+            if not self.model_path.exists():
+                return {"success": False, "provider": "local", "message": f"GGUF model not found at {self.model_path}"}
+            ready = await asyncio.to_thread(self.ensure_loaded)
+            return {
+                "success": ready,
+                "provider": "local",
+                "model": self.model_name,
+                "message": "Local GGUF model loaded and operational." if ready else "Failed to load GGUF model into memory."
+            }
+        elif self.provider == 'openai':
+            try:
+                headers = {"Authorization": f"Bearer {self.openai_key}"} if self.openai_key else {}
+                async with httpx.AsyncClient(timeout=6.0) as client:
+                    url = f"{self.openai_url}/models"
+                    resp = await client.get(url, headers=headers)
+                    if resp.status_code in (200, 404):
+                        return {"success": True, "provider": "openai", "model": self.openai_model, "message": f"OpenAI endpoint online ({url})."}
+                    return {"success": False, "provider": "openai", "message": f"Endpoint returned HTTP status {resp.status_code}."}
+            except Exception as e:
+                return {"success": False, "provider": "openai", "message": f"Cannot connect to API endpoint: {e}"}
+        return {"success": False, "provider": self.provider, "message": f"Unknown provider '{self.provider}'"}
 
-        # Clean / truncate context if overly huge
-        if messages and isinstance(messages[0], dict) and "content" in messages[0]:
-            system_message = messages[0]['content']
-            rag_start = system_message.find("2. **KNOWLEDGE BASE:**\n")
-            if rag_start != -1:
-                rag_content_start_index = rag_start + len("2. **KNOWLEDGE BASE:**\n")
-                rag_content = system_message[rag_content_start_index:]
-                if len(rag_content) > MAX_RAG_CHARS:
-                    rag_content_truncated = rag_content[:MAX_RAG_CHARS] + "\n... [TRUNCATED]"
-                    messages[0]['content'] = system_message[:rag_content_start_index] + rag_content_truncated
+    async def stream_response(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        repeat_penalty: Optional[float] = None,
+        max_tokens: int = 1024,
+        cancel_event: Optional[asyncio.Event] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Streams tokens asynchronously with deterministic RAG sampling defaults."""
+        await self.ensure_db_settings_loaded()
+        if isinstance(temperature, int) and temperature > 2:
+            max_tokens = temperature
+            temperature = None
 
-        # 1. OpenAI / Compatible Streaming
-        if self.provider == 'openai':
-            async for chunk in self._stream_via_openai(messages, effective_max_tokens):
-                yield chunk
+        eff_temp = self.temperature if temperature is None else temperature
+        eff_top_p = self.top_p if top_p is None else top_p
+        eff_repeat = self.repeat_penalty if repeat_penalty is None else repeat_penalty
+
+        if self.provider == "openai":
+            async for token in self._stream_openai(
+                messages, eff_temp, eff_top_p, max_tokens, cancel_event
+            ):
+                yield token
             return
 
-        # 3. Local LLaMA GGUF Streaming (Default)
-        else:
-            if not await asyncio.to_thread(self.ensure_loaded):
-                yield "[SYSTEM NOTICE: AI Model is not loaded or missing. Please verify model weights in the models directory.]"
-                return
+        self.load_model()
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[Optional[str]] = asyncio.Queue()
 
-            if self._waiting_requests >= MAX_LOCAL_QUEUE_DEPTH:
-                if self._has_openai_fallback():
-                    logger.warning("Local inference queue saturated; streaming via fallback OpenAI endpoint.")
-                    async for chunk in self._stream_via_openai(messages, effective_max_tokens):
-                        yield chunk
-                    return
-                yield "[SYSTEM NOTICE: TARS local AI engine is currently serving maximum concurrent readers. Please try again in a few seconds.]"
-                return
-
-            if self.is_busy:
-                logger.info(f"Local inference engine busy (queue depth: {self._waiting_requests + 1}). Queuing request.")
-
-            self._waiting_requests += 1
-            lock_acquired = False
+        def _producer():
             try:
-                await asyncio.wait_for(self.lock.acquire(), timeout=LOCAL_QUEUE_TIMEOUT)
-                lock_acquired = True
-
-                loop = asyncio.get_running_loop()
-                token_queue: asyncio.Queue = asyncio.Queue(maxsize=0)
-                stop_event = threading.Event()
-
-                def _producer():
-                    try:
-                        stream = self.llm.create_chat_completion(
-                            messages=messages,
-                            stream=True,
-                            temperature=0.1,
-                            top_p=0.85,
-                            repeat_penalty=1.12,
-                            max_tokens=effective_max_tokens,
-                            stop=["<|im_end|>", "<|endoftext|>", "<|eot_id|>", "<|end_of_text|>"]
-                        )
-                        for chunk in stream:
-                            if stop_event.is_set():
-                                break
-                            choices = chunk.get('choices', [])
-                            if choices:
-                                delta = choices[0].get('delta', {})
-                                content = delta.get('content')
-                                if content:
-                                    loop.call_soon_threadsafe(token_queue.put_nowait, content)
-                    except Exception as ex:
-                        logger.error(f"Inference Thread Error: {ex}", exc_info=True)
-                        loop.call_soon_threadsafe(token_queue.put_nowait, ex)
-                    finally:
-                        loop.call_soon_threadsafe(token_queue.put_nowait, None)
-
-                worker = threading.Thread(target=_producer, daemon=True)
-                worker.start()
-
-                try:
-                    while True:
-                        token = await token_queue.get()
-                        if token is None:
-                            break
-                        if isinstance(token, Exception):
-                            yield f"[INFERENCE ERROR: {str(token)}]"
-                            break
-                        yield token
-                except asyncio.CancelledError:
-                    logger.info("Client disconnected mid-stream; signaling local GGUF thread to abort.")
-                    stop_event.set()
-                    raise
-                finally:
-                    stop_event.set()
-            except asyncio.TimeoutError:
-                if self._has_openai_fallback():
-                    logger.warning("Local queue wait timed out; failing over to OpenAI stream.")
-                    async for chunk in self._stream_via_openai(messages, effective_max_tokens):
-                        yield chunk
-                else:
-                    yield "[SYSTEM NOTICE: Local AI queue timed out under heavy load. Please retry shortly.]"
+                stream = self.llm.create_chat_completion(
+                    messages=messages,
+                    temperature=eff_temp,
+                    top_p=eff_top_p,
+                    repeat_penalty=eff_repeat,
+                    max_tokens=max_tokens,
+                    stop=self._stop_tokens,
+                    stream=True,
+                )
+                for chunk in stream:
+                    if cancel_event and cancel_event.is_set():
+                        break
+                    delta = (
+                        chunk.get("choices", [{}])[0]
+                        .get("delta", {})
+                        .get("content")
+                    )
+                    if delta:
+                        loop.call_soon_threadsafe(queue.put_nowait, delta)
+            except Exception as exc:
+                logger.error("Local GGUF inference error: %s", exc)
+                loop.call_soon_threadsafe(
+                    queue.put_nowait,
+                    "\n\n*[Inference error: unable to complete generation.]*",
+                )
             finally:
-                if lock_acquired:
-                    self.lock.release()
-                self._waiting_requests = max(0, self._waiting_requests - 1)
+                loop.call_soon_threadsafe(queue.put_nowait, None)
+
+        producer_future = loop.run_in_executor(None, _producer)
+        try:
+            while True:
+                token = await queue.get()
+                if token is None:
+                    break
+                yield token
+        finally:
+            if not producer_future.done():
+                if cancel_event:
+                    cancel_event.set()
+
+    async def create_completion(
+        self,
+        prompt: str,
+        max_tokens: int = 1500,
+        temperature: float = 0.3,
+        stop: Optional[List[str]] = None,
+    ) -> Optional[str]:
+        if self.provider == "openai":
+            try:
+                headers = {"Authorization": f"Bearer {self.openai_key}"} if self.openai_key else {}
+                client = self._get_http_client()
+                resp = await client.post(
+                    f"{self.openai_url}/chat/completions",
+                    json={
+                        "model": self.openai_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": max_tokens,
+                        "temperature": temperature,
+                        "stop": stop or self._stop_tokens,
+                    },
+                    headers=headers,
+                )
+                if resp.status_code == 200:
+                    return resp.json()["choices"][0]["message"]["content"].strip()
+                return None
+            except Exception as ex:
+                logger.error("OpenAI create_completion error: %s", ex)
+                return None
+
+        self.load_model()
+        if not self.llm:
+            return None
+
+        def _infer():
+            try:
+                res = self.llm.create_completion(
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    stop=stop or self._stop_tokens,
+                )
+                return res["choices"][0]["text"]
+            except Exception as ex:
+                logger.error("Local GGUF create_completion error: %s", ex)
+                return None
+
+        return await asyncio.to_thread(_infer)
+
+    async def generate_response(
+        self,
+        prompt: str,
+        max_tokens: int = 1500,
+        temperature: float = 0.3,
+        stop: Optional[List[str]] = None,
+    ) -> Optional[str]:
+        return await self.create_completion(
+            prompt=prompt,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            stop=stop,
+        )
 
 
-# Singleton instance
 tars_engine = TarsEngine()

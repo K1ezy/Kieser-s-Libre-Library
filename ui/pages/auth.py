@@ -53,37 +53,30 @@ async def login_page():
                     .props('flat rounded-xl color=grey-7 size=sm font-bold').classes('w-full')
         return
 
-    with ui.row().classes('w-full min-h-[100dvh] h-auto md:h-[100dvh] m-0 p-0 overflow-y-auto md:overflow-hidden'):
-        # Brand Side
-        with ui.column().classes('hidden md:flex w-1/2 h-full bg-gradient-to-br from-indigo-900 via-indigo-800 to-purple-900 items-center justify-center text-white p-12 relative overflow-hidden'):
-            # Ambient background glow
-            ui.element('div').classes('absolute w-96 h-96 bg-indigo-500/20 rounded-full blur-3xl -top-20 -left-20')
-            ui.element('div').classes('absolute w-80 h-80 bg-purple-500/20 rounded-full blur-3xl -bottom-20 -right-20')
-            
-            ui.icon('auto_stories', size='5rem').classes('mb-6 opacity-95 drop-shadow-md')
-            ui.label('Libre Library').classes('text-5xl font-black tracking-tight mb-3 text-center')
-            ui.label('Your Intelligent Digital Archive').classes('text-lg font-normal opacity-85 text-center max-w-sm')
-            
-            with ui.row().classes('mt-8 gap-4 opacity-75 text-sm'):
-                with ui.row().classes('items-center gap-1.5'):
-                    ui.icon('bolt', size='sm')
-                    ui.label('Fast Search')
-                with ui.row().classes('items-center gap-1.5'):
-                    ui.icon('psychology', size='sm')
-                    ui.label('AI Librarian')
-                with ui.row().classes('items-center gap-1.5'):
-                    ui.icon('auto_stories', size='sm')
-                    ui.label('Reader')
+    # Check for registration success flash data
+    prefill_val = app.storage.user.pop('prefill_identifier', '')
+    just_registered = app.storage.user.pop('signup_success', False)
+    registered_role = app.storage.user.pop('signup_role', '')
 
-        # Form Side
-        with ui.column().classes('w-full md:w-1/2 h-full items-center justify-center bg-slate-50 p-4 sm:p-8 overflow-y-auto'):
-            with ui.card().classes('w-full max-w-md p-5 sm:p-8 shadow-xl md:shadow-none border border-slate-200/80 md:border-none bg-white md:bg-transparent rounded-2xl sm:rounded-3xl'):
-                with ui.column().classes('w-full mb-4 sm:mb-6'):
-                    ui.label('Welcome Back').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-1')
-                    ui.label('Sign in with your email, username, or institutional ID').classes('text-xs sm:text-sm text-slate-500')
+    with ui.column().classes('w-full min-h-[100dvh] items-center justify-center bg-slate-50 p-4 sm:p-8 overflow-y-auto'):
+        with ui.card().classes('w-full max-w-[560px] p-6 sm:p-10 shadow-2xl border border-slate-200/90 bg-white rounded-3xl'):
+            with ui.row().classes('w-full items-center gap-4 sm:gap-6 mb-6'):
+                ui.image('/static/Libre-Library_logo.svg').classes('w-32 sm:w-44 h-auto object-contain shrink-0').props('no-spinner')
+                with ui.column().classes('gap-0.5 min-w-0 flex-1 justify-center'):
+                    ui.label('Welcome Back').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight')
+                    ui.label('Sign in with your email, username, or institutional ID').classes('text-xs sm:text-sm text-slate-500 leading-snug')
+
+                # Post-registration Success Notification Banner
+                if just_registered:
+                    with ui.row().classes('w-full p-4 mb-5 rounded-2xl bg-emerald-50/90 border border-emerald-200 items-center gap-3 shadow-sm'):
+                        ui.icon('check_circle', size='26px').classes('text-emerald-600 shrink-0')
+                        with ui.column().classes('gap-0.5 flex-1'):
+                            ui.label('Account Created Successfully!').classes('text-sm font-bold text-emerald-950')
+                            role_text = f"Your {registered_role.capitalize()} account" if registered_role else "Your account"
+                            ui.label(f'{role_text} has been registered. Please sign in below with your password to continue.').classes('text-xs text-emerald-700 leading-snug')
 
                 # Identifier Field (Email, Username, or Institutional ID)
-                identifier = ui.input(placeholder='Email, Username, or Institutional ID') \
+                identifier = ui.input(placeholder='Email, Username, or Institutional ID', value=prefill_val) \
                     .classes(INPUT_CLASSES) \
                     .props('rounded outlined dense autocomplete="username" autocapitalize="none" spellcheck="false"')
                 with identifier.add_slot('prepend'):
@@ -97,6 +90,12 @@ async def login_page():
                     ui.icon('lock').classes('text-indigo-500 opacity-70')
                 create_password_toggle(pwd)
 
+                if prefill_val:
+                    # Frictionless UX: auto-focus password when identifier is pre-filled from registration
+                    ui.timer(0.1, lambda: pwd.run_method('focus'), once=True)
+
+                login_btn = None
+
                 async def try_login():
                     clean_id = (identifier.value or '').strip()
                     clean_pwd = (pwd.value or '').strip()
@@ -105,38 +104,45 @@ async def login_page():
                         ui.notify('Please fill in both identifier (email/username/ID) and password.', type='warning')
                         return
 
-                    users = await mongo_db.get_users_by_identifier(clean_id)
-                    if not users:
-                        ui.notify('No account found matching this email, username, or institutional ID.', type='negative')
-                        return
+                    if login_btn:
+                        login_btn.props('loading')
 
-                    matched_user = None
-                    for user in users:
-                        hp = user.get('hashed_password')
-                        if not hp:
-                            continue
-                        hp_bytes = hp.encode('utf-8') if isinstance(hp, str) else hp
-                        try:
-                            if bcrypt.checkpw(clean_pwd.encode('utf-8'), hp_bytes):
-                                matched_user = user
-                                break
-                        except Exception:
-                            continue
+                    try:
+                        users = await mongo_db.get_users_by_identifier(clean_id)
+                        if not users:
+                            ui.notify('No account found matching this email, username, or institutional ID.', type='negative')
+                            return
 
-                    if matched_user:
-                        token = create_access_token({"sub": matched_user['id'], "role": matched_user.get('role', 'user')})
-                        set_user_session(matched_user, token)
-                        await mongo_db.update_user_last_login(matched_user['id'])
-                        ui.notify(f"Welcome back, {matched_user.get('name') or matched_user.get('username', 'User')}!", type='positive')
-                        ui.navigate.to('/')
-                    else:
-                        ui.notify('Invalid credentials. Please verify your password.', type='negative')
+                        matched_user = None
+                        for user in users:
+                            hp = user.get('hashed_password')
+                            if not hp:
+                                continue
+                            hp_bytes = hp.encode('utf-8') if isinstance(hp, str) else hp
+                            try:
+                                if bcrypt.checkpw(clean_pwd.encode('utf-8'), hp_bytes):
+                                    matched_user = user
+                                    break
+                            except Exception:
+                                continue
+
+                        if matched_user:
+                            token = create_access_token({"sub": matched_user['id'], "role": matched_user.get('role', 'user')})
+                            set_user_session(matched_user, token)
+                            await mongo_db.update_user_last_login(matched_user['id'])
+                            ui.notify(f"Welcome back, {matched_user.get('name') or matched_user.get('username', 'User')}!", type='positive')
+                            ui.navigate.to('/')
+                        else:
+                            ui.notify('Invalid credentials. Please verify your password.', type='negative')
+                    finally:
+                        if login_btn:
+                            login_btn.props(remove='loading')
 
                 # Bind Enter Key to Submit
                 identifier.on('keydown.enter', try_login)
                 pwd.on('keydown.enter', try_login)
 
-                ui.button('Sign In', on_click=try_login).classes(BTN_STYLE)
+                login_btn = ui.button('Sign In', on_click=try_login).classes(BTN_STYLE)
 
                 with ui.row().classes('w-full justify-center items-center mt-6 gap-1 text-sm'):
                     ui.label("Don't have an account?").classes('text-slate-500')
@@ -166,22 +172,13 @@ async def signup_page():
                     .props('flat rounded-xl color=grey-7 size=sm font-bold').classes('w-full')
         return
 
-    with ui.row().classes('w-full min-h-[100dvh] h-auto md:h-[100dvh] m-0 p-0 overflow-y-auto md:overflow-hidden'):
-        # Brand Side
-        with ui.column().classes('hidden md:flex w-1/2 h-full bg-gradient-to-br from-purple-900 via-indigo-900 to-indigo-800 items-center justify-center text-white p-12 relative overflow-hidden'):
-            ui.element('div').classes('absolute w-96 h-96 bg-purple-500/20 rounded-full blur-3xl -top-20 -right-20')
-            ui.element('div').classes('absolute w-80 h-80 bg-indigo-500/20 rounded-full blur-3xl -bottom-20 -left-20')
-
-            ui.icon('account_circle', size='5rem').classes('mb-6 opacity-95 drop-shadow-md')
-            ui.label('Join Libre Library').classes('text-5xl font-black tracking-tight mb-3 text-center')
-            ui.label('Unlock intelligent search, AI study companions, and flashcards.').classes('text-lg font-normal opacity-85 text-center max-w-sm')
-
-        # Form Side
-        with ui.column().classes('w-full md:w-1/2 h-full items-center justify-center bg-slate-50 p-4 sm:p-8 overflow-y-auto'):
-            with ui.card().classes('w-full max-w-md p-5 sm:p-8 shadow-xl md:shadow-none border border-slate-200/80 md:border-none bg-white md:bg-transparent rounded-2xl sm:rounded-3xl'):
-                with ui.column().classes('w-full mb-4 sm:mb-6'):
-                    ui.label('Create Account').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight mb-1')
-                    ui.label('Institutional registration across academic roles').classes('text-xs sm:text-sm text-slate-500')
+    with ui.column().classes('w-full min-h-[100dvh] items-center justify-center bg-slate-50 p-4 sm:p-8 py-8 sm:py-12 overflow-y-auto'):
+        with ui.card().classes('w-full max-w-[620px] p-6 sm:p-10 shadow-2xl border border-slate-200/90 bg-white rounded-3xl'):
+            with ui.row().classes('w-full items-center gap-4 sm:gap-6 mb-6'):
+                ui.image('/static/Libre-Library_logo.svg').classes('w-32 sm:w-44 h-auto object-contain shrink-0').props('no-spinner')
+                with ui.column().classes('gap-0.5 min-w-0 flex-1 justify-center'):
+                    ui.label('Create Account').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight')
+                    ui.label('Institutional registration across academic roles').classes('text-xs sm:text-sm text-slate-500 leading-snug')
 
                 # Full Legal Name Field
                 fullname = ui.input(placeholder='Full Legal Name *') \
@@ -289,6 +286,8 @@ async def signup_page():
                 role_select.on_value_change(render_role_fields)
                 render_role_fields()
 
+                signup_btn = None
+
                 async def try_signup():
                     clean_fullname = (fullname.value or '').strip()
                     clean_username = (username.value or '').strip()
@@ -336,46 +335,54 @@ async def signup_page():
                         ui.notify("Library branch / section is required.", type='warning')
                         return
 
-                    # Case-insensitive collision checks
-                    if await mongo_db.get_user_by_email(clean_email):
-                        ui.notify("An account with this email already exists.", type='negative')
-                        return
+                    if signup_btn:
+                        signup_btn.props('loading')
 
-                    if await mongo_db.get_user_by_identifier(clean_username):
-                        ui.notify("This username is already taken. Please choose another.", type='negative')
-                        return
+                    try:
+                        # Case-insensitive collision checks
+                        if await mongo_db.get_user_by_email(clean_email):
+                            ui.notify("An account with this email already exists.", type='negative')
+                            return
 
-                    if await mongo_db.get_user_by_identifier(inst_id):
-                        ui.notify("This institutional ID is already registered to an account.", type='negative')
-                        return
+                        if await mongo_db.get_user_by_identifier(clean_username):
+                            ui.notify("This username is already taken. Please choose another.", type='negative')
+                            return
 
-                    hashed = bcrypt.hashpw(clean_pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-                    users = await mongo_db.get_all_users()
-                    role = "admin" if not users else chosen_role
+                        if await mongo_db.get_user_by_identifier(inst_id):
+                            ui.notify("This institutional ID is already registered to an account.", type='negative')
+                            return
 
-                    created = await mongo_db.create_user(
-                        clean_username,
-                        clean_email,
-                        hashed,
-                        role=role,
-                        name=clean_fullname,
-                        institutional_id=inst_id,
-                        program=prog_val,
-                        year_level=year_val,
-                        department=dept_val,
-                        branch=branch_val,
-                        admin_code=inst_id if role == 'admin' else None
-                    )
-                    if not created:
-                        ui.notify("Registration failed. Please try again.", type='negative')
-                        return
+                        hashed = bcrypt.hashpw(clean_pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+                        user_count = await mongo_db.get_total_user_count()
+                        role = "admin" if user_count == 0 else chosen_role
 
-                    # Auto-login newly registered user directly
-                    token = create_access_token({"sub": created['id'], "role": created['role']})
-                    set_user_session(created, token)
-                    await mongo_db.update_user_last_login(created['id'])
-                    ui.notify(f"Welcome to Libre Library, {created.get('name') or created['username']}!", type='positive')
-                    ui.navigate.to('/')
+                        created = await mongo_db.create_user(
+                            clean_username,
+                            clean_email,
+                            hashed,
+                            role=role,
+                            name=clean_fullname,
+                            institutional_id=inst_id,
+                            program=prog_val,
+                            year_level=year_val,
+                            department=dept_val,
+                            branch=branch_val,
+                            admin_code=inst_id if role == 'admin' else None
+                        )
+                        if not created:
+                            ui.notify("Registration failed. Please try again.", type='negative')
+                            return
+
+                        # Safe & Explicit Auth: Do not auto-login; prompt user to authenticate first
+                        clear_user_session()
+                        app.storage.user['prefill_identifier'] = clean_username
+                        app.storage.user['signup_success'] = True
+                        app.storage.user['signup_role'] = role
+                        ui.notify("Account created successfully! Please sign in with your password.", type='positive', duration=5.0)
+                        ui.navigate.to('/login')
+                    finally:
+                        if signup_btn:
+                            signup_btn.props(remove='loading')
 
                 # Bind Enter Key
                 username.on('keydown.enter', try_signup)
@@ -383,7 +390,7 @@ async def signup_page():
                 pwd.on('keydown.enter', try_signup)
                 confirm_pwd.on('keydown.enter', try_signup)
 
-                ui.button('Create Account', on_click=try_signup).classes(BTN_STYLE)
+                signup_btn = ui.button('Create Account', on_click=try_signup).classes(BTN_STYLE)
 
                 with ui.row().classes('w-full justify-center items-center mt-6 gap-1 text-sm'):
                     ui.label('Already have an account?').classes('text-slate-500')

@@ -18,10 +18,10 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
     ) as drawer:
 
         # 1. LOGO AREA (Mobile overlay; desktop top bar already shows brand header)
-        with ui.row().classes('w-full h-16 sm:h-20 items-center justify-between px-5 border-b border-slate-200 flex-none md:hidden'):
+        with ui.row().classes('w-full h-16 sm:h-20 items-center justify-between px-5 pt-[env(safe-area-inset-top,0px)] border-b border-slate-200 flex-none md:hidden'):
             with ui.row().classes('items-center gap-2.5'):
-                with ui.element('div').classes('p-2 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100 shadow-sm'):
-                    ui.icon('local_library', size='sm')
+                with ui.element('div').classes('p-1.5 rounded-xl bg-sky-50 flex items-center justify-center border border-sky-100/80 shadow-xs'):
+                    ui.image('/static/Libre-Library_icon.svg').classes('w-7 h-7 sm:w-8 sm:h-8 object-contain').props('no-spinner')
                 ui.label('Libre Library').classes('text-xl font-black text-slate-900 tracking-tight')
             ui.button(icon='close', on_click=lambda: (drawer.set_visibility(False), drawer.hide())).props('flat round dense color=grey-7 size=md')
 
@@ -45,7 +45,10 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
 
                 with ui.element('div').classes(f'{base_classes} {color_classes}').on('click', on_navigate):
                     with ui.row().classes('items-center gap-3 min-w-0'):
-                        ui.icon(icon).classes('text-xl group-hover:scale-105 transition-transform')
+                        if icon.endswith('.svg') or '/' in icon:
+                            ui.image(icon).classes('w-5 h-5 object-contain group-hover:scale-105 transition-transform').props('no-spinner')
+                        else:
+                            ui.icon(icon).classes('text-xl group-hover:scale-105 transition-transform')
                         ui.label(text).classes('text-sm truncate')
                     if badge_text:
                         ui.label(badge_text).classes('text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-700')
@@ -61,7 +64,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
             # SECTION 2: AI LEARNING WORKSTATION (Universal for All Roles)
             # -------------------------------------------------------------
             ui.label('AI TOOLS & RESEARCH').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-4 mb-1 tracking-widest')
-            nav_link('TARS AI Librarian', 'smart_toy', '/chat')
+            nav_link('TARS AI Librarian', '/static/tars_icon.svg', '/chat')
             nav_link('Study Planner', 'event_note', '/planner')
             nav_link('AI Summarizer', 'summarize', '/summarizer')
 
@@ -109,7 +112,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
         }
         badge_cls, role_icon = role_styles.get(user_role, ('bg-indigo-50 text-indigo-700 border-indigo-200', 'person'))
 
-        with ui.row().classes('w-full p-3.5 border-t border-slate-200 bg-slate-50 flex-none items-center justify-between gap-2'):
+        with ui.row().classes('w-full p-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom,0.875rem))] border-t border-slate-200 bg-slate-50 flex-none items-center justify-between gap-2'):
             with ui.row().classes('items-center gap-2.5 flex-1 min-w-0 cursor-pointer').on('click', lambda: (drawer.set_visibility(False), drawer.hide(), ui.navigate.to('/profile'))):
                 with ui.element('div').classes(f'w-8 h-8 rounded-full flex items-center justify-center border {badge_cls} shadow-xs shrink-0'):
                     ui.icon(role_icon, size='16px')

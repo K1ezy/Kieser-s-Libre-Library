@@ -9,7 +9,7 @@ try:
     from components.sidebar import sidebar
     from components.header import header
     from core.database.mongo_manager import mongo_db
-    from .planner_service import planner_service
+    from core.services.planner_service import planner_service
 except ImportError:
     pass
 

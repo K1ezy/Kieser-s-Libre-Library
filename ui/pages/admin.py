@@ -27,10 +27,11 @@ async def admin_dashboard():
 
     # Fetch system diagnostics concurrently
     import asyncio
+    admin_book_proj = {"_id": 0, "id": 1, "title": 1, "chunk_count": 1, "indexing_status": 1, "local_path": 1}
     stats, raw_users, all_books = await asyncio.gather(
         mongo_db.get_system_diagnostics(),
         mongo_db.get_all_users(),
-        mongo_db.get_all_books()
+        mongo_db.get_all_books(projection=admin_book_proj)
     )
 
 
@@ -121,8 +122,8 @@ async def admin_dashboard():
         with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm mb-6'):
             with ui.row().classes('w-full items-start justify-between gap-4 flex-wrap mb-4'):
                 with ui.row().classes('items-center gap-3 min-w-0 flex-1'):
-                    with ui.element('div').classes('p-2.5 rounded-2xl bg-purple-50 text-purple-600 border border-purple-100 shadow-xs shrink-0'):
-                        ui.icon('psychology', size='24px')
+                    with ui.element('div').classes('w-11 h-11 rounded-2xl bg-cyan-50 border border-cyan-100 shadow-xs shrink-0 flex items-center justify-center p-2'):
+                        ui.image('/static/tars_icon.svg').classes('w-full h-full object-contain').props('no-spinner')
                     with ui.column().classes('gap-0.5 min-w-0 flex-1'):
                         with ui.row().classes('items-center gap-2 flex-wrap'):
                             ui.label('TARS AI Knowledge Store & Vector Health').classes('text-base font-black text-slate-900 tracking-tight')
@@ -190,7 +191,7 @@ async def admin_dashboard():
                         total_n = res.get("total", 0)
 
                         # Refresh live stats
-                        updated_books = await mongo_db.get_all_books()
+                        updated_books = await mongo_db.get_all_books(projection=admin_book_proj)
                         new_unindexed = len([
                             b for b in (updated_books or [])
                             if b.get("chunk_count", 0) == 0 or b.get("indexing_status") == "failed"

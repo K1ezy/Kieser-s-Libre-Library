@@ -5,11 +5,13 @@ import re
 import time
 import threading
 from collections import OrderedDict
+from functools import lru_cache
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Tuple
-from core.config import settings as app_settings
+from typing import Any, Dict, List, Optional, Tuple
+import chromadb
 
-# Setup Logger
+from core.config import EMBEDDING_MODEL_PATH, RAG_MAX_DISTANCE, settings as app_settings
+
 logger = logging.getLogger("TARS_ARCHIVE")
 
 CACHE_MAX_SIZE = 256
@@ -17,124 +19,100 @@ CACHE_TTL_SECONDS = 180.0
 
 
 class TarsArchive:
-    """
-    Persistent Vector Knowledge Base using ChromaDB and SentenceTransformers.
-    Optimized with lazy initialization, thread safety, O(1) OrderedDict LRU caching,
-    and hybrid lexical + dense vector ranking.
-    """
+    """Persistent ChromaDB RAG Engine with strict L2 distance gating."""
 
-    def __init__(self):
-        self.db_path = app_settings.CHROMA_PATH
-        self.local_model_path = app_settings.BASE_DIR / "models" / "all-MiniLM-L6-v2"
-        self.client = None
-        self.collection = None
-        self.embedding_fn = None
-        self._init_lock = threading.Lock()
-        self._is_initialized = False
+    def __init__(self, persist_dir: str = "data/chroma_db"):
+        self.persist_dir = str(persist_dir)
+        try:
+            self.client = chromadb.PersistentClient(path=self.persist_dir)
+            self.collection = self.client.get_or_create_collection(
+                name="tars_knowledge_base",
+                metadata={"hnsw:space": "l2"},
+            )
+        except Exception as exc:
+            logger.warning("ChromaDB persistent client init notice: %s", exc)
+            self.client = None
+            self.collection = None
+
+        self._embedder = None
         self._query_cache: "OrderedDict[tuple, Tuple[float, List[dict]]]" = OrderedDict()
         self._cache_lock = threading.Lock()
-        logger.info("TARS Archive registered (Lazy Loading Mode with LRU Cache).")
+        self._is_initialized = True
 
-    def _ensure_local_model_links(self):
-        """Ensures local offline model can be discovered by HuggingFace / ChromaDB under standard aliases."""
-        if not self.local_model_path.exists():
-            return
+    @property
+    def embedder(self):
+        if self._embedder is None:
+            from sentence_transformers import SentenceTransformer
+            self._embedder = SentenceTransformer(EMBEDDING_MODEL_PATH)
+        return self._embedder
+
+    @lru_cache(maxsize=128)
+    def _encode_query(self, query_text: str) -> tuple:
+        vec = self.embedder.encode(query_text, normalize_embeddings=True)
+        return tuple(vec.tolist())
+
+    def get_known_sources(self) -> set:
+        """Returns cached distinct source identifiers present in ChromaDB."""
+        now = time.time()
+        if hasattr(self, "_known_sources_cache") and (now - getattr(self, "_known_sources_ts", 0) < 60.0):
+            return self._known_sources_cache
         try:
-            import subprocess
-            resolved_target = str(self.local_model_path.resolve())
-            root_link = app_settings.BASE_DIR / "all-MiniLM-L6-v2"
-            if not root_link.exists():
-                try:
-                    os.symlink(resolved_target, str(root_link), target_is_directory=True)
-                except Exception:
-                    try:
-                        subprocess.run(f'cmd /c mklink /J "{root_link}" "{resolved_target}"', shell=True, capture_output=True)
-                    except Exception:
-                        pass
+            if self.collection is not None:
+                data = self.collection.get(include=["metadatas"])
+                self._known_sources_cache = set(m.get("source") for m in data.get("metadatas", []) if m and m.get("source"))
+                self._known_sources_ts = now
+                return self._known_sources_cache
+        except Exception as err:
+            logger.debug("Notice getting known sources: %s", err)
+        return set()
 
-            st_dir = app_settings.BASE_DIR / "sentence-transformers"
-            st_dir.mkdir(parents=True, exist_ok=True)
-            st_link = st_dir / "all-MiniLM-L6-v2"
-            if not st_link.exists():
-                try:
-                    os.symlink(resolved_target, str(st_link), target_is_directory=True)
-                except Exception:
-                    try:
-                        subprocess.run(f'cmd /c mklink /J "{st_link}" "{resolved_target}"', shell=True, capture_output=True)
-                    except Exception:
-                        pass
-        except Exception as e:
-            logger.debug(f"Model link initialization notice: {e}")
+    def resolve_source_name(self, candidates: List[str]) -> Optional[str]:
+        """Resolves the exact matching ChromaDB source name from candidate filenames/titles."""
+        known = self.get_known_sources()
+        if not known:
+            return candidates[0] if candidates else None
 
-    def ensure_initialized(self) -> bool:
-        """
-        Thread-safely initializes ChromaDB and embedding models on first access.
-        """
-        if self._is_initialized and self.collection is not None:
-            return True
+        # 1. Exact match
+        for c in candidates:
+            if c in known:
+                return c
 
-        with self._init_lock:
-            if self._is_initialized and self.collection is not None:
-                return True
+        # 2. Case-insensitive match
+        known_lower_map = {k.lower(): k for k in known}
+        for c in candidates:
+            if c.lower() in known_lower_map:
+                return known_lower_map[c.lower()]
 
-            try:
-                import chromadb
-                from chromadb.config import Settings
-                from chromadb.utils import embedding_functions
+        # 3. Stem / filename match without extension
+        known_stem_map = {Path(k).stem.lower(): k for k in known}
+        for c in candidates:
+            stem = Path(c).stem.lower()
+            if stem in known_stem_map:
+                return known_stem_map[stem]
 
-                self.db_path.mkdir(parents=True, exist_ok=True)
+        # 4. Partial substring match for messy renames
+        for c in candidates:
+            c_clean = c.lower().replace("_", " ").replace("-", " ")
+            if len(c_clean) >= 6:
+                for k, orig in known_lower_map.items():
+                    k_clean = k.replace("_", " ").replace("-", " ")
+                    if c_clean in k_clean or k_clean in c_clean:
+                        return orig
 
-                if self.local_model_path.exists():
-                    logger.info(f"OFFLINE MODE: Using local embedding model at {self.local_model_path}")
-                    os.environ["TRANSFORMERS_OFFLINE"] = "1"
-                    os.environ["HF_HUB_OFFLINE"] = "1"
-                    self._ensure_local_model_links()
-                    model_target = str(self.local_model_path)
-                else:
-                    logger.warning("Local embedding model not found. Using HuggingFace model 'all-MiniLM-L6-v2'.")
-                    model_target = "all-MiniLM-L6-v2"
+        return None
 
-                try:
-                    import torch
-                    torch.set_num_threads(min(4, os.cpu_count() or 1))
-                except Exception:
-                    pass
-
-                self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-                    model_name=model_target,
-                    device="cpu"
-                )
-
-                if hasattr(self.embedding_fn, "_model") and self.embedding_fn._model is not None:
-                    cached_m = self.embedding_fn._model
-                    embedding_functions.SentenceTransformerEmbeddingFunction.models["all-MiniLM-L6-v2"] = cached_m
-                    embedding_functions.SentenceTransformerEmbeddingFunction.models["sentence-transformers/all-MiniLM-L6-v2"] = cached_m
-                    embedding_functions.SentenceTransformerEmbeddingFunction.models[model_target] = cached_m
-                    embedding_functions.SentenceTransformerEmbeddingFunction.models[str(Path(model_target).resolve())] = cached_m
-
-                self.client = chromadb.PersistentClient(
-                    path=str(self.db_path),
-                    settings=Settings(anonymized_telemetry=False)
-                )
-
-                self.collection = self.client.get_or_create_collection(
-                    name="tars_knowledge_base",
-                    embedding_function=self.embedding_fn
-                )
-
-                if getattr(self.collection, "_embedding_function", None) is None:
-                    self.collection._embedding_function = self.embedding_fn
-
-                doc_count = self.collection.count()
-                logger.info(f"TARS Archive ONLINE. Loaded {doc_count} documents.")
-                self._is_initialized = True
-                return True
-
-            except Exception as e:
-                logger.critical(f"ChromaDB Initialization Failed: {e}", exc_info=True)
-                self.collection = None
-                self._is_initialized = False
-                return False
+    def _build_where_filter(
+        self,
+        filter_source: Optional[str] = None,
+        book_id: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        if book_id and filter_source:
+            return {"$and": [{"book_id": str(book_id)}, {"source": str(filter_source)}]}
+        if book_id:
+            return {"book_id": str(book_id)}
+        if filter_source:
+            return {"source": str(filter_source)}
+        return None
 
     def _clear_cache(self):
         """Clears cached semantic query results upon data mutation."""
@@ -142,7 +120,6 @@ class TarsArchive:
             self._query_cache.clear()
 
     def _get_cached(self, cache_key: tuple, now: float) -> Optional[List[dict]]:
-        """O(1) LRU cache read with TTL validation."""
         with self._cache_lock:
             entry = self._query_cache.get(cache_key)
             if entry is None:
@@ -155,13 +132,282 @@ class TarsArchive:
             return None
 
     def _set_cached(self, cache_key: tuple, now: float, output: List[dict]):
-        """O(1) LRU cache write that evicts only the oldest entry when full."""
         with self._cache_lock:
             if cache_key in self._query_cache:
                 self._query_cache.move_to_end(cache_key)
             self._query_cache[cache_key] = (now, output)
             while len(self._query_cache) > CACHE_MAX_SIZE:
                 self._query_cache.popitem(last=False)
+
+    def search_with_metadata(
+        self,
+        query: str,
+        top_k: int = 3,
+        filter_source: Optional[str] = None,
+        book_id: Optional[str] = None,
+        candidate_sources: Optional[List[str]] = None,
+        candidate_book_ids: Optional[List[str]] = None,
+        fallback_to_library: bool = False,
+        max_distance: Optional[float] = RAG_MAX_DISTANCE,
+    ) -> List[dict]:
+        """
+        Queries ChromaDB with metadata scoping, dynamic alias resolution, and strict distance filtering.
+        Returns [] if no chunks meet max_distance.
+        """
+        if not query or not query.strip():
+            return []
+
+        c_srcs = tuple(sorted(candidate_sources)) if candidate_sources else ()
+        c_bids = tuple(sorted(candidate_book_ids)) if candidate_book_ids else ()
+        cache_key = (
+            query.strip().lower(),
+            top_k,
+            str(filter_source or ""),
+            str(book_id or ""),
+            c_srcs,
+            c_bids,
+            fallback_to_library,
+            max_distance,
+        )
+        now = time.time()
+        cached = self._get_cached(cache_key, now)
+        if cached is not None:
+            return cached
+
+        if self.collection is None:
+            return []
+
+        effective_threshold = RAG_MAX_DISTANCE if max_distance is None else max_distance
+        try:
+            query_embedding = [list(self._encode_query(query.strip()))]
+        except Exception as emb_err:
+            logger.error("Failed to generate query embedding: %s", emb_err)
+            return []
+
+        matched_chunks: List[dict] = []
+
+        all_book_ids = list(candidate_book_ids or [])
+        if book_id and book_id not in all_book_ids:
+            all_book_ids.append(book_id)
+
+        all_sources = list(candidate_sources or [])
+        if filter_source and filter_source not in all_sources:
+            all_sources.append(filter_source)
+
+        is_scoped = bool(all_book_ids or all_sources)
+
+        if not is_scoped:
+            try:
+                results = self.collection.query(
+                    query_embeddings=query_embedding,
+                    n_results=max(top_k, 1),
+                    include=["documents", "metadatas", "distances"],
+                )
+                matched_chunks = self._filter_results(results, effective_threshold)
+            except Exception as exc:
+                logger.error("Unscoped ChromaDB query failed: %s", exc)
+        else:
+            # 1. Try Candidate Book IDs first
+            for bid in all_book_ids:
+                try:
+                    res = self.collection.query(
+                        query_embeddings=query_embedding,
+                        n_results=max(top_k, 1),
+                        where={"book_id": str(bid)},
+                        include=["documents", "metadatas", "distances"],
+                    )
+                    hits = self._filter_results(res, effective_threshold)
+                    if hits:
+                        matched_chunks.extend(hits)
+                        break
+                except Exception as e:
+                    logger.debug("Query by book_id %s notice: %s", bid, e)
+
+            # 2. Try Candidate Sources / Filename Aliases
+            if not matched_chunks:
+                resolved_source = self.resolve_source_name(all_sources)
+                query_sources = [resolved_source] if resolved_source else all_sources
+
+                for src in query_sources:
+                    if not src:
+                        continue
+                    try:
+                        src_results = self.collection.query(
+                            query_embeddings=query_embedding,
+                            n_results=max(top_k, 1),
+                            where={"source": str(src)},
+                            include=["documents", "metadatas", "distances"],
+                        )
+                        hits = self._filter_results(src_results, effective_threshold)
+                        if hits:
+                            matched_chunks.extend(hits)
+                            break
+                    except Exception as exc:
+                        logger.debug("Source query failed for %s: %s", src, exc)
+
+            # 3. Optional fallback to entire library only if scoped search yielded nothing
+            # AND fallback is explicitly enabled — still strictly gated by effective_threshold
+            if not matched_chunks and fallback_to_library:
+                try:
+                    fallback_results = self.collection.query(
+                        query_embeddings=query_embedding,
+                        n_results=max(top_k, 1),
+                        include=["documents", "metadatas", "distances"],
+                    )
+                    matched_chunks = self._filter_results(fallback_results, effective_threshold)
+                except Exception as exc:
+                    logger.error("Fallback ChromaDB query failed: %s", exc)
+
+        self._set_cached(cache_key, now, matched_chunks)
+        return matched_chunks
+
+    def get_book_intro_chunks(
+        self,
+        book_id: Optional[str] = None,
+        candidate_sources: Optional[List[str]] = None,
+        limit: int = 5,
+    ) -> List[dict]:
+        """
+        Retrieves the earliest introductory/chapter chunks for a book
+        to guarantee grounded context for broad summary and outline requests.
+        """
+        if self.collection is None:
+            return []
+
+        where_clause = None
+        if book_id:
+            where_clause = {"book_id": str(book_id)}
+        else:
+            resolved = self.resolve_source_name(candidate_sources or [])
+            if resolved:
+                where_clause = {"source": resolved}
+
+        if not where_clause:
+            return []
+
+        try:
+            res = self.collection.get(where=where_clause, limit=max(limit * 6, 40))
+            docs = res.get("documents", [])
+            metas = res.get("metadatas", [])
+            if not docs and book_id and candidate_sources:
+                resolved = self.resolve_source_name(candidate_sources)
+                if resolved:
+                    res = self.collection.get(where={"source": resolved}, limit=max(limit * 6, 40))
+                    docs = res.get("documents", [])
+                    metas = res.get("metadatas", [])
+
+            chunks = []
+            for d, m in zip(docs, metas):
+                text_clean = (d or "").strip()
+                # Skip tiny boilerplate or copyright lines
+                if len(text_clean) < 80:
+                    continue
+                chunks.append({
+                    "text": text_clean,
+                    "metadata": m or {},
+                    "chunk_index": (m or {}).get("chunk_index", 999999),
+                    "distance": 0.0,
+                })
+
+            chunks.sort(key=lambda x: x["chunk_index"])
+            return chunks[:limit]
+        except Exception as exc:
+            logger.warning("Error fetching intro chunks: %s", exc)
+            return []
+
+    def update_book_metadata(self, book_id: str, new_title: str) -> int:
+        """Dynamically updates display title across all ChromaDB chunks for a book."""
+        if self.collection is None or not book_id:
+            return 0
+        try:
+            res = self.collection.get(where={"book_id": str(book_id)}, include=["metadatas"])
+            chunk_ids = res.get("ids", [])
+            metadatas = res.get("metadatas", [])
+            if not chunk_ids:
+                return 0
+            new_metas = []
+            for m in metadatas:
+                um = dict(m)
+                um["title"] = str(new_title)
+                new_metas.append(um)
+            for i in range(0, len(chunk_ids), 500):
+                self.collection.update(ids=chunk_ids[i:i + 500], metadatas=new_metas[i:i + 500])
+            self._clear_cache()
+            return len(chunk_ids)
+        except Exception as exc:
+            logger.warning("Error updating book metadata in ChromaDB: %s", exc)
+            return 0
+
+    @staticmethod
+    def _filter_results(raw_results: dict, max_distance: float) -> List[dict]:
+        docs = (raw_results.get("documents") or [[]])[0]
+        metas = (raw_results.get("metadatas") or [[]])[0]
+        dists = (raw_results.get("distances") or [[]])[0]
+
+        verified: List[dict] = []
+        for doc, meta, dist in zip(docs, metas, dists):
+            if not doc or not doc.strip():
+                continue
+            if dist is not None and float(dist) <= float(max_distance):
+                meta_dict = meta or {}
+                verified.append(
+                    {
+                        "text": doc.strip(),
+                        "metadata": meta_dict,
+                        "distance": float(dist),
+                        "source": meta_dict.get("source", "Library Document"),
+                        "book_id": meta_dict.get("book_id", ""),
+                        "title": meta_dict.get("title", meta_dict.get("source", "Document")),
+                        "page": meta_dict.get("page"),
+                        "section_type": meta_dict.get("section_type", "page"),
+                    }
+                )
+        return verified
+
+    def get_adjacent_chunks(
+        self,
+        book_id: Optional[str],
+        source: Optional[str],
+        chunk_index: int,
+        window: int = 1,
+    ) -> List[dict]:
+        """Fetches neighboring chunks on the same/adjacent page for continuity."""
+        if chunk_index is None or window <= 0 or self.collection is None:
+            return []
+
+        target_indices = [
+            idx for idx in range(chunk_index - window, chunk_index + window + 1)
+            if idx >= 0 and idx != chunk_index
+        ]
+        if not target_indices:
+            return []
+
+        conditions: List[Dict[str, Any]] = [{"chunk_index": {"$in": target_indices}}]
+        if book_id:
+            conditions.append({"book_id": str(book_id)})
+        elif source:
+            conditions.append({"source": str(source)})
+
+        where_filter = {"$and": conditions} if len(conditions) > 1 else conditions[0]
+        try:
+            res = self.collection.get(
+                where=where_filter,
+                include=["documents", "metadatas"],
+            )
+            docs = res.get("documents") or []
+            metas = res.get("metadatas") or []
+            return [
+                {"text": d.strip(), "metadata": m or {}, "distance": 0.0}
+                for d, m in zip(docs, metas)
+                if d and d.strip()
+            ]
+        except Exception as exc:
+            logger.debug("Adjacent chunk expansion skipped: %s", exc)
+            return []
+
+    def ensure_initialized(self) -> bool:
+        """Compatibility initializer for application lifecycle startup."""
+        return self.collection is not None
 
     def _clean_text(self, text: str) -> str:
         """Sanitizes text to remove Null bytes and encoding errors."""
@@ -171,10 +417,7 @@ class TarsArchive:
         return text.encode('utf-8', 'ignore').decode('utf-8').strip()
 
     def _smart_chunker(self, text: str, chunk_size: int = 1000, overlap: int = 200) -> List[str]:
-        """
-        Splits text into chunks preserving paragraph and sentence boundaries.
-        Uses langchain_text_splitters RecursiveCharacterTextSplitter.
-        """
+        """Splits text into chunks preserving paragraph and sentence boundaries."""
         try:
             from langchain_text_splitters import RecursiveCharacterTextSplitter
             text_splitter = RecursiveCharacterTextSplitter(
@@ -193,33 +436,12 @@ class TarsArchive:
                 start += step
             return chunks
 
-    @staticmethod
-    def _compute_lexical_boost(query: str, passage: str) -> float:
-        """Computes a lightweight lexical term-overlap bonus to complement dense cosine distance."""
-        q_terms = {t for t in re.findall(r"\w{3,}", query.lower())}
-        if not q_terms:
-            return 0.0
-        p_lower = passage.lower()
-        matched = sum(1 for t in q_terms if t in p_lower)
-        return (matched / len(q_terms)) * 0.20
-
     def ingest_text(self, text: str, filename: str, book_id: Optional[str] = None, title: Optional[str] = None) -> int:
-        """Directly chunks and ingests extracted clean text into ChromaDB with metadata."""
-        if not self.ensure_initialized() or not self.collection:
+        if self.collection is None:
             return 0
-
         clean = self._clean_text(text)
         if not clean or len(clean) < 20:
             return 0
-
-        try:
-            where_check = {"book_id": book_id} if book_id else {"source": filename}
-            existing = self.collection.get(where=where_check)
-            if existing and len(existing['ids']) > 0:
-                logger.info(f"Document '{filename}' already in memory ({len(existing['ids'])} chunks).")
-                return len(existing['ids'])
-        except Exception:
-            pass
 
         chunks = self._smart_chunker(clean)
         if not chunks:
@@ -245,26 +467,13 @@ class TarsArchive:
             b_meta = metadatas[i:i + batch_size]
             b_ids = ids[i:i + batch_size]
             try:
-                b_embeddings = self.embedding_fn(b_docs) if self.embedding_fn else None
-                if b_embeddings is not None:
-                    self.collection.add(
-                        documents=b_docs,
-                        embeddings=b_embeddings,
-                        metadatas=b_meta,
-                        ids=b_ids
-                    )
-                else:
-                    self.collection.add(
-                        documents=b_docs,
-                        metadatas=b_meta,
-                        ids=b_ids
-                    )
+                embeddings = self.embedder.encode(b_docs, normalize_embeddings=True).tolist()
+                self.collection.add(documents=b_docs, embeddings=embeddings, metadatas=b_meta, ids=b_ids)
                 persisted += len(b_docs)
             except Exception as e:
-                logger.error(f"Error adding chunk batch to ChromaDB: {e}")
+                logger.error("Error adding chunk batch to ChromaDB: %s", e)
 
         self._clear_cache()
-        logger.info(f"Persisted {persisted} chunks from '{filename}' into vector store.")
         return persisted
 
     def ingest_document(
@@ -275,28 +484,20 @@ class TarsArchive:
         title: Optional[str] = None,
         force_reindex: bool = False
     ) -> int:
-        """
-        Extracts structured document units (pages/slides) and ingests them into ChromaDB
-        with precise page numbers, book_id, and titles for pinpoint RAG citations.
-        """
-        if not self.ensure_initialized() or not self.collection:
+        if self.collection is None:
             return 0
 
         file_p = Path(file_path)
         if not file_p.exists() or file_p.stat().st_size == 0:
-            logger.warning(f"Skipping '{filename}': File not found or empty.")
             return 0
 
         try:
             where_check = {"book_id": book_id} if book_id else {"source": filename}
             existing = self.collection.get(where=where_check)
-            if existing and len(existing['ids']) > 0:
+            if existing and len(existing.get('ids', [])) > 0:
                 if not force_reindex:
-                    logger.info(f"Document '{filename}' already in memory ({len(existing['ids'])} chunks).")
                     return len(existing['ids'])
-                else:
-                    self.collection.delete(ids=existing['ids'])
-                    logger.info(f"Evicted {len(existing['ids'])} old chunks of '{filename}' for clean reindexing.")
+                self.collection.delete(ids=existing['ids'])
         except Exception:
             pass
 
@@ -320,10 +521,7 @@ class TarsArchive:
             if not sec_text or len(sec_text) < 15:
                 continue
 
-            if len(sec_text) <= 1500:
-                sec_chunks = [sec_text]
-            else:
-                sec_chunks = self._smart_chunker(sec_text, chunk_size=1200, overlap=200)
+            sec_chunks = [sec_text] if len(sec_text) <= 1500 else self._smart_chunker(sec_text, chunk_size=1200, overlap=200)
             for c in sec_chunks:
                 all_chunks.append(c)
                 all_metas.append({
@@ -347,180 +545,38 @@ class TarsArchive:
             b_meta = all_metas[i:i + batch_size]
             b_ids = all_ids[i:i + batch_size]
             try:
-                b_embeddings = self.embedding_fn(b_docs) if self.embedding_fn else None
-                if b_embeddings is not None:
-                    self.collection.add(
-                        documents=b_docs,
-                        embeddings=b_embeddings,
-                        metadatas=b_meta,
-                        ids=b_ids
-                    )
-                else:
-                    self.collection.add(
-                        documents=b_docs,
-                        metadatas=b_meta,
-                        ids=b_ids
-                    )
+                embeddings = self.embedder.encode(b_docs, normalize_embeddings=True).tolist()
+                self.collection.add(documents=b_docs, embeddings=embeddings, metadatas=b_meta, ids=b_ids)
                 persisted += len(b_docs)
             except Exception as e:
-                logger.error(f"Error adding chunk batch to ChromaDB: {e}")
+                logger.error("Error adding chunk batch to ChromaDB: %s", e)
 
         self._clear_cache()
-        logger.info(f"Persisted {persisted} structured page-aware chunks for '{filename}'.")
         return persisted
 
     def reindex_document(self, file_path: str, filename: str, book_id: str, title: Optional[str] = None) -> int:
-        """Purges any partial/stale vectors for a book and re-runs structured ingestion."""
         self.delete_source(filename, book_id=book_id)
         return self.ingest_document(file_path, filename, book_id=book_id, title=title)
 
-    def ingest_file(self, file_path: str, filename: str, book_id: Optional[str] = None) -> int:
-        """Reads a file, chunks it with page metadata, and stores it in ChromaDB."""
-        return self.ingest_document(file_path, filename, book_id=book_id)
-
-    def search_with_metadata(
-        self,
-        query: str,
-        top_k: int = 3,
-        filter_source: Optional[str] = None,
-        book_id: Optional[str] = None,
-        fallback_to_library: bool = False,
-        max_distance: Optional[float] = 1.25
-    ) -> List[dict]:
-        """
-        Queries ChromaDB vector database with source metadata, page numbers, and hybrid lexical-vector re-ranking.
-        Supports filtering strictly by book_id or source filename without leaking cross-book data.
-        """
-        if not self.ensure_initialized() or not self.collection:
-            return []
-
-        cache_key = (
-            str(query).strip().lower(),
-            top_k,
-            str(filter_source or ""),
-            str(book_id or ""),
-            fallback_to_library,
-            max_distance
-        )
-        now = time.time()
-        cached_hits = self._get_cached(cache_key, now)
-        if cached_hits is not None:
-            return cached_hits
-
+    def delete_source(self, source_name: str, book_id: Optional[str] = None) -> bool:
+        if self.collection is None:
+            return False
         try:
-            if self.collection.count() == 0:
-                return []
-
-            results = None
-            has_scoped_hits = False
-            candidate_k = max(top_k * 2, 6)
-            q_emb = self.embedding_fn([query]) if self.embedding_fn else None
-            q_kwargs = {"query_embeddings": q_emb} if q_emb is not None else {"query_texts": [query]}
-
-            # Strategy 1: Targeted search by book_id if provided
-            if book_id:
+            target_id = book_id or source_name
+            try:
+                self.collection.delete(where={"book_id": str(target_id)})
+            except Exception:
+                pass
+            if source_name and source_name != target_id:
                 try:
-                    res = self.collection.query(
-                        n_results=candidate_k,
-                        where={"book_id": str(book_id)},
-                        **q_kwargs
-                    )
-                    if res and res.get('documents') and len(res['documents']) > 0 and len(res['documents'][0]) > 0:
-                        results = res
-                        has_scoped_hits = True
-                except Exception as query_err:
-                    logger.debug(f"Scoped book_id query error: {query_err}")
-
-            # Strategy 2: Targeted search by source filename / path if provided
-            if not has_scoped_hits and filter_source:
-                candidate_sources = [str(filter_source)]
-                src_name = Path(str(filter_source)).name
-                if src_name not in candidate_sources:
-                    candidate_sources.append(src_name)
-
-                for cand in candidate_sources:
-                    try:
-                        res = self.collection.query(
-                            n_results=candidate_k,
-                            where={"source": cand},
-                            **q_kwargs
-                        )
-                        if res and res.get('documents') and len(res['documents']) > 0 and len(res['documents'][0]) > 0:
-                            results = res
-                            has_scoped_hits = True
-                            break
-                    except Exception as query_err:
-                        logger.debug(f"Scoped source query error: {query_err}")
-
-            is_scoped = bool(book_id or filter_source)
-            if is_scoped and not has_scoped_hits and not fallback_to_library:
-                logger.debug(f"Scoped search for book_id={book_id}, source={filter_source} yielded 0 hits. Suppressing fallback.")
-                return []
-
-            if not has_scoped_hits:
-                results = self.collection.query(
-                    n_results=candidate_k,
-                    **q_kwargs
-                )
-
-            if not results or not results.get('documents') or len(results['documents']) == 0 or len(results['documents'][0]) == 0:
-                return []
-
-            candidates = []
-            docs = results['documents'][0]
-            metas = results['metadatas'][0] if results.get('metadatas') and len(results['metadatas']) > 0 else [{}] * len(docs)
-            dists = results['distances'][0] if results.get('distances') and len(results['distances']) > 0 else [0.0] * len(docs)
-
-            for doc, meta, dist in zip(docs, metas, dists):
-                raw_dist = float(dist) if dist is not None else 0.0
-                lexical_bonus = self._compute_lexical_boost(query, doc)
-                effective_dist = max(0.0, raw_dist - lexical_bonus)
-                if max_distance is not None and effective_dist > max_distance:
-                    continue
-                m = meta if isinstance(meta, dict) else {}
-                cleaned_doc = doc[:1500].strip() if len(doc) > 1500 else doc.strip()
-                candidates.append({
-                    "text": cleaned_doc,
-                    "source": m.get('source', 'Library Document'),
-                    "book_id": m.get('book_id', ''),
-                    "title": m.get('title', m.get('source', 'Document')),
-                    "page": m.get('page'),
-                    "section_type": m.get('section_type', 'page'),
-                    "distance": round(effective_dist, 4)
-                })
-
-            candidates.sort(key=lambda item: item["distance"])
-            output = candidates[:top_k]
-            self._set_cached(cache_key, now, output)
-            return output
+                    self.collection.delete(where={"source": str(source_name)})
+                except Exception:
+                    pass
+            self._clear_cache()
+            return True
         except Exception as e:
-            logger.error(f"Search Query Failed: {e}")
-            return []
-
-    def search(
-        self,
-        query: str,
-        top_k: int = 3,
-        filter_source: Optional[str] = None,
-        book_id: Optional[str] = None,
-        fallback_to_library: bool = False
-    ) -> List[str]:
-        """Queries the long-term memory and returns formatted citations with page numbers."""
-        hits = self.search_with_metadata(
-            query,
-            top_k=top_k,
-            filter_source=filter_source,
-            book_id=book_id,
-            fallback_to_library=fallback_to_library
-        )
-        if not hits:
-            return []
-        formatted = []
-        for h in hits:
-            source = h.get('source', 'Archive')
-            page_info = f" (Page {h['page']})" if h.get('page') else ""
-            formatted.append(f"[Source: {source}{page_info}]\n{h.get('text', '')}")
-        return formatted
+            logger.error("Failed to delete source '%s': %s", source_name, e)
+            return False
 
     def get_document_coverage_chunks(
         self,
@@ -529,13 +585,8 @@ class TarsArchive:
         max_chunks: int = 10,
         start_page: int = 1
     ) -> List[dict]:
-        """
-        Retrieves representative chunks distributed chronologically across a document's pages
-        to provide comprehensive multi-page coverage for summaries, study guides, and lecture overviews.
-        """
-        if not self.ensure_initialized() or not self.collection:
+        if self.collection is None:
             return []
-
         try:
             res = None
             if book_id:
@@ -543,41 +594,29 @@ class TarsArchive:
                     res = self.collection.get(where={"book_id": str(book_id)})
                 except Exception:
                     pass
-
             if (not res or not res.get('documents') or len(res['documents']) == 0) and filter_source:
                 try:
                     res = self.collection.get(where={"source": str(filter_source)})
                 except Exception:
                     pass
-
-            if not res or not res.get('documents') or len(res['documents']) == 0:
+            if not res or not res.get('documents'):
                 return []
 
             docs = res['documents']
             metas = res.get('metadatas') or [{}] * len(docs)
-
             combined = []
             for d, m in zip(docs, metas):
                 if not d or not d.strip():
                     continue
                 meta_dict = m if isinstance(m, dict) else {}
-                try:
-                    p = int(meta_dict.get('page') or 1)
-                except Exception:
-                    p = 1
-                try:
-                    idx = int(meta_dict.get('chunk_index') or 0)
-                except Exception:
-                    idx = 0
+                p = int(meta_dict.get('page') or 1)
+                idx = int(meta_dict.get('chunk_index') or 0)
                 combined.append((p, idx, d, meta_dict))
 
             if not combined:
                 return []
 
-            # Sort strictly by page number and chunk position
             combined.sort(key=lambda x: (x[0], x[1]))
-
-            # If user asks to continue from a later page
             if start_page > 1:
                 filtered_pages = [item for item in combined if item[0] >= start_page]
                 if filtered_pages:
@@ -604,7 +643,7 @@ class TarsArchive:
                 })
             return output
         except Exception as e:
-            logger.error(f"Coverage Chunks Retrieval Error: {e}")
+            logger.error("Coverage Chunks Retrieval Error: %s", e)
             return []
 
     def get_chunks_by_pages(
@@ -613,8 +652,7 @@ class TarsArchive:
         filter_source: Optional[str] = None,
         pages: Optional[List[int]] = None
     ) -> List[dict]:
-        """Retrieves exact chunks belonging to specified page numbers for adjacent window expansion."""
-        if not self.ensure_initialized() or not self.collection or not pages:
+        if self.collection is None or not pages:
             return []
         try:
             res = None
@@ -623,27 +661,19 @@ class TarsArchive:
                     res = self.collection.get(where={"book_id": str(book_id)})
                 except Exception:
                     pass
-            if (not res or not res.get('documents') or len(res['documents']) == 0) and filter_source:
+            if (not res or not res.get('documents')) and filter_source:
                 try:
                     res = self.collection.get(where={"source": str(filter_source)})
                 except Exception:
                     pass
-            if not res or not res.get('documents') or len(res['documents']) == 0:
-                try:
-                    res = self.collection.get()
-                except Exception:
-                    pass
             if not res or not res.get('documents'):
                 return []
+
             target_pages = set(pages)
             docs = res['documents']
             metas = res.get('metadatas') or [{}] * len(docs)
             out = []
             for d, m in zip(docs, metas):
-                m_source = m.get('source', '')
-                m_book_id = m.get('book_id', '')
-                if filter_source and m_source and m_source != filter_source and m_book_id != str(book_id or ''):
-                    continue
                 p = int(m.get('page') or 0)
                 if p in target_pages:
                     cleaned = d[:1500].strip() if len(d) > 1500 else d.strip()
@@ -659,84 +689,47 @@ class TarsArchive:
             out.sort(key=lambda x: (x['page'], x['text']))
             return out
         except Exception as e:
-            logger.error(f"Error in get_chunks_by_pages: {e}")
+            logger.error("Error in get_chunks_by_pages: %s", e)
             return []
 
     def get_collection_stats(self) -> dict:
-        """Returns statistics about ChromaDB knowledge store."""
-        if not self.ensure_initialized() or not self.collection:
+        if self.collection is None:
             return {"total_chunks": 0, "status": "Offline"}
         try:
             cnt = self.collection.count()
-            with self._cache_lock:
-                cache_entries = len(self._query_cache)
             return {
                 "total_chunks": cnt,
                 "status": "Online",
-                "cache_entries": cache_entries,
-                "storage_path": str(self.db_path)
+                "storage_path": self.persist_dir
             }
         except Exception as e:
             return {"total_chunks": 0, "status": f"Error: {e}"}
 
-    def _get_raw_collection(self):
-        """
-        Fast accessor for the ChromaDB collection without loading heavy neural embedding models.
-        Ideal for deletions, count checks, and metadata purges (<0.3s).
-        """
-        if self.collection is not None:
-            return self.collection
-
-        with self._init_lock:
-            if self.collection is not None:
-                return self.collection
-
-            try:
-                import chromadb
-                from chromadb.config import Settings
-
-                self.db_path.mkdir(parents=True, exist_ok=True)
-                if self.client is None:
-                    self.client = chromadb.PersistentClient(
-                        path=str(self.db_path),
-                        settings=Settings(anonymized_telemetry=False)
-                    )
-
-                try:
-                    return self.client.get_collection(name="tars_knowledge_base")
-                except Exception:
-                    return self.client.get_or_create_collection(name="tars_knowledge_base")
-            except Exception as e:
-                logger.error(f"Failed to access raw ChromaDB collection: {e}")
-                return None
-
-    def delete_source(self, source_name: str, book_id: Optional[str] = None) -> bool:
-        """Deletes all chunks associated with a source filename or book ID with instant cache invalidation."""
-        coll = self._get_raw_collection()
-        if not coll:
-            return False
-
-        try:
-            target_id = book_id or source_name
-            try:
-                coll.delete(where={"book_id": str(target_id)})
-            except Exception as e_bid:
-                logger.debug(f"Direct book_id deletion notice: {e_bid}")
-
-            if source_name and source_name != target_id:
-                try:
-                    coll.delete(where={"source": str(source_name)})
-                except Exception as e_src:
-                    logger.debug(f"Direct source deletion notice: {e_src}")
-
-            self._clear_cache()
-            logger.info(f"Purged vector embeddings and invalidated cache for: {source_name} / {book_id}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete source '{source_name}': {e}")
-            return False
+    def search(
+        self,
+        query: str,
+        top_k: int = 3,
+        filter_source: Optional[str] = None,
+        book_id: Optional[str] = None,
+        fallback_to_library: bool = False
+    ) -> List[str]:
+        hits = self.search_with_metadata(
+            query,
+            top_k=top_k,
+            filter_source=filter_source,
+            book_id=book_id,
+            fallback_to_library=fallback_to_library
+        )
+        if not hits:
+            return []
+        formatted = []
+        for h in hits:
+            source = h.get('metadata', {}).get('source') or h.get('source', 'Archive')
+            page_val = h.get('metadata', {}).get('page') or h.get('page')
+            page_info = f" (Page {page_val})" if page_val else ""
+            formatted.append(f"[Source: {source}{page_info}]\n{h.get('text', '')}")
+        return formatted
 
 
-# Architectural Aliases & Singleton Instance
 RAGPipeline = TarsArchive
 tars_archive = TarsArchive()

@@ -1,32 +1,41 @@
-"""
-Chat Service for TARS AI Librarian.
-Handles business logic, intent detection, prompt engineering, RAG orchestration,
-and conversation formatting, decoupling AI domain operations from NiceGUI presentation.
-"""
-
-from datetime import datetime
-from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any, Set
-import logging
-import string
 import re
-import time
-from nicegui import run
-
-from core.database.mongo_manager import mongo_db
+import string
+from pathlib import Path
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 from core.ai_engine.rag_pipeline import tars_archive
+from core.config import RAG_MAX_DISTANCE
 
-logger = logging.getLogger("CHAT_SERVICE")
+GREETING_KEYWORDS = {
+    "hello",
+    "hi",
+    "hey",
+    "tars",
+    "yo",
+    "greetings",
+    "good morning",
+    "good afternoon",
+    "good evening",
+    "howdy",
+    "sup",
+}
 
-# ==========================================
-# 📑 CONFIGURATION & PROMPT CONSTANTS
-# ==========================================
+IDENTITY_KEYWORDS = {
+    "who are you",
+    "what are you",
+    "identify",
+    "your function",
+    "introduce yourself",
+    "what is your name",
+    "who built you",
+}
 
 STYLE_PROMPTS = {
-    'Balanced': "Provide a thorough, well-structured, and clear answer. Use headings, bullet points, and exact page citations. Do not truncate essential concepts.",
-    'Concise': "Provide a direct, high-yield summary with concise bullet points. Avoid filler while retaining core definitions.",
-    'Academic': "Provide an in-depth academic lecture analysis with theoretical context, methodical critique, definitions, and comprehensive citations.",
-    'Exam Prep': "Provide an exhaustive exam preparation study guide with key definitions, principles, comparison tables, test questions, and mnemonics."
+    'Balanced': "Provide a thorough, well-structured, and clear answer. Use headings, bullet points, and exact page citations.",
+    'Concise': "Keep responses brief, direct, and high-signal without filler.",
+    'Academic': "Use a scholarly, objective, and structured tone with clear terminology.",
+    'Socratic': "Guide the user with clear explanations followed by a thought-provoking question.",
+    'Exam Prep': "Provide an exam preparation study guide with key definitions, principles, and comparison tables."
 }
 
 STARTER_PROMPTS_BOOK = [
@@ -43,63 +52,437 @@ STARTER_PROMPTS_LIBRARY = [
     ("🎓 Socratic Tutoring", "Turn on Teaching Mode and tutor me step-by-step on a core topic from my library.")
 ]
 
-IDENTITY_KEYWORDS = {"who are you", "what are you", "identify", "your function", "introduce yourself"}
-GREETING_KEYWORDS = {"hello", "hi", "hey", "tars", "yo", "greetings", "good morning", "good afternoon", "good evening"}
-SUMMARY_KEYWORDS = (
-    "summarize", "summary", "overview", "everything", "all topics", "whole lecture",
-    "whole book", "whole document", "full lecture", "full summary", "key takeaways",
-    "study guide", "lecture notes", "all of it", "explain everything", "entire document",
-    "breakdown", "all slides"
-)
-CONTINUE_KEYWORDS = (
-    "continue", "more", "tell me more", "what else", "go on", "keep going", "next part", "give me more"
-)
+
+def decompress_query_if_needed(text: str) -> str:
+    """Restores whitespace if a user submits a continuous mashed query like 'Summarizethisbookbystartingfrom1toendto10'"""
+    s = (text or "").strip()
+    if len(s) > 12 and " " not in s:
+        # Split camelCase / PascalCase
+        spaced = re.sub(r"([a-z])([A-Z])", r"\1 \2", s)
+        # Split digits
+        spaced = re.sub(r"([a-zA-Z])(\d+)", r"\1 \2", spaced)
+        spaced = re.sub(r"(\d+)([a-zA-Z])", r"\1 \2", spaced)
+        # Split common English keywords if still compressed
+        kw = (
+            "summarize", "summary", "overview", "explain", "tell", "give", "describe",
+            "this", "the", "book", "novel", "story", "chapter", "chapters", "text",
+            "by", "starting", "start", "from", "to", "end", "and", "in", "about"
+        )
+        for w in kw:
+            pattern = re.compile(re.escape(w), re.IGNORECASE)
+            spaced = pattern.sub(f" {w} ", spaced)
+        cleaned = " ".join(spaced.split())
+        if len(cleaned.split()) >= 2:
+            return cleaned
+    return s
 
 
 class ChatService:
-    """Domain service orchestrating chat business logic, RAG retrieval, and prompt creation."""
+    """Orchestrates intent detection, grounded RAG assembly, and anti-hallucination prompts."""
 
     @staticmethod
-    def should_skip_rag(text: str) -> bool:
-        """Determines if query is a simple greeting or identity question where RAG should be skipped."""
-        if not text:
+    def _normalize_text(text: str) -> str:
+        cleaned = re.sub(r"[^\w\s]", " ", (text or "").lower())
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    def is_greeting_or_identity(self, text: str) -> bool:
+        """Returns True if the prompt is purely a greeting or identity inquiry."""
+        norm = self._normalize_text(text)
+        if not norm:
+            return False
+
+        # Exact match or short greeting phrase (<= 6 words)
+        words = norm.split()
+        if norm in GREETING_KEYWORDS:
             return True
-        clean_input = text.lower().translate(str.maketrans('', '', string.punctuation)).strip()
-        is_identity = any(k in clean_input for k in IDENTITY_KEYWORDS)
-        is_greeting = (
-            clean_input in GREETING_KEYWORDS or
-            (len(clean_input.split()) <= 3 and any(g in clean_input for g in GREETING_KEYWORDS))
-        )
-        return is_identity or is_greeting
+        if len(words) <= 5 and any(
+            norm == g or norm.startswith(f"{g} ") or norm.endswith(f" {g}")
+            for g in GREETING_KEYWORDS
+        ):
+            # Ensure no substantive question words follow the greeting
+            question_markers = {"explain", "summarize", "what is", "how does", "chapter", "page", "book", "define"}
+            if not any(q in norm for q in question_markers):
+                return True
 
-    @staticmethod
-    def extract_catalog_search_term(text: str) -> str:
-        """Extracts author or title candidates from catalog inquiries."""
-        if not text:
-            return ""
-        cleaned = text.strip()
-        patterns = [
-            r'what\s+are\s+the\s+',
-            r'what\s+books\s+do\s+(we|i|you)\s+have\s+(by\s+|on\s+|about\s+|in\s+)?',
-            r'which\s+books\s+do\s+(we|i|you)\s+have\s+(by\s+|on\s+|about\s+|in\s+)?',
-            r'do\s+(we|you)\s+have\s+(any\s+)?books?\s+(by\s+|on\s+|about\s+|in\s+)?',
-            r'books?\s+(by\s+|on\s+|about\s+)?',
-            r'currently\s+have\s+in\s+this\s+library\s*\??',
-            r'currently\s+have\s*\??',
-            r'in\s+this\s+library\s*\??',
-            r'in\s+the\s+library\s*\??',
-            r'available\s+in\s+the\s+library\s*\??',
-            r'available\s+in\s+this\s+library\s*\??',
-            r'please\s*\??',
+        if any(ident in norm for ident in IDENTITY_KEYWORDS) and len(words) <= 10:
+            return True
+
+        return False
+
+    def should_skip_rag(self, text: str) -> bool:
+        """Skips ChromaDB lookup for greetings, identity checks, or empty inputs."""
+        if not text or not text.strip():
+            return True
+        return self.is_greeting_or_identity(text)
+
+    async def perform_rag_search(
+        self,
+        query: str,
+        focus_book_id: Optional[str] = None,
+        focus_book_title: Optional[str] = None,
+        top_k: int = 4,
+        max_distance: float = RAG_MAX_DISTANCE,
+        history: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[str, List[Dict[str, Any]]]:
+        """
+        Executes thresholded vector retrieval, dynamic alias resolution across MongoDB and ChromaDB,
+        expands adjacent chunks, injects verified catalog synopses, and formats verified [DOCUMENT EVIDENCE].
+        """
+        if self.should_skip_rag(query):
+            return "", []
+
+        normalized_query = decompress_query_if_needed(query)
+
+        # 1. Dynamically resolve book aliases and verified synopsis from MongoDB
+        book = None
+        if focus_book_id:
+            try:
+                from core.database.mongo_manager import mongo_db
+                if mongo_db.db is not None:
+                    book = await mongo_db.books.get_book_by_id(focus_book_id)
+            except Exception as e:
+                logger.debug("Mongo book lookup by id notice: %s", e)
+
+        if not book and focus_book_title:
+            try:
+                from core.database.mongo_manager import mongo_db
+                if mongo_db.db is not None:
+                    book = await mongo_db.books.get_book_by_title(focus_book_title)
+            except Exception as e:
+                logger.debug("Mongo book lookup by title notice: %s", e)
+
+        candidate_ids: List[str] = []
+        candidate_sources: List[str] = []
+        verified_synopsis = ""
+        effective_title = focus_book_title or "Library Document"
+
+        if book:
+            effective_title = book.get("title") or effective_title
+            candidate_ids.append(str(book.get("_id")))
+            if book.get("id"):
+                candidate_ids.append(str(book.get("id")))
+            if book.get("title"):
+                candidate_sources.append(book["title"])
+            if book.get("local_path"):
+                candidate_sources.append(Path(book["local_path"]).name)
+            for p in (book.get("formats") or {}).values():
+                if isinstance(p, str):
+                    candidate_sources.append(Path(p).name)
+            verified_synopsis = (book.get("description") or "").strip()
+
+        if focus_book_title and focus_book_title not in candidate_sources:
+            candidate_sources.append(focus_book_title)
+        if focus_book_id and focus_book_id not in candidate_ids:
+            candidate_ids.append(focus_book_id)
+
+        # 2. Check for broad or summary intents
+        norm_q = normalized_query.lower()
+        is_broad = any(k in norm_q for k in (
+            "summarize", "summary", "overview", "all topics", "lecture", "study guide",
+            "explain all", "all slides", "continue", "breakdown", "chapter", "starting from",
+            "start from", "1 to", "10"
+        ))
+        target_max_chars = 7500 if is_broad else 3500
+
+        # 3. Query ChromaDB with full candidate list
+        primary_chunks = tars_archive.search_with_metadata(
+            query=normalized_query,
+            top_k=top_k,
+            filter_source=candidate_sources[0] if candidate_sources else focus_book_title,
+            book_id=candidate_ids[0] if candidate_ids else focus_book_id,
+            candidate_sources=candidate_sources,
+            candidate_book_ids=candidate_ids,
+            fallback_to_library=False,
+            max_distance=max_distance,
+        )
+
+        # For broad/summary inquiries on focused documents, fetch introductory narrative chunks
+        if is_broad and (candidate_ids or candidate_sources):
+            intro_chunks = tars_archive.get_book_intro_chunks(
+                book_id=candidate_ids[0] if candidate_ids else None,
+                candidate_sources=candidate_sources,
+                limit=4,
+            )
+            seen_texts = set(c.get("text", "")[:60] for c in primary_chunks)
+            for ic in intro_chunks:
+                t_snip = ic.get("text", "")[:60]
+                if t_snip not in seen_texts:
+                    seen_texts.add(t_snip)
+                    primary_chunks.append(ic)
+
+        evidence_blocks: List[str] = []
+        citations: List[Dict[str, Any]] = []
+        seen_citations = set()
+
+        # Inject verified catalog synopsis if available for broad/summary questions or when chunks are limited
+        if verified_synopsis and (is_broad or not primary_chunks):
+            synopsis_header = f"[Source: {effective_title}, Verified Catalog Synopsis]"
+            evidence_blocks.append(f"{synopsis_header}\n{verified_synopsis}")
+            citations.append({
+                "source": str(effective_title),
+                "page": "Catalog Synopsis",
+                "book_id": candidate_ids[0] if candidate_ids else focus_book_id,
+                "distance": 0.0,
+            })
+
+        if not primary_chunks and not evidence_blocks:
+            return "", []
+
+        expanded_chunks = self._expand_adjacent_chunks(primary_chunks, max_chars=target_max_chars) if primary_chunks else []
+
+        for item in expanded_chunks:
+            meta = item.get("metadata") or {}
+            source_title = (
+                meta.get("title")
+                or effective_title
+                or meta.get("source")
+                or "Library Document"
+            )
+            page_num = meta.get("page") or meta.get("page_number") or "N/A"
+            text_body = (item.get("text") or "").strip()
+            if not text_body:
+                continue
+
+            header = f"[Source: {source_title}, Page {page_num}]"
+            evidence_blocks.append(f"{header}\n{text_body}")
+
+            cite_key = (str(source_title), str(page_num))
+            if cite_key not in seen_citations:
+                seen_citations.add(cite_key)
+                citations.append(
+                    {
+                        "source": str(source_title),
+                        "page": page_num,
+                        "book_id": meta.get("book_id") or (candidate_ids[0] if candidate_ids else focus_book_id),
+                        "distance": item.get("distance", 0.0),
+                    }
+                )
+
+        if not evidence_blocks:
+            return "", []
+
+        rag_text = (
+            "[DOCUMENT EVIDENCE]\n"
+            + "\n\n---\n\n".join(evidence_blocks)
+            + "\n[/DOCUMENT EVIDENCE]"
+        )
+        return rag_text, citations
+
+    def _expand_adjacent_chunks(self, chunks: List[dict], max_chars: int = 3500) -> List[dict]:
+        """Merges adjacent sequence chunks while deduplicating and respecting max_chars."""
+        collected: List[dict] = []
+        seen_keys = set()
+        total_chars = 0
+
+        for chunk in chunks:
+            meta = chunk.get("metadata") or {}
+            book_id = meta.get("book_id")
+            source = meta.get("source")
+            c_idx = meta.get("chunk_index")
+
+            neighbors = [chunk]
+            if isinstance(c_idx, int):
+                adj = tars_archive.get_adjacent_chunks(
+                    book_id=book_id,
+                    source=source,
+                    chunk_index=c_idx,
+                    window=1,
+                )
+                neighbors.extend(adj)
+
+            neighbors.sort(key=lambda x: (x.get("metadata") or {}).get("chunk_index", 0))
+
+            for item in neighbors:
+                m = item.get("metadata") or {}
+                dedup_key = (
+                    m.get("book_id") or m.get("source") or "",
+                    m.get("page") or m.get("page_number") or "",
+                    m.get("chunk_index", item.get("text", "")[:64]),
+                )
+                if dedup_key in seen_keys:
+                    continue
+                text_len = len(item.get("text") or "")
+                if total_chars + text_len > max_chars and collected:
+                    break
+                seen_keys.add(dedup_key)
+                collected.append(item)
+                total_chars += text_len
+
+        return collected
+
+    def build_system_persona(
+        self,
+        chat_style: str = "Academic",
+        focus_book: Optional[Dict[str, Any]] = None,
+        is_greeting: bool = False,
+        focus_book_meta: Optional[Dict[str, Any]] = None,
+        focus_book_title: Optional[str] = None,
+        teaching_mode: bool = False,
+        is_review_mode: bool = False,
+        inventory: str = "",
+        rag_text: str = "",
+    ) -> str:
+        """
+        Synthesizes the system persona with anti-hallucination constraints.
+        Suppresses forced book summary instructions when is_greeting=True.
+        """
+        style_directives = {
+            "Academic": "Use a scholarly, objective, and structured tone with clear terminology.",
+            "Concise": "Keep responses brief, direct, and high-signal without filler.",
+            "Socratic": "Guide the user with clear explanations followed by a thought-provoking question.",
+            "Balanced": "Provide a thorough, well-structured, and clear answer with exact citations.",
+            "Exam Prep": "Provide an exam preparation study guide with key definitions and principles."
+        }
+        chosen_style = style_directives.get(chat_style, style_directives.get("Academic"))
+
+        target_book = focus_book or focus_book_meta
+        eff_focus_title = (target_book.get("title") if target_book else None) or focus_book_title
+
+        rule_5 = (
+            f"5. STRICT FOCUS BOOK GROUNDING: The user has '{eff_focus_title}' focused. You MUST base all answers, summaries, plot descriptions, and character details SOLELY on the verified [DOCUMENT EVIDENCE] and catalog synopsis provided above. If the document excerpts do not contain details requested by the user, state clearly: 'The library archive for {eff_focus_title} does not contain explicit excerpts for [detail].' You are strictly forbidden from inventing or hallucinating characters, events, or plot points from outside the verified text."
+            if eff_focus_title
+            else "5. GENERAL INQUIRIES: If no document evidence is provided and user asks a general inquiry, answer accurately from general knowledge while clarifying it is not drawn from library holdings."
+        )
+
+        lines = [
+            "You are TARS, the Digital Librarian and AI Research & Library Assistant for Libre-Library.",
+            f"STYLE DIRECTIVE: {chosen_style}",
+            "",
+            "CRITICAL ACCURACY & ANTI-HALLUCINATION RULES:",
+            "1. DIRECT ANSWER FIRST: Begin immediately with the direct, factual answer and key citations in the first 1-2 sentences. Do NOT include filler pleasantries or meta-preambles (such as 'Based on the provided documents...', 'Sure! I can help with that', or 'According to the text...').",
+            "2. STRICT CLASSIFICATION FIDELITY: Meticulously follow category hierarchies in [DOCUMENT EVIDENCE]. Do NOT conflate or swap attributes between categories.",
+            "3. GROUNDING & VERIFIED CITATIONS: ONLY cite pages explicitly present in brackets (e.g. '[Source: title, Page X]'). NEVER invent or assume page numbers or source titles.",
+            "4. HONEST REFUSAL: If the provided documents do not contain the answer, state clearly: 'The library documents do not contain information regarding [topic].' Do not guess or fabricate unstated claims.",
+            rule_5,
         ]
-        for p in patterns:
-            cleaned = re.sub(p, ' ', cleaned, flags=re.IGNORECASE)
-        cleaned = re.sub(r'[\?\.!,;]', ' ', cleaned).strip()
-        return cleaned
+
+        # Resolve book details from either focus_book or focus_book_meta
+        if target_book:
+            title = target_book.get("title") or focus_book_title or "Selected Document"
+            author = (
+                target_book.get("author")
+                or target_book.get("display_author")
+                or "Unknown Author"
+            )
+            if isinstance(author, list) and author:
+                author = author[0].get("name", str(author[0])) if isinstance(author[0], dict) else str(author[0])
+            category = (
+                target_book.get("category")
+                or (target_book.get("shelves")[0] if target_book.get("shelves") and isinstance(target_book.get("shelves"), list) else None)
+                or "General"
+            )
+            desc = target_book.get("description") or ""
+
+            if is_greeting:
+                lines.extend(
+                    [
+                        "",
+                        f"NOTE: The user currently has '{title}' by {author} open in their workspace. "
+                        "Greet the user naturally and briefly mention you are ready to help if they have questions about it. "
+                        "Do NOT summarize or recite details about the book unless asked.",
+                    ]
+                )
+            else:
+                lines.extend(
+                    [
+                        "",
+                        "=== CURRENTLY FOCUSED BOOK DETAILS ===",
+                        f"Title: {title}",
+                        f"Author: {author}",
+                        f"Category: {category}",
+                    ]
+                )
+                if desc:
+                    lines.append(f"Description: {desc[:400]}")
+                if target_book.get("file_type"):
+                    lines.append(f"Availability: YES, this document is currently saved and available in the library archive ({target_book.get('file_type')} format).")
+                if target_book.get("shelves") and isinstance(target_book.get("shelves"), list):
+                    lines.append(f"Shelves: {', '.join(target_book.get('shelves'))}")
+                lines.append("Prioritize [DOCUMENT EVIDENCE] from this focused document when answering the user's inquiry.")
+        elif focus_book_title:
+            if is_greeting:
+                lines.extend([
+                    "",
+                    f"NOTE: The user currently has '{focus_book_title}' open in their workspace. "
+                    "Greet the user naturally and briefly mention you are ready to help if they have questions about it. "
+                    "Do NOT summarize or recite details about the book unless asked."
+                ])
+            else:
+                lines.extend([
+                    "",
+                    "=== CURRENTLY FOCUSED BOOK DETAILS ===",
+                    f"Title: {focus_book_title}",
+                    "Prioritize [DOCUMENT EVIDENCE] from this focused document when answering the user's inquiry."
+                ])
+
+        if inventory and inventory.strip():
+            lines.append(f"\n{inventory.strip()}")
+
+        if rag_text and rag_text.strip():
+            lines.append(f"\n{rag_text.strip()}")
+
+        if teaching_mode:
+            lines.append("\nTEACHING MODE: Socratic teaching style. Guide the user with questions rather than immediate answers.")
+        elif is_review_mode:
+            lines.append("\nCODE REVIEW MODE: Review provided code for architecture, performance, security, and cleanliness.")
+
+        return "\n".join(lines)
+
+    def build_messages_payload(
+        self,
+        system_persona: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+        current_query: Optional[str] = None,
+        rag_text: str = "",
+        max_turns: int = 6,
+    ) -> List[Dict[str, str]]:
+        """
+        Assembles the OpenAI/Llama.cpp chat completion payload.
+        - Deduplicates the trailing user message if MongoDB persisted it before history fetch.
+        - Wraps [DOCUMENT EVIDENCE] inside the active user turn to prevent system prompt attention dilution.
+        """
+        messages: List[Dict[str, str]] = [
+            {"role": "system", "content": system_persona.strip()}
+        ]
+
+        cleaned_history: List[Dict[str, str]] = []
+        for item in history or []:
+            role = item.get("role")
+            content = (item.get("content") or item.get("text") or "").strip()
+            if role in ("user", "assistant") and content:
+                cleaned_history.append({"role": role, "content": content})
+
+        # Deduplicate trailing user turn if background DB write already saved current_query
+        if current_query and cleaned_history:
+            last_msg = cleaned_history[-1]
+            if (
+                last_msg["role"] == "user"
+                and last_msg["content"].strip() == current_query.strip()
+            ):
+                cleaned_history.pop()
+
+        # Keep bounded conversation history (max_turns pairs = max_turns * 2 messages)
+        if max_turns > 0:
+            cleaned_history = cleaned_history[-(max_turns * 2) :]
+        else:
+            cleaned_history = []
+
+        messages.extend(cleaned_history)
+
+        # Anchor active query with user-turn RAG evidence
+        if current_query and current_query.strip():
+            if rag_text and rag_text.strip():
+                user_msg_content = (
+                    f"{rag_text.strip()}\n\n[USER INQUIRY]:\n{current_query.strip()}"
+                )
+            else:
+                user_msg_content = current_query.strip()
+            messages.append({"role": "user", "content": user_msg_content})
+
+        return messages
 
     @staticmethod
     def group_sessions_chronologically(sessions: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
-        """Groups sessions into temporal categories: Today, Yesterday, 7 Days, Month, Older."""
         today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         yesterday_start = today_start - 86400
         seven_days_start = today_start - (6 * 86400)
@@ -133,411 +516,7 @@ class ChatService:
         return {k: v for k, v in groups.items() if v}
 
     @staticmethod
-    def build_system_persona(
-        chat_style: str = "Balanced",
-        focus_book_title: Optional[str] = None,
-        teaching_mode: bool = False,
-        is_review_mode: bool = False,
-        inventory: str = "",
-        rag_text: str = "",
-        focus_book_meta: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Constructs high-accuracy, grounded system prompt with strict anti-hallucination guards."""
-        active_style_prompt = STYLE_PROMPTS.get(chat_style, STYLE_PROMPTS['Balanced'])
-        persona_lines = [
-            "You are TARS, the Digital Librarian for Libre-Library at "
-            "North Eastern Mindanao State University (NEMSU) – Tandag Campus (Surigao del Sur, Philippines).",
-            "Assist students and faculty with high factual accuracy, clarity, and comprehensive academic depth.",
-            f"STYLE: {active_style_prompt}",
-            "",
-            "CRITICAL ACCURACY & ANTI-HALLUCINATION RULES:",
-            "1. DIRECT ANSWER FIRST: Directly answer the user's specific inquiry in the opening 1-2 sentences. If asked 'What are the two main categories of X?', explicitly state them: 'The two main categories are: 1. [Category A] and 2. [Category B]' before providing detailed breakdowns.",
-            "2. STRICT CLASSIFICATION FIDELITY: Meticulously follow the exact category hierarchies in [DOCUMENT EVIDENCE]. Do NOT conflate, swap, or misattribute subcomponents or examples between different parent categories (e.g. do not assign attributes of System Documentation to Process Documentation).",
-            "3. COMPLETE ENUMERATION: If the evidence specifies multiple categories, principles, or steps, enumerate all of them completely. Never omit a category or stop after describing only one.",
-            "4. GROUNDING: Base answers strictly on facts from [DOCUMENT EVIDENCE] or [LIBRARY CATALOG HOLDINGS]. Do not extrapolate, guess, or invent unstated facts.",
-            "5. NO FABRICATED SOURCES: NEVER invent or hallucinate document filenames or external book titles. Only cite documents actually listed in the provided evidence.",
-            "6. HONEST REFUSAL: If the provided documents do not contain the answer, state clearly and honestly: 'The library documents do not contain information regarding [topic].' Do not guess."
-        ]
-
-        # Only inject inventory if non-empty (i.e. user explicitly inquired about catalog)
-        if inventory and inventory.strip():
-            persona_lines.append(f"\n{inventory.strip()}")
-
-        if rag_text and rag_text.strip():
-            persona_lines.append(f"\n{rag_text.strip()}")
-            persona_lines.append("Cite sources/pages when referencing document knowledge (e.g. '[Source: title, Page X]').")
-
-        if focus_book_meta:
-            b_title = focus_book_meta.get('title') or focus_book_title or 'Untitled Document'
-
-            # Author resolution
-            authors_data = focus_book_meta.get('display_author') or focus_book_meta.get('authors')
-            if isinstance(authors_data, list) and authors_data:
-                b_author = authors_data[0].get('name', str(authors_data[0])) if isinstance(authors_data[0], dict) else str(authors_data[0])
-            else:
-                b_author = str(authors_data or 'Unknown Author')
-
-            # Synopsis resolution (compact to prevent prompt bloat)
-            synopsis_text = ""
-            summaries = focus_book_meta.get('summaries')
-            if summaries and isinstance(summaries, list) and summaries[0]:
-                synopsis_text = str(summaries[0]).strip()
-            elif focus_book_meta.get('description'):
-                synopsis_text = str(focus_book_meta.get('description')).strip()
-
-            if len(synopsis_text) > 400:
-                synopsis_text = synopsis_text[:400] + "..."
-
-            file_type = (focus_book_meta.get('file_type') or 'E-Book').upper()
-            shelves = focus_book_meta.get('shelves', []) or []
-            shelves_str = ", ".join(str(s) for s in shelves) if isinstance(shelves, list) else str(shelves)
-
-            persona_lines.append(
-                f"\n=== 🎯 CURRENTLY FOCUSED BOOK DETAILS (FROM LIBRARY CATALOG & PREVIEW) ===\n"
-                f"- **Title:** {b_title}\n"
-                f"- **Author(s):** {b_author}\n"
-                f"- **Library Availability:** YES, this document is currently saved and available in the library archive ({file_type} format).\n"
-                f"- **Shelf / Category:** {shelves_str or 'General Collection'}\n"
-                f"- **Overview:** {synopsis_text or 'Ground answers on the document evidence.'}\n"
-                f"Answer user inquiries about this document directly and accurately."
-            )
-        elif focus_book_title:
-            persona_lines.append(f"\nFOCUS DOCUMENT: The user is asking about '{focus_book_title}'. Focus your answers on this document.")
-
-        if teaching_mode:
-            persona_lines.append("\nTEACHING MODE: Socratic teaching style. Guide the user with questions rather than immediate answers.")
-        elif is_review_mode:
-            persona_lines.append("\nCODE REVIEW MODE: Review provided code for architecture, performance, security, and cleanliness.")
-
-        return "\n".join(persona_lines)
-
-    @staticmethod
-    async def _expand_adjacent_chunks(
-        raw_hits: List[dict],
-        query: str,
-        focus_book_id: Optional[str] = None
-    ) -> List[dict]:
-        """
-        Fast, high-precision adjacent window expansion.
-        Expands multi-slide presentations, enumerated principles, and lists by at most 2 continuation
-        pages, avoiding context bloat while ensuring complete multi-page coverage.
-        """
-        if not raw_hits:
-            return raw_hits
-
-        retrieved_pages_by_source: Dict[str, Set[int]] = {}
-        for h in raw_hits:
-            src = h.get('source', '')
-            p = int(h.get('page') or 0)
-            if p > 0:
-                retrieved_pages_by_source.setdefault(src, set()).add(p)
-
-        q_lower = query.lower()
-        is_list_query = any(k in q_lower for k in (
-            'what are', 'list', 'principle', 'type', 'level', 'step', 'phase', 'stage',
-            'how many', 'explain the', 'all', '7', '6', '5', '4', '3', 'continue', 'categor', 'main'
-        ))
-
-        target_source = None
-        target_page = None
-        target_bid = None
-        needs_backward = False
-
-        # Identify the primary sequential anchor chunk
-        for h in raw_hits:
-            p_val = int(h.get('page') or 0)
-            if p_val <= 0:
-                continue
-            h_txt = h.get('text', '').lower()
-            src = h.get('source', '')
-            bid = h.get('book_id') or focus_book_id
-
-            # Case A: Explicit list start (e.g. "1. Testing shows..." and ("2." or "principle"))
-            if '1.' in h_txt and ('2.' in h_txt or any(k in h_txt for k in ('principle', 'step', 'phase', 'type', 'defect'))):
-                target_source = src
-                target_page = p_val
-                target_bid = bid
-                break
-
-            # Case B: Mid-list hit on a numbered list query
-            if is_list_query and any(m in h_txt for m in ('3.', '4.', '5.', '6.')) and not any(m in h_txt for m in ('1.', '2.')):
-                target_source = src
-                target_page = p_val
-                target_bid = bid
-                needs_backward = True
-                break
-
-            # Case C: Query asks for principles/types/levels and slide title introduces the topic
-            if is_list_query and any(k in q_lower for k in ('principle', 'type', 'level', 'step')) and any(k in h_txt for k in ('principles of', 'types of', 'levels of')):
-                if target_page is None:
-                    target_source = src
-                    target_page = p_val
-                    target_bid = bid
-
-            # Case D: Category breakdown slide (e.g. Product Documentation on slide 9 followed by Process on slide 10)
-            if is_list_query and any(k in q_lower for k in ('categor', 'main', 'type', 'two')):
-                if any(k in h_txt for k in ('product documentation', 'process documentation', 'categories:')):
-                    if target_page is None or p_val > target_page:
-                        target_source = src
-                        target_page = p_val
-                        target_bid = bid
-
-        # Perform targeted continuation retrieval if anchor identified
-        if target_page and target_source:
-            already = retrieved_pages_by_source.get(target_source, set())
-            pages_to_fetch = []
-            if needs_backward and (target_page - 1) > 0 and (target_page - 1) not in already:
-                pages_to_fetch.append(target_page - 1)
-            for offset in (1, 2):
-                cand = target_page + offset
-                if cand not in already and cand not in pages_to_fetch:
-                    pages_to_fetch.append(cand)
-
-            if pages_to_fetch:
-                adj_chunks = await run.io_bound(
-                    tars_archive.get_chunks_by_pages,
-                    target_bid,
-                    target_source,
-                    sorted(pages_to_fetch)
-                )
-                if adj_chunks:
-                    # Keep anchor sequence + top other raw hits, up to 8 total chunks for complete multi-page topic coverage
-                    seq_pages = set([target_page] + pages_to_fetch)
-                    selected_hits = [h for h in raw_hits if int(h.get('page') or 0) in seq_pages and h.get('source') == target_source]
-                    selected_hits.extend(adj_chunks)
-
-                    # Add top other hits not in sequence to retain catalog/document breadth
-                    for h in raw_hits:
-                        p = int(h.get('page') or 0)
-                        if (h.get('source') != target_source or p not in seq_pages) and len(selected_hits) < 8:
-                            selected_hits.append(h)
-
-                    selected_hits.sort(key=lambda x: (x.get('source', ''), int(x.get('page') or 0)))
-                    return selected_hits
-
-        # Default fallback: return top 8 raw hits sorted by page
-        capped_hits = list(raw_hits[:8])
-        capped_hits.sort(key=lambda x: (x.get('source', ''), int(x.get('page') or 0)))
-        return capped_hits
-
-    @staticmethod
-    async def perform_rag_search(
-        text: str,
-        focus_book_id: Optional[str] = None,
-        focus_book_title: Optional[str] = None,
-        history: Optional[List[Dict[str, Any]]] = None
-    ) -> Tuple[str, List[Dict[str, Any]]]:
-        """
-        Executes vector retrieval, multi-page document coverage sampling, and catalog routing.
-        """
-        rag_text = ""
-        citations: List[Dict[str, Any]] = []
-        try:
-            clean_text = text.lower().strip()
-            filter_source = None
-            book_doc = None
-
-            if focus_book_id:
-                try:
-                    book_doc = await mongo_db.get_book_details(focus_book_id)
-                except Exception:
-                    book_doc = None
-                if book_doc:
-                    resolved_p = mongo_db.resolve_document_path(focus_book_id, book_doc)
-                    if resolved_p and Path(resolved_p).exists():
-                        filter_source = Path(resolved_p).name
-                    elif book_doc.get('local_path'):
-                        filter_source = Path(book_doc.get('local_path')).name
-                    else:
-                        filter_source = focus_book_id
-                elif focus_book_title:
-                    filter_source = focus_book_title
-
-            # Case 1: FOCUSED BOOK CONTEXT (Lecture / Book Active)
-            if focus_book_id:
-                is_sum = any(k in clean_text for k in SUMMARY_KEYWORDS)
-                is_cont = any(k in clean_text for k in CONTINUE_KEYWORDS)
-
-                start_p = 1
-                if is_cont and history:
-                    # Detect previously cited page numbers to advance continuation
-                    found_pages = []
-                    for m in history:
-                        txt = m.get('content', '')
-                        matches = re.findall(r'Page\s+(\d+)', txt, re.IGNORECASE)
-                        for match in matches:
-                            try:
-                                found_pages.append(int(match))
-                            except Exception:
-                                pass
-                    if found_pages:
-                        start_p = max(found_pages) + 1
-
-                raw_hits = []
-                if is_sum or is_cont:
-                    # Use chronological multi-page coverage chunks across the entire document
-                    max_c = 12 if is_sum else 8
-                    raw_hits = await run.io_bound(
-                        tars_archive.get_document_coverage_chunks,
-                        focus_book_id,
-                        filter_source,
-                        max_c,
-                        start_p
-                    )
-
-                if not raw_hits:
-                    # Standard targeted vector search with top_k = 8
-                    raw_hits = await run.io_bound(
-                        tars_archive.search_with_metadata,
-                        text,
-                        8,
-                        filter_source,
-                        focus_book_id
-                    )
-                    if raw_hits:
-                        raw_hits = await ChatService._expand_adjacent_chunks(raw_hits, text, focus_book_id)
-
-                if raw_hits:
-                    rag_parts = []
-                    for h in raw_hits:
-                        src = h.get('source', 'Library Document')
-                        p_val = h.get('page')
-                        page_str = f" [Page {p_val}]" if p_val else ""
-                        chunk_text = h.get('text', '')[:1500].strip()
-                        clean_chunk = re.sub(r'(?<!\n)\n(?!\n|\s*[-*•\d])', ' ', chunk_text)
-                        rag_parts.append(f"[{src}{page_str}]:\n{clean_chunk}")
-
-                        cit_key = f"{src}_{p_val}"
-                        if not any(c.get('key') == cit_key for c in citations):
-                            citations.append({
-                                "key": cit_key,
-                                "source": src,
-                                "title": h.get('title') or src,
-                                "page": p_val,
-                                "book_id": h.get('book_id') or focus_book_id
-                            })
-                    rag_text = "\n[DOCUMENT EVIDENCE]:\n" + "\n---\n".join(rag_parts)
-                elif book_doc:
-                    # Direct multi-page fallback using document structure or raw text
-                    resolved_p = mongo_db.resolve_document_path(focus_book_id, book_doc)
-                    if resolved_p and Path(resolved_p).exists():
-                        try:
-                            from core.utils.text_extractor import extract_document_structure, extract_text_from_file
-                            sections = await run.io_bound(extract_document_structure, resolved_p)
-                            if sections:
-                                total_sec = len(sections)
-                                if total_sec <= 10:
-                                    picked = sections
-                                else:
-                                    step = (total_sec - 1) / 9.0
-                                    picked = [sections[int(round(i * step))] for i in range(10)]
-                                rag_parts = []
-                                for s in picked:
-                                    p_num = s.get('page', 1)
-                                    s_txt = s.get('text', '')[:700].strip()
-                                    if s_txt:
-                                        rag_parts.append(f"[{Path(resolved_p).name} [Page {p_num}]]:\n{s_txt}")
-                                        cit_key = f"{Path(resolved_p).name}_{p_num}"
-                                        if not any(c.get('key') == cit_key for c in citations):
-                                            citations.append({
-                                                "key": cit_key,
-                                                "source": Path(resolved_p).name,
-                                                "title": book_doc.get('title') or Path(resolved_p).name,
-                                                "page": p_num,
-                                                "book_id": focus_book_id
-                                            })
-                                if rag_parts:
-                                    rag_text = "\n[DOCUMENT EVIDENCE]:\n" + "\n---\n".join(rag_parts)
-                            else:
-                                file_text = await run.io_bound(extract_text_from_file, resolved_p)
-                                if file_text and file_text.strip():
-                                    excerpt = file_text[:2500].strip()
-                                    rag_text = f"\n[DOCUMENT EXCERPT]:\n{excerpt}\n"
-                                    citations.append({
-                                        "key": f"{Path(resolved_p).name}_excerpt",
-                                        "source": Path(resolved_p).name,
-                                        "title": book_doc.get('title') or focus_book_title or Path(resolved_p).name,
-                                        "page": 1,
-                                        "book_id": focus_book_id
-                                    })
-                        except Exception as err:
-                            logger.debug(f"Direct text excerpt fallback note: {err}")
-
-            # Case 2: LIBRARY-WIDE CONTEXT (focus_book_id is None)
-            else:
-                # Check for catalog or author inquiry
-                catalog_query = ChatService.extract_catalog_search_term(text)
-                matched_books = []
-                if catalog_query and len(catalog_query) >= 3:
-                    matched_books = await mongo_db.books.search_books(catalog_query, limit=10)
-
-                if matched_books:
-                    lines = [f"Found {len(matched_books)} matching document(s) in the library catalog:"]
-                    for b in matched_books:
-                        b_title = b.get('title', 'Untitled')
-                        authors = b.get('display_author') or b.get('authors', 'Unknown')
-                        if isinstance(authors, list) and authors:
-                            authors = authors[0].get('name', str(authors[0])) if isinstance(authors[0], dict) else str(authors[0])
-                        ftype = (b.get('file_type') or 'E-Book').upper()
-                        lines.append(f"- '{b_title}' by {authors} ({ftype})")
-                        cit_key = str(b.get('id') or b.get('_id'))
-                        citations.append({
-                            "key": cit_key,
-                            "source": b_title,
-                            "title": b_title,
-                            "page": 1,
-                            "book_id": cit_key
-                        })
-                    rag_text = "\n[LIBRARY CATALOG HOLDINGS]:\n" + "\n".join(lines)
-                else:
-                    # General semantic passage search across whole library
-                    raw_hits = await run.io_bound(tars_archive.search_with_metadata, text, 8, None, None)
-                    if raw_hits:
-                        raw_hits = await ChatService._expand_adjacent_chunks(raw_hits, text, None)
-                    if raw_hits:
-                        rag_parts = []
-                        for h in raw_hits:
-                            src = h.get('source', 'Library Document')
-                            p_val = h.get('page')
-                            page_str = f" [Page {p_val}]" if p_val else ""
-                            chunk_text = h.get('text', '')[:1500].strip()
-                            clean_chunk = re.sub(r'(?<!\n)\n(?!\n|\s*[-*•\d])', ' ', chunk_text)
-                            rag_parts.append(f"[{src}{page_str}]:\n{clean_chunk}")
-
-                            cit_key = f"{src}_{p_val}"
-                            if not any(c.get('key') == cit_key for c in citations):
-                                citations.append({
-                                    "key": cit_key,
-                                    "source": src,
-                                    "title": h.get('title') or src,
-                                    "page": p_val,
-                                    "book_id": h.get('book_id') or ""
-                                })
-                        rag_text = "\n[DOCUMENT EVIDENCE]:\n" + "\n---\n".join(rag_parts)
-        except Exception as e:
-            logger.error(f"RAG Search Error: {e}")
-
-        return rag_text, citations
-
-    @staticmethod
-    def build_messages_payload(system_persona: str, history: List[Dict[str, Any]], max_turns: int = 4) -> List[Dict[str, str]]:
-        """Constructs and validates message payload for LLM streaming with token-efficient history pruning."""
-        recent = (history or [])[-max_turns:]
-        valid_history = []
-        for m in recent:
-            if not m or 'role' not in m or 'content' not in m:
-                continue
-            role = m['role']
-            content = m['content'].strip()
-            # Prevent compounding prompt lag while preserving core thoughts
-            if role == 'assistant' and len(content) > 600:
-                content = content[:580] + " ... [summary continued]"
-            valid_history.append({"role": role, "content": content})
-        return [{"role": "system", "content": system_persona}] + valid_history
-
-    @staticmethod
     def export_chat_markdown(messages: List[Dict[str, Any]], focus_book_title: Optional[str], session_id: str) -> str:
-        """Formats conversation messages into a clean Markdown document."""
         title = focus_book_title or "General Library Knowledge"
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -556,6 +535,5 @@ class ChatService:
         return "\n".join(lines)
 
 
-# Singleton instance and module-level helper exports
 chat_service = ChatService()
 group_sessions_chronologically = ChatService.group_sessions_chronologically

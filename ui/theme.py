@@ -9,6 +9,8 @@ GLOBAL_THEME_STYLES = '''
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="icon" type="image/svg+xml" href="/static/Libre-Library_icon.svg">
+    <link rel="apple-touch-icon" href="/static/Libre-Library_icon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -181,6 +183,30 @@ GLOBAL_THEME_STYLES = '''
             }
         }
 
+        /* Mobile Touch & Pointer Coarse Optimizations: Eliminate sticky hover on touchscreens */
+        @media (hover: none) and (pointer: coarse) {
+            .group:hover:not(:active) {
+                transform: none !important;
+            }
+            .hover\:-translate-y-0\.5:hover,
+            .hover\:-translate-y-1:hover,
+            .hover\:scale-105:hover,
+            .hover\:scale-110:hover {
+                transform: none !important;
+            }
+            .q-btn:active, .cursor-pointer:active, [role="button"]:active {
+                transform: scale(0.97) !important;
+                transition: transform 0.08s ease !important;
+            }
+            /* Smooth touch targets */
+            .q-btn {
+                min-height: 38px;
+            }
+            .q-field__control {
+                min-height: 42px;
+            }
+        }
+
         /* =========================================================================
            GPU LAYER PROMOTION & MOBILE PERFORMANCE OPTIMIZATIONS
            ========================================================================= */
@@ -225,6 +251,21 @@ GLOBAL_THEME_STYLES = '''
         .touch-pan-y {
             touch-action: pan-y;
             -webkit-overflow-scrolling: touch;
+        }
+
+        .mobile-scroll-row {
+            display: flex !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            scrollbar-width: none !important;
+            touch-action: pan-x !important;
+        }
+        .mobile-scroll-row::-webkit-scrollbar {
+            display: none !important;
+        }
+
+        .safe-pb-nav {
+            padding-bottom: max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom, 0px))) !important;
         }
 
         /* Responsive Text and Preformatted Code Blocks */

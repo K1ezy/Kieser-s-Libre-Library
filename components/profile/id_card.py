@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional
 from nicegui import ui
-from ui.pages.attendance import generate_qr_base64
+from components.attendance.qr_pass import generate_qr_base64
 
 
 ROLE_CONFIGS = {

@@ -35,7 +35,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_cors_origins(),
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|.*\.ngrok-free\.app|.*\.ngrok\.io|.*\.ngrok\.app)(:\d+)?$",
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|.*\.ngrok-free\.app|.*\.ngrok-free\.dev|.*\.ngrok\.io|.*\.ngrok\.app)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -238,6 +238,12 @@ async def _background_ai_warmup():
     try:
         await asyncio.to_thread(tars_archive.ensure_initialized)
         await asyncio.to_thread(tars_engine.ensure_loaded)
+        # Background metadata alignment between MongoDB and ChromaDB
+        try:
+            from tools.sync_chroma_metadata import sync_chroma_with_mongo
+            await sync_chroma_with_mongo()
+        except Exception as sync_err:
+            logger.debug("Startup Chroma metadata sync note: %s", sync_err)
     except Exception:
         pass
 

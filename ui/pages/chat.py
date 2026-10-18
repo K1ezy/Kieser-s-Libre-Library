@@ -12,7 +12,7 @@ import logging
 from typing import Optional, Dict, Any, List, Tuple
 
 from components.sidebar import sidebar
-from ui.pages.chat_service import (
+from core.services.chat_service import (
     chat_service,
     STYLE_PROMPTS,
     STARTER_PROMPTS_BOOK,
@@ -95,6 +95,9 @@ class ChatInterface:
         self.cached_sessions = []
         self.cached_books = []
         self.thinking = False
+        self.is_generating = False
+        self.cancel_event = asyncio.Event()
+        self.focus_book_meta: Optional[Dict[str, Any]] = None
         self.abort_trigger = False
         self.teaching_mode = app.storage.user.get('teaching_mode', False)
         self.chat_style = app.storage.user.get('chat_style', 'Balanced')
@@ -127,6 +130,7 @@ class ChatInterface:
 
     def _set_generating_state(self, is_generating: bool):
         self.thinking = is_generating
+        self.is_generating = is_generating
         self.input_bar_comp.set_generating_state(is_generating)
 
     def scroll_to_bottom(self):
@@ -145,6 +149,7 @@ class ChatInterface:
     def clear_book_focus(self):
         self.focus_book_id = None
         self.focus_book_title = None
+        self.focus_book_meta = None
         app.storage.user.pop('chat_focus_book_id', None)
         app.storage.user.pop('chat_focus_book_title', None)
         self.update_focus_badges()
@@ -155,6 +160,7 @@ class ChatInterface:
     def set_book_focus(self, book: dict):
         self.focus_book_id = book.get('id')
         self.focus_book_title = book.get('title', 'Selected Document')
+        self.focus_book_meta = book
         app.storage.user['chat_focus_book_id'] = self.focus_book_id
         app.storage.user['chat_focus_book_title'] = self.focus_book_title
         self.update_focus_badges()
@@ -388,8 +394,9 @@ class ChatInterface:
         await self.load_and_refresh_history()
 
     def stop_generation(self):
-        if self.thinking:
+        if self.thinking or self.is_generating:
             self.abort_trigger = True
+            self.cancel_event.set()
             ui.notify("Stopping...", type='warning')
 
     async def continue_generation(self):
@@ -413,10 +420,14 @@ class ChatInterface:
             "You are TARS, the Digital Librarian. CONTINUE your response by advancing to the next sections or principles of the document. "
             "Do NOT repeat points already stated. Maintain academic depth and formatting."
         )
-        if rag_text:
-            persona_text += f"\n{rag_text}"
 
-        messages_payload = chat_service.build_messages_payload(persona_text, history_context, max_turns=6)
+        messages_payload = chat_service.build_messages_payload(
+            system_persona=persona_text,
+            history=history_context,
+            current_query="Please continue with the next sections or details of the document.",
+            rag_text=rag_text,
+            max_turns=6
+        )
         await asyncio.sleep(0.05)
         response_buffer = ""
         try:
@@ -490,7 +501,7 @@ class ChatInterface:
 
     async def send_message(self):
         text = self.input_bar_comp.value.strip()
-        if not text or self.thinking:
+        if not text or self.thinking or self.is_generating:
             return
 
         is_review_mode = False
@@ -512,82 +523,92 @@ class ChatInterface:
         self.input_bar_comp.value = ''
         self._set_generating_state(True)
         self.abort_trigger = False
+        self.cancel_event.clear()
 
-        # 1. User Message (render immediately; log concurrently to DB without stalling RAG)
+        # 1. Render user bubble in UI immediately
         self.render_user_message(text)
-        asyncio.create_task(mongo_db.add_message_to_session(self.session_id, "user", text))
         self.scroll_to_bottom()
 
-        # 2. Assistant Placeholder Card
+        # 2. Fetch prior history BEFORE queueing the new user message write
+        history = await mongo_db.get_recent_history(self.session_id, limit=12)
+
+        # Persist user message asynchronously
+        asyncio.create_task(
+            mongo_db.add_message(
+                session_id=self.session_id,
+                role="user",
+                content=text,
+                book_id=self.focus_book_id,
+            )
+        )
+
+        # 3. Assistant Placeholder Card
         card, status, message_content, copy_btn, tts_btn, citations_container = self.render_assistant_message(in_progress=True)
 
-        # 3. History & RAG Retrieval
-        history = await mongo_db.get_recent_history(self.session_id, limit=4)
+        # 4. Classify intent & perform strict-threshold RAG retrieval
+        is_greeting = chat_service.is_greeting_or_identity(text)
         skip_rag = chat_service.should_skip_rag(text)
+
+        rag_text = ""
+        citations = []
         if not skip_rag:
-            focus_desc = f"'{self.focus_book_title}'" if self.focus_book_title else "knowledge base"
             if status:
-                status.text = f"Searching {focus_desc}..."
+                status.text = "Searching knowledge base..."
+            focus_title = (
+                self.focus_book_meta.get("title")
+                if self.focus_book_meta
+                else self.focus_book_title
+            )
             rag_text, citations = await chat_service.perform_rag_search(
-                text, self.focus_book_id, self.focus_book_title, history=history
+                query=text,
+                focus_book_id=self.focus_book_id,
+                focus_book_title=focus_title,
             )
         else:
-            rag_text, citations = "", []
             if status:
                 status.text = "Responding..."
             await asyncio.sleep(0.05)
 
-        # 4. Resolve focus metadata
-        focus_meta = None
-        if self.focus_book_id:
-            try:
-                focus_meta = await mongo_db.get_book_details(self.focus_book_id)
-            except Exception as e:
-                logger.warning(f"Failed to fetch focus book details for {self.focus_book_id}: {e}")
-        elif self.focus_book_title:
-            try:
-                candidates = await mongo_db.search_books(self.focus_book_title, limit=1)
-                if candidates:
-                    focus_meta = candidates[0]
-                    self.focus_book_id = str(focus_meta.get('_id') or focus_meta.get('id'))
-            except Exception as e:
-                logger.warning(f"Failed to resolve focus book title {self.focus_book_title}: {e}")
-
-        inventory = ""
-        if not self.focus_book_id and not self.focus_book_title:
-            clean_q = text.lower()
-            inventory_keywords = (
-                "what book", "which book", "list book", "all book", "my book", 
-                "inventory", "catalog", "collection", "available book", "what do i have",
-                "books do i have", "recommend a book", "recommend book"
-            )
-            if any(k in clean_q for k in inventory_keywords):
-                inventory = await mongo_db.get_library_inventory_summary(limit=40)
-
+        # 5. Build system persona & user-turn grounded payload
         persona = chat_service.build_system_persona(
             chat_style=self.chat_style,
+            focus_book=self.focus_book_meta,
             focus_book_title=self.focus_book_title,
+            is_greeting=is_greeting,
             teaching_mode=self.teaching_mode,
             is_review_mode=is_review_mode,
-            inventory=inventory,
-            rag_text=rag_text,
-            focus_book_meta=focus_meta,
         )
-        messages = chat_service.build_messages_payload(persona, history, max_turns=4)
+        messages = chat_service.build_messages_payload(
+            system_persona=persona,
+            history=history,
+            current_query=text,
+            rag_text=rag_text,
+            max_turns=6,
+        )
 
-        # 5. Stream LLM Generation with Dynamic Token Scaling
+        # 6. Stream assistant tokens into UI bubble
         if status:
             status.text = "Synthesizing answer..."
         response_buffer = ""
         is_summary = any(k in text.lower() for k in (
-            "summarize", "summary", "overview", "everything", "all topics", "lecture", "study guide", "explain all", "all slides"
+            "summarize", "summary", "overview", "everything", "all topics", "lecture", "study guide", "explain all", "all slides", "continue"
         ))
-        effective_tokens = 1500 if (is_summary or self.chat_style in ('Academic', 'Exam Prep')) else 1000
+        if is_summary or self.chat_style == 'Exam Prep':
+            effective_tokens = 1500
+        elif self.chat_style in ('Academic', 'Socratic') or self.teaching_mode:
+            effective_tokens = 750
+        else:
+            effective_tokens = 400
+
         try:
             first = True
             last_render_time = time.time()
-            async for token in tars_engine.stream_response(messages, max_tokens=effective_tokens):
-                if self.abort_trigger or not self._is_client_connected():
+            async for token in tars_engine.stream_response(
+                messages=messages,
+                max_tokens=effective_tokens,
+                cancel_event=self.cancel_event,
+            ):
+                if self.abort_trigger or self.cancel_event.is_set() or not self._is_client_connected():
                     break
                 if first:
                     if status:
@@ -605,20 +626,37 @@ class ChatInterface:
                     last_render_time = now
 
             if not self._is_client_connected():
-                # Client disconnected or refreshed - persist response to database
                 if response_buffer:
-                    await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
+                    await mongo_db.add_message(
+                        session_id=self.session_id,
+                        role="assistant",
+                        content=response_buffer,
+                        citations=citations,
+                        book_id=self.focus_book_id,
+                    )
                 return
 
             try:
-                message_content.content = response_buffer
-                setup_message_actions(response_buffer, copy_btn, tts_btn)
+                full_response = response_buffer.strip()
+                message_content.content = full_response
+                setup_message_actions(full_response, copy_btn, tts_btn)
 
-                if citations and citations_container:
+                # 7. Render verified citation chips only when grounded chunks were used
+                if citations and citations_container and full_response:
                     render_citation_chips(citations, citations_container)
 
-                self.last_response_text = response_buffer
-                await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
+                self.last_response_text = full_response
+
+                # 8. Persist assistant response
+                if full_response:
+                    await mongo_db.add_message(
+                        session_id=self.session_id,
+                        role="assistant",
+                        content=full_response,
+                        citations=citations,
+                        book_id=self.focus_book_id,
+                    )
+
                 self.scroll_to_bottom()
 
                 title = text[:35] + ("..." if len(text) > 35 else "")
@@ -633,7 +671,7 @@ class ChatInterface:
                 await self.load_and_refresh_history()
 
                 if self.continue_btn:
-                    has_ended = response_buffer.strip().endswith(('.', '!', '?', ':', ';', '```'))
+                    has_ended = full_response.endswith(('.', '!', '?', ':', ';', '```'))
                     if not has_ended:
                         self.continue_btn.enable()
                     else:
@@ -641,7 +679,13 @@ class ChatInterface:
             except RuntimeError as re:
                 if 'deleted' in str(re).lower():
                     if response_buffer:
-                        await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
+                        await mongo_db.add_message(
+                            session_id=self.session_id,
+                            role="assistant",
+                            content=response_buffer,
+                            citations=citations,
+                            book_id=self.focus_book_id,
+                        )
                     return
                 raise
         except Exception as e:

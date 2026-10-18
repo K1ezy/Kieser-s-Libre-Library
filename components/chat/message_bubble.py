@@ -1,6 +1,6 @@
 from nicegui import ui
 from typing import Optional, List, Dict, Any, Callable, Tuple
-from ui.pages.chat_service import STARTER_PROMPTS_BOOK, STARTER_PROMPTS_LIBRARY
+from core.services.chat_service import STARTER_PROMPTS_BOOK, STARTER_PROMPTS_LIBRARY
 
 
 def setup_message_actions(content: str, copy_btn, tts_btn) -> None:
@@ -101,8 +101,8 @@ def render_assistant_message(
                 # Assistant Header
                 with ui.row().classes('w-full justify-between items-center mb-2.5 pb-2 border-b border-slate-100'):
                     with ui.row().classes('items-center gap-2'):
-                        with ui.element('div').classes('p-1 sm:p-1.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100'):
-                            ui.icon('smart_toy', size='18px')
+                        with ui.element('div').classes('w-6 h-6 rounded-lg bg-cyan-50 flex items-center justify-center border border-cyan-100 p-0.5 shrink-0 shadow-2xs'):
+                            ui.image('/static/tars_icon.svg').classes('w-full h-full object-contain').props('no-spinner')
                         ui.label('TARS AI').classes('text-xs font-bold text-slate-900')
                         ui.label('Librarian').classes('text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100')
                         if teaching_mode:
@@ -144,17 +144,17 @@ def render_welcome_state(
         welcome_col = ui.column().classes('w-full items-center justify-center py-8 sm:py-12 text-center')
         with welcome_col:
             with ui.element('div').classes(
-                'p-4 sm:p-5 rounded-3xl bg-indigo-50 text-indigo-600 '
-                'border border-indigo-200 shadow-md mb-3 animate-pulse'
+                'p-3.5 sm:p-4 rounded-3xl bg-cyan-50/80 '
+                'border border-cyan-200/80 shadow-md mb-4 flex items-center justify-center hover:scale-105 transition-transform'
             ):
-                ui.icon('smart_toy', size='3em')
+                ui.image('/static/tars_icon.svg').classes('w-16 h-16 sm:w-20 sm:h-20 object-contain').props('no-spinner')
 
             if focus_book_title:
                 ui.label(f"Chatting with '{focus_book_title}'").classes('text-xl sm:text-2xl font-black text-slate-900 tracking-tight mb-1')
                 ui.label("Ask questions, explore core themes, or test your comprehension of this document.").classes('text-xs sm:text-sm text-slate-500 max-w-lg mb-6')
                 prompts = STARTER_PROMPTS_BOOK
             else:
-                ui.label("TARS AI Digital Librarian").classes('text-xl sm:text-2xl font-black text-slate-900 tracking-tight mb-1')
+                ui.image('/static/tars_logo.svg').classes('h-10 sm:h-12 w-auto object-contain mb-2').props('no-spinner')
                 ui.label("Your intelligent companion for research, synthesis, and deep learning across your library.").classes('text-xs sm:text-sm text-slate-500 max-w-lg mb-6')
                 prompts = STARTER_PROMPTS_LIBRARY
 

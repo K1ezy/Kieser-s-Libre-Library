@@ -6,7 +6,7 @@ from components.sidebar import sidebar
 from components.header import header
 from core.database.mongo_manager import mongo_db
 from core.ai_engine.llm_engine import tars_engine
-from ui.pages.summarizer_service import summarizer_service, SUMMARY_MODES
+from core.services.summarizer_service import summarizer_service, SUMMARY_MODES
 
 logger = logging.getLogger("SUMMARIZER")
 
@@ -30,7 +30,7 @@ class SummarizerTool:
 
     async def initialize(self):
         """Loads available library books into selection menu."""
-        all_books = await mongo_db.get_all_books(limit=500)
+        all_books = await mongo_db.get_all_books(limit=500, projection={"_id": 0, "id": 1, "title": 1})
         self.books = {}
         for b in all_books:
             b_id = b.get('id') or (str(b.get('_id')) if b.get('_id') else None)

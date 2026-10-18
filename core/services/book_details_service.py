@@ -194,6 +194,12 @@ class BookDetailsService:
             return False, "Unauthorized. Only Librarians and Administrators can edit metadata."
 
         success = await mongo_db.update_book_metadata(book_id, updates)
+        if success and "title" in updates:
+            try:
+                from core.ai_engine.rag_pipeline import tars_archive
+                await asyncio.to_thread(tars_archive.update_book_metadata, book_id, updates["title"])
+            except Exception as e:
+                logger.debug("Chroma metadata title sync note: %s", e)
         return (True, "Metadata updated successfully.") if success else (False, "Failed to persist metadata updates.")
 
     async def delete_book(self, book_id: str) -> Tuple[bool, str]:

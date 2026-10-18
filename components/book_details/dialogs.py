@@ -1,7 +1,7 @@
 from nicegui import ui
 from typing import Dict, Any, Callable
 from core.auth.jwt_handler import get_current_user_role
-from ui.pages.book_details_service import book_details_service
+from core.services.book_details_service import book_details_service
 
 
 def open_cover_dialog(title: str, cover_url: str):
