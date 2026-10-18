@@ -209,6 +209,7 @@ canvas {
     border-radius: 4px;
     filter: var(--canvas-filter);
     transition: filter 0.2s ease;
+    image-rendering: -webkit-optimize-contrast;
 }
 
 .page-loading-skeleton {

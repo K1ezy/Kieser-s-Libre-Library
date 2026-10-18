@@ -42,6 +42,8 @@
     let currentPage = initialPage;
     let lastNotifiedPage = initialPage;
     let currentScale = 1.25;
+    let nativePageWidth = 595;
+    let nativePageHeight = 842;
     const renderedPages = new Set();
     const pageContainers = [];
     let saveDebounceTimer = null;
@@ -130,8 +132,18 @@
 
     // 4. Zoom & Viewport Scaling
     function setScale(newScale) {
-        currentScale = Math.max(0.6, Math.min(3.0, newScale));
+        currentScale = Math.max(0.6, Math.min(3.5, newScale));
         renderedPages.clear();
+
+        if (nativePageWidth && nativePageHeight) {
+            const newW = Math.floor(nativePageWidth * currentScale);
+            const newH = Math.floor(nativePageHeight * currentScale);
+            pageContainers.forEach(container => {
+                container.style.width = `${newW}px`;
+                container.style.height = `${newH}px`;
+                container.style.minHeight = `${newH}px`;
+            });
+        }
 
         const viewerRect = viewerContainer ? viewerContainer.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
 
@@ -152,13 +164,14 @@
         });
     }
 
-    function zoomIn() { setScale(currentScale + 0.2); }
-    function zoomOut() { setScale(currentScale - 0.2); }
+    function zoomIn() { setScale(currentScale + 0.25); }
+    function zoomOut() { setScale(currentScale - 0.25); }
     function zoomReset() {
         if (!viewerContainer) return;
-        const width = viewerContainer.clientWidth - 48;
-        if (width > 300) setScale(Math.max(0.6, Math.min(2.0, width / 700)));
-        else setScale(1.0);
+        const pad = (viewerContainer.clientWidth < 640) ? 16 : 48;
+        const availWidth = Math.max(280, viewerContainer.clientWidth - pad);
+        const targetScale = availWidth / (nativePageWidth || 600);
+        setScale(Math.max(0.6, Math.min(3.0, targetScale)));
     }
 
     // 5. Page Navigation
@@ -221,21 +234,47 @@
             const page = await pdfDoc.getPage(pageNum);
             const viewport = page.getViewport({ scale: currentScale });
 
-            canvas.height = viewport.height;
-            canvas.width = viewport.width;
-            container.style.width = `${viewport.width}px`;
-            container.style.height = `${viewport.height}px`;
+            // High-DPI / Retina Crisp Rendering:
+            // Query device pixel ratio, capped between 1.75 and 3.0 to prevent memory exhaustion
+            // while guaranteeing razor-sharp vector typography on high-density phone and desktop screens.
+            const dpr = window.devicePixelRatio || 1;
+            const outputScale = Math.min(Math.max(dpr, 1.75), 3.0);
+
+            const cssWidth = Math.floor(viewport.width);
+            const cssHeight = Math.floor(viewport.height);
+
+            // CSS layout dimensions (logical units)
+            canvas.style.width = `${cssWidth}px`;
+            canvas.style.height = `${cssHeight}px`;
+            container.style.width = `${cssWidth}px`;
+            container.style.height = `${cssHeight}px`;
+
+            // Backing store buffer (high-resolution physical pixels)
+            canvas.width = Math.floor(viewport.width * outputScale);
+            canvas.height = Math.floor(viewport.height * outputScale);
 
             const ctx = canvas.getContext('2d');
-            const renderTask = page.render({ canvasContext: ctx, viewport });
+            if (ctx) {
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+            }
+
+            // High-DPI affine transformation matrix for PDF.js
+            const transform = outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null;
+
+            const renderTask = page.render({
+                canvasContext: ctx,
+                transform: transform,
+                viewport: viewport
+            });
             canvas._renderTask = renderTask;
             await renderTask.promise;
             canvas._renderTask = null;
 
             if (textLayer) {
                 textLayer.innerHTML = '';
-                textLayer.style.width = `${viewport.width}px`;
-                textLayer.style.height = `${viewport.height}px`;
+                textLayer.style.width = `${cssWidth}px`;
+                textLayer.style.height = `${cssHeight}px`;
 
                 const textContent = await page.getTextContent();
                 await pdfjsLib.renderTextLayer({
@@ -403,7 +442,59 @@
         });
     }
 
-    // 10. Initialize Sub-Modules & Load Document
+    // 10. Mobile Touch Pinch-to-Zoom Gesture Engine
+    let touchStartDist = 0;
+    let touchStartScale = 1.0;
+    let lastPinchScale = 1.0;
+    let isPinching = false;
+
+    if (viewerContainer) {
+        viewerContainer.addEventListener('touchstart', (e) => {
+            if (e.touches && e.touches.length === 2) {
+                isPinching = true;
+                touchStartDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                touchStartScale = currentScale;
+                lastPinchScale = currentScale;
+            }
+        }, { passive: true });
+
+        viewerContainer.addEventListener('touchmove', (e) => {
+            if (isPinching && e.touches && e.touches.length === 2 && touchStartDist > 0) {
+                const currentDist = Math.hypot(
+                    e.touches[0].clientX - e.touches[1].clientX,
+                    e.touches[0].clientY - e.touches[1].clientY
+                );
+                const factor = currentDist / touchStartDist;
+                lastPinchScale = Math.max(0.6, Math.min(3.5, touchStartScale * factor));
+                if (pdfViewer) {
+                    pdfViewer.style.transformOrigin = '50% 0';
+                    pdfViewer.style.transform = `scale(${lastPinchScale / currentScale})`;
+                }
+            }
+        }, { passive: true });
+
+        const endPinch = () => {
+            if (isPinching) {
+                isPinching = false;
+                if (pdfViewer) {
+                    pdfViewer.style.transform = '';
+                    pdfViewer.style.transformOrigin = '';
+                }
+                if (Math.abs(lastPinchScale - currentScale) > 0.05) {
+                    setScale(lastPinchScale);
+                }
+                touchStartDist = 0;
+            }
+        };
+
+        viewerContainer.addEventListener('touchend', endPinch, { passive: true });
+        viewerContainer.addEventListener('touchcancel', endPinch, { passive: true });
+    }
+
+    // 11. Initialize Sub-Modules & Load Document
     window.ThemeManager.init();
 
     window.AnnotationManager.init({
@@ -432,6 +523,17 @@
             let estHeight = 900;
             try {
                 const firstPage = await doc.getPage(1);
+                const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
+                nativePageWidth = unscaledViewport.width;
+                nativePageHeight = unscaledViewport.height;
+
+                // Auto-fit to mobile viewport width if on small/mobile screen (< 640px)
+                if (viewerContainer && viewerContainer.clientWidth < 640) {
+                    const pad = 16;
+                    const availWidth = Math.max(280, viewerContainer.clientWidth - pad);
+                    currentScale = Math.max(0.6, Math.min(2.5, availWidth / unscaledViewport.width));
+                }
+
                 const fpViewport = firstPage.getViewport({ scale: currentScale });
                 estWidth = fpViewport.width;
                 estHeight = fpViewport.height;
