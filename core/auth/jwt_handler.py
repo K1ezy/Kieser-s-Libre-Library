@@ -60,6 +60,13 @@ def set_user_session(user: dict, token: str):
         'cover_url': user.get('cover_url') or '',
         'name': user.get('name') or user.get('username', ''),
     })
+    uid = user.get('id')
+    if uid:
+        try:
+            from core.services.user_telemetry import telemetry_engine
+            telemetry_engine.record_session_login(str(uid))
+        except Exception:
+            pass
 
 def clear_user_session():
     """

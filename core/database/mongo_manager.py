@@ -303,6 +303,9 @@ class MongoManager:
     async def get_reader_preferences(self, user_id: str) -> Dict[str, Any]:
         return await self.progress.get_reader_preferences(user_id)
 
+    async def get_reading_history(self, user_id: str, limit: int = 1000) -> List[Dict[str, Any]]:
+        return await self.progress.get_reading_history(user_id, limit=limit)
+
     async def save_reader_preferences(self, user_id: str, updates: Dict[str, Any]) -> bool:
         return await self.progress.save_reader_preferences(user_id, updates)
 

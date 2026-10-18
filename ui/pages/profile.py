@@ -45,10 +45,19 @@ class UserProfile:
     async def load_data(self):
         """Loads profile and stats strictly isolated to the current user."""
         user_id = app.storage.user.get('user_id')
-        self.profile_data, self.stats = await asyncio.gather(
+        self.profile_data, self.stats, reading_history = await asyncio.gather(
             mongo_db.get_user_profile(user_id=user_id),
-            mongo_db.get_library_stats(user_id=user_id)
+            mongo_db.get_library_stats(user_id=user_id),
+            mongo_db.get_reading_history(user_id=user_id)
         )
+        if user_id:
+            try:
+                from core.services.user_telemetry import telemetry_engine
+                telemetry_engine.record_session_login(user_id)
+                if reading_history:
+                    telemetry_engine.sync_from_mongo_progress(user_id, reading_history)
+            except Exception:
+                pass
         if self.profile_data:
             if self.profile_data.get('avatar_url') is not None:
                 app.storage.user['avatar_url'] = self.profile_data.get('avatar_url') or ''

@@ -81,6 +81,17 @@ class ProgressRepository(BaseRepository):
                 {"$set": doc},
                 upsert=True
             )
+            try:
+                from core.services.user_telemetry import telemetry_engine
+                telemetry_engine.record_reading_activity(
+                    user_id=user_id,
+                    book_id=book_id,
+                    current_page=current_page,
+                    total_pages=total_pages,
+                    pages_delta=1
+                )
+            except Exception as te_err:
+                logger.debug(f"Telemetry recording skipped: {te_err}")
             return True
         except Exception as e:
             logger.error(f"Save Reading Progress Error: {e}")

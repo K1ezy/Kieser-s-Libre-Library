@@ -42,3 +42,4 @@ ngrok.exe
 .secrets
 .secret_key
 data/.secret_key
+*.db
