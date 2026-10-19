@@ -1,10 +1,14 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import model_validator
 from pathlib import Path
+from dotenv import load_dotenv
 import os
 import secrets
 import logging
 from typing import List
+
+# Load environment variables from .env file immediately
+load_dotenv()
 
 logger = logging.getLogger("CONFIG")
 
@@ -30,7 +34,17 @@ def resolve_default_model() -> str:
 
 
 MODEL_FILENAME = resolve_default_model()
-EMBEDDING_MODEL_PATH = str(MODEL_DIR / "all-MiniLM-L6-v2")
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
+if EMBEDDING_MODEL_NAME == "all-MiniLM-L6-v2" and (MODEL_DIR / "all-MiniLM-L6-v2").exists():
+    EMBEDDING_MODEL_PATH = str(MODEL_DIR / "all-MiniLM-L6-v2")
+else:
+    EMBEDDING_MODEL_PATH = EMBEDDING_MODEL_NAME
+
+# Hybrid RAG & Reranker Configuration
+RERANKER_MODEL_NAME = os.getenv("RERANKER_MODEL_NAME", "cross-encoder/ms-marco-MiniLM-L-6-v2")
+ENABLE_RERANKER = os.getenv("ENABLE_RERANKER", "true").lower() in ("true", "1", "yes")
+ENABLE_HYBRID_BM25 = os.getenv("ENABLE_HYBRID_BM25", "true").lower() in ("true", "1", "yes")
+BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 # Hardware & Context Limits
 GPU_LAYERS = int(os.getenv("GPU_LAYERS", "-1"))
@@ -111,11 +125,16 @@ class Settings(BaseSettings):
     CHROMA_PATH: Path = BASE_DIR / "data" / "chroma_db"
     VERBOSE: bool = False
     
-    # --- DETERMINISTIC RAG CONSTANTS ---
+    # --- DETERMINISTIC RAG & HYBRID SEARCH CONSTANTS ---
     LLM_TEMPERATURE: float = LLM_TEMPERATURE
     LLM_TOP_P: float = LLM_TOP_P
     LLM_REPEAT_PENALTY: float = LLM_REPEAT_PENALTY
     RAG_MAX_DISTANCE: float = RAG_MAX_DISTANCE
+    EMBEDDING_MODEL_NAME: str = EMBEDDING_MODEL_NAME
+    RERANKER_MODEL_NAME: str = RERANKER_MODEL_NAME
+    ENABLE_RERANKER: bool = ENABLE_RERANKER
+    ENABLE_HYBRID_BM25: bool = ENABLE_HYBRID_BM25
+    BGE_QUERY_PREFIX: str = BGE_QUERY_PREFIX
     
     # --- AI PROVIDER CONFIGURATION ---
     AI_PROVIDER: str = AI_PROVIDER

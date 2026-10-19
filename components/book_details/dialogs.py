@@ -1,7 +1,9 @@
-from nicegui import ui
+from nicegui import ui, app
 from typing import Dict, Any, Callable
+from datetime import datetime, timedelta
 from core.auth.jwt_handler import get_current_user_role
 from core.services.book_details_service import book_details_service
+from core.database.mongo_manager import mongo_db
 
 
 def open_cover_dialog(title: str, cover_url: str):
@@ -137,3 +139,119 @@ def open_delete_dialog(book_id: str, title: str, on_deleted: Callable[[], None])
                 .props('unelevated rounded-xl color=red font-bold size=sm shadow-md')
 
     del_dialog.open()
+
+
+async def open_borrow_dialog(book_id: str, book: Dict[str, Any]):
+    """Opens a circulation modal for borrowing a physical copy of a book."""
+    user_id = app.storage.user.get('user_id') or app.storage.user.get('token')
+    if not user_id:
+        ui.notify("Please log in to borrow physical library books.", type='warning')
+        ui.navigate.to('/login')
+        return
+
+    user = await mongo_db.users.get_user(user_id)
+    if not user:
+        user = await mongo_db.users.get_user_by_username(user_id)
+    if not user:
+        ui.notify("Unable to locate your user account profile.", type='negative')
+        return
+
+    role = str(user.get("role", "student")).lower().strip()
+    is_faculty = role == "faculty"
+    loan_days = 30 if is_faculty else 7
+    due_date = datetime.now() + timedelta(days=loan_days)
+    formatted_due = due_date.strftime("%B %d, %Y")
+
+    title = book.get("title", "Untitled Book")
+    author_name = book.get("display_author") or (book.get("authors", ["Unknown"])[0] if book.get("authors") else "Unknown")
+    inst_id = user.get("institutional_id") or user.get("student_id") or "N/A"
+    user_display = user.get("name") or user.get("username", "User")
+
+    with ui.dialog() as borrow_dialog, ui.card().classes(
+        'w-[calc(100vw-2rem)] max-w-lg p-5 sm:p-6 bg-white rounded-3xl shadow-2xl border border-slate-200'
+    ):
+        with ui.row().classes('w-full justify-between items-center pb-3 border-b border-slate-100'):
+            with ui.row().classes('items-center gap-2.5'):
+                with ui.element('div').classes('p-2.5 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100'):
+                    ui.icon('local_library', size='22px')
+                with ui.column().classes('gap-0'):
+                    ui.label('Circulation Borrowing').classes('text-base sm:text-lg font-black text-slate-900')
+                    ui.label('Borrow Physical Book Copy').classes('text-xs text-slate-500 font-medium')
+            ui.button(icon='close', on_click=borrow_dialog.close).props('flat round dense size=sm color=grey')
+
+        with ui.column().classes('w-full gap-4 py-2'):
+            # Privilege Notice Card
+            if is_faculty:
+                with ui.element('div').classes(
+                    'w-full p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200/80 flex items-start gap-3'
+                ):
+                    ui.icon('verified', size='22px').classes('text-emerald-600 shrink-0 mt-0.5')
+                    with ui.column().classes('gap-0.5'):
+                        ui.label('Faculty Privilege Active').classes('text-xs font-black text-emerald-800 uppercase tracking-wide')
+                        ui.label(
+                            'You receive an extended 30-day loan duration with up to 10 simultaneous books and 2 renewal cycles.'
+                        ).classes('text-xs text-emerald-700 leading-snug')
+            else:
+                with ui.element('div').classes(
+                    'w-full p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-100 flex items-start gap-3'
+                ):
+                    ui.icon('info', size='20px').classes('text-indigo-600 shrink-0 mt-0.5')
+                    with ui.column().classes('gap-0.5'):
+                        ui.label('Student Circulation Policy').classes('text-xs font-black text-indigo-900 uppercase tracking-wide')
+                        ui.label(
+                            'Standard 7-day borrowing period. Up to 3 simultaneous book loans allowed with 2 renewal extensions.'
+                        ).classes('text-xs text-indigo-700 leading-snug')
+
+            # Book Summary Pill
+            with ui.element('div').classes('w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center gap-3'):
+                ui.icon('book', size='24px').classes('text-slate-400')
+                with ui.column().classes('gap-0 overflow-hidden'):
+                    ui.label(title).classes('text-sm font-bold text-slate-800 truncate')
+                    ui.label(f"by {author_name}").classes('text-xs text-slate-500 truncate')
+
+            # Circulation Details Grid
+            with ui.element('div').classes('w-full grid grid-cols-2 gap-3 p-3 bg-slate-50/60 rounded-2xl border border-slate-100 text-xs'):
+                with ui.column().classes('gap-0.5'):
+                    ui.label('Borrower Name').classes('text-[11px] font-semibold text-slate-400')
+                    ui.label(user_display).classes('font-bold text-slate-800 truncate')
+                with ui.column().classes('gap-0.5'):
+                    ui.label('Institutional ID').classes('text-[11px] font-semibold text-slate-400')
+                    ui.label(inst_id).classes('font-bold font-mono text-indigo-600')
+                with ui.column().classes('gap-0.5'):
+                    ui.label('Loan Duration').classes('text-[11px] font-semibold text-slate-400')
+                    ui.label(f"{loan_days} Days").classes('font-bold text-slate-800')
+                with ui.column().classes('gap-0.5'):
+                    ui.label('Due Date').classes('text-[11px] font-semibold text-slate-400')
+                    ui.label(formatted_due).classes('font-bold text-emerald-600')
+
+            notes_input = ui.input(
+                label='Course / Reference Notes (Optional)',
+                placeholder='e.g., Thesis research, CS-301 curriculum'
+            ).props('outlined dense rounded').classes('w-full text-xs')
+
+        with ui.row().classes('w-full justify-end gap-2 pt-2 border-t border-slate-100'):
+            ui.button('Cancel', on_click=borrow_dialog.close).props('flat rounded-xl color=grey font-bold size=sm')
+
+            async def do_borrow():
+                borrow_btn.props('loading')
+                res = await mongo_db.borrow_book(
+                    user_id=user.get("id", user_id),
+                    book_id=book_id,
+                    notes=notes_input.value or ""
+                )
+                borrow_btn.props(remove='loading')
+                if res.get("success"):
+                    borrow_dialog.close()
+                    loan = res.get("loan", {})
+                    loan_code = loan.get("loan_id", "N/A")
+                    ui.notify(f"Book borrowed successfully! Loan Voucher: {loan_code}", type='positive')
+                else:
+                    ui.notify(res.get("error", "Failed to borrow book."), type='negative')
+
+            borrow_btn = ui.button(
+                'Confirm Borrowing',
+                icon='check_circle',
+                on_click=do_borrow
+            ).props('unelevated rounded-xl color=indigo font-bold size=sm shadow-md')
+
+    borrow_dialog.open()

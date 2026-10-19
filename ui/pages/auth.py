@@ -1,5 +1,13 @@
 from nicegui import ui, app
+import bcrypt
+import re
+import logging
+
 from core.database.mongo_manager import mongo_db
+from core.database.repositories.user_repository import (
+    validate_user_id,
+    is_attempted_institutional_id
+)
 from core.auth.jwt_handler import (
     create_access_token,
     is_user_authenticated,
@@ -7,8 +15,8 @@ from core.auth.jwt_handler import (
     clear_user_session,
     get_current_user_info
 )
-import bcrypt
-import re
+
+logger = logging.getLogger("AUTH_PAGE")
 
 # Premium Button & Input Styles
 BTN_STYLE = 'w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-base shadow-lg shadow-indigo-500/20 active:scale-[0.99] transition-all'
@@ -57,6 +65,7 @@ async def login_page():
     prefill_val = app.storage.user.pop('prefill_identifier', '')
     just_registered = app.storage.user.pop('signup_success', False)
     registered_role = app.storage.user.pop('signup_role', '')
+    assigned_id_display = app.storage.user.pop('just_registered_id', '')
 
     with ui.column().classes('w-full min-h-[100dvh] items-center justify-center bg-slate-50 p-4 sm:p-8 overflow-y-auto'):
         with ui.card().classes('w-full max-w-[560px] p-6 sm:p-10 shadow-2xl border border-slate-200/90 bg-white rounded-3xl'):
@@ -64,19 +73,26 @@ async def login_page():
                 ui.image('/static/Libre-Library_logo.svg').classes('w-32 sm:w-44 h-auto object-contain shrink-0').props('no-spinner')
                 with ui.column().classes('gap-0.5 min-w-0 flex-1 justify-center'):
                     ui.label('Welcome Back').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight')
-                    ui.label('Sign in with your email, username, or institutional ID').classes('text-xs sm:text-sm text-slate-500 leading-snug')
+                    ui.label('Sign in with your Institutional ID (YY-NNNNN), Username, or Email').classes('text-xs sm:text-sm text-slate-500 leading-snug')
 
                 # Post-registration Success Notification Banner
                 if just_registered:
-                    with ui.row().classes('w-full p-4 mb-5 rounded-2xl bg-emerald-50/90 border border-emerald-200 items-center gap-3 shadow-sm'):
-                        ui.icon('check_circle', size='26px').classes('text-emerald-600 shrink-0')
-                        with ui.column().classes('gap-0.5 flex-1'):
-                            ui.label('Account Created Successfully!').classes('text-sm font-bold text-emerald-950')
+                    with ui.column().classes('w-full p-4 mb-5 rounded-2xl bg-emerald-50/95 border border-emerald-200 shadow-sm gap-1.5'):
+                        with ui.row().classes('items-center gap-2'):
+                            ui.icon('celebration', size='24px').classes('text-emerald-600')
+                            ui.label('Account Created Successfully!').classes('text-sm font-black text-emerald-950')
+                        if assigned_id_display:
+                            with ui.row().classes('items-center gap-2 py-1 px-3 rounded-xl bg-white border border-emerald-300 w-fit'):
+                                ui.icon('badge', size='18px').classes('text-emerald-700')
+                                ui.label('Your Assigned Institutional ID:').classes('text-xs text-slate-600 font-semibold')
+                                ui.label(assigned_id_display).classes('text-sm font-black text-emerald-700 tracking-wider font-mono')
+                            ui.label('Your official ID has been pre-filled below. Please enter your password to sign in.').classes('text-xs text-emerald-800')
+                        else:
                             role_text = f"Your {registered_role.capitalize()} account" if registered_role else "Your account"
                             ui.label(f'{role_text} has been registered. Please sign in below with your password to continue.').classes('text-xs text-emerald-700 leading-snug')
 
-                # Identifier Field (Email, Username, or Institutional ID)
-                identifier = ui.input(placeholder='Email, Username, or Institutional ID', value=prefill_val) \
+                # Identifier Field (Institutional ID YY-NNNNN, Username, or Email)
+                identifier = ui.input(placeholder='Institutional ID (e.g., 26-00001), Username, or Email', value=prefill_val) \
                     .classes(INPUT_CLASSES) \
                     .props('rounded outlined dense autocomplete="username" autocapitalize="none" spellcheck="false"')
                 with identifier.add_slot('prepend'):
@@ -101,39 +117,33 @@ async def login_page():
                     clean_pwd = (pwd.value or '').strip()
 
                     if not clean_id or not clean_pwd:
-                        ui.notify('Please fill in both identifier (email/username/ID) and password.', type='warning')
+                        ui.notify('Please fill in both identifier (ID/username/email) and password.', type='warning')
+                        return
+
+                    # Enforce strict ID format validation if identifier is an attempted Institutional ID
+                    if is_attempted_institutional_id(clean_id) and not validate_user_id(clean_id):
+                        ui.notify(
+                            'Invalid ID format. Institutional IDs must be in YY-NNNNN format with numbers only.',
+                            type='negative',
+                            duration=5.0
+                        )
                         return
 
                     if login_btn:
                         login_btn.props('loading')
 
                     try:
-                        users = await mongo_db.get_users_by_identifier(clean_id)
-                        if not users:
-                            ui.notify('No account found matching this email, username, or institutional ID.', type='negative')
-                            return
-
-                        matched_user = None
-                        for user in users:
-                            hp = user.get('hashed_password')
-                            if not hp:
-                                continue
-                            hp_bytes = hp.encode('utf-8') if isinstance(hp, str) else hp
-                            try:
-                                if bcrypt.checkpw(clean_pwd.encode('utf-8'), hp_bytes):
-                                    matched_user = user
-                                    break
-                            except Exception:
-                                continue
-
-                        if matched_user:
-                            token = create_access_token({"sub": matched_user['id'], "role": matched_user.get('role', 'user')})
-                            set_user_session(matched_user, token)
-                            await mongo_db.update_user_last_login(matched_user['id'])
-                            ui.notify(f"Welcome back, {matched_user.get('name') or matched_user.get('username', 'User')}!", type='positive')
-                            ui.navigate.to('/')
-                        else:
-                            ui.notify('Invalid credentials. Please verify your password.', type='negative')
+                        matched_user = await mongo_db.authenticate_user(clean_id, clean_pwd)
+                        token = create_access_token({"sub": matched_user['id'], "role": matched_user.get('role', 'user')})
+                        set_user_session(matched_user, token)
+                        await mongo_db.update_user_last_login(matched_user['id'])
+                        ui.notify(f"Welcome back, {matched_user.get('name') or matched_user.get('username', 'User')}!", type='positive')
+                        ui.navigate.to('/')
+                    except ValueError as val_err:
+                        ui.notify(str(val_err), type='negative', duration=4.0)
+                    except Exception as err:
+                        logger.error(f"Sign in error: {err}")
+                        ui.notify('Invalid credentials. Please verify your password.', type='negative')
                     finally:
                         if login_btn:
                             login_btn.props(remove='loading')
@@ -238,12 +248,14 @@ async def signup_page():
                     role_inputs.clear()
                     current_role = role_select.value or 'student'
                     with dynamic_container:
-                        if current_role == 'student':
-                            role_inputs['id'] = ui.input(placeholder='Student ID Number * (e.g., 2024-00123)') \
-                                .classes(INPUT_CLASSES).props('rounded outlined dense')
-                            with role_inputs['id'].add_slot('prepend'):
-                                ui.icon('pin').classes('text-indigo-500 opacity-70')
+                        # Informative badge replacing manual ID entry
+                        with ui.row().classes('w-full p-3.5 mb-3 rounded-2xl bg-indigo-50/90 border border-indigo-200/80 items-center gap-3 shadow-xs'):
+                            ui.icon('badge', size='24px').classes('text-indigo-600 shrink-0')
+                            with ui.column().classes('gap-0.5 flex-1'):
+                                ui.label('Official Institutional ID Assignment').classes('text-xs font-bold text-indigo-950')
+                                ui.label('An official Institutional ID (YY-NNNNN) will be automatically generated upon registration.').classes('text-[11px] text-indigo-700 leading-snug')
 
+                        if current_role == 'student':
                             with ui.row().classes('w-full gap-2 mb-2'):
                                 role_inputs['program'] = ui.select(
                                     ["BSCS", "BSIT", "BSED", "BEED", "BSBA", "BSHM", "Crim", "Nursing", "GENERAL"],
@@ -256,31 +268,21 @@ async def signup_page():
                                 ).props('rounded outlined dense options-dense').classes('w-32')
 
                         elif current_role == 'faculty':
-                            role_inputs['id'] = ui.input(placeholder='Faculty / Employee ID Number * (e.g., FAC-2024-001)') \
-                                .classes(INPUT_CLASSES).props('rounded outlined dense')
-                            with role_inputs['id'].add_slot('prepend'):
-                                ui.icon('badge').classes('text-emerald-500 opacity-70')
-
                             role_inputs['department'] = ui.input(placeholder='Department * (e.g., College of Computer Studies)') \
                                 .classes(INPUT_CLASSES).props('rounded outlined dense')
                             with role_inputs['department'].add_slot('prepend'):
                                 ui.icon('business').classes('text-emerald-500 opacity-70')
 
                         elif current_role == 'librarian':
-                            role_inputs['id'] = ui.input(placeholder='Staff ID Number * (e.g., LIB-2024-001)') \
-                                .classes(INPUT_CLASSES).props('rounded outlined dense')
-                            with role_inputs['id'].add_slot('prepend'):
-                                ui.icon('local_library').classes('text-blue-500 opacity-70')
-
                             role_inputs['branch'] = ui.input(placeholder='Library Branch / Section * (e.g., Main Campus / Circulation)') \
                                 .classes(INPUT_CLASSES).props('rounded outlined dense')
                             with role_inputs['branch'].add_slot('prepend'):
                                 ui.icon('location_on').classes('text-blue-500 opacity-70')
 
                         elif current_role == 'admin':
-                            role_inputs['id'] = ui.input(placeholder='Admin ID / Employee Code * (e.g., ADM-ROOT-001)') \
+                            role_inputs['admin_code'] = ui.input(placeholder='Optional Admin Security Code (if provided by IT)') \
                                 .classes(INPUT_CLASSES).props('rounded outlined dense')
-                            with role_inputs['id'].add_slot('prepend'):
+                            with role_inputs['admin_code'].add_slot('prepend'):
                                 ui.icon('security').classes('text-purple-500 opacity-70')
 
                 role_select.on_value_change(render_role_fields)
@@ -305,6 +307,13 @@ async def signup_page():
                         ui.notify("Username must be at least 3 characters long.", type='warning')
                         return
 
+                    if "-" in clean_username or clean_username.isdigit():
+                        ui.notify(
+                            "Usernames cannot contain hyphens or consist solely of numbers (reserved for Institutional IDs).",
+                            type='warning'
+                        )
+                        return
+
                     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", clean_email):
                         ui.notify("Please enter a valid email address.", type='warning')
                         return
@@ -318,15 +327,11 @@ async def signup_page():
                         return
 
                     # Role-specific validations
-                    inst_id = (role_inputs.get('id').value or '').strip() if 'id' in role_inputs else ''
-                    if not inst_id:
-                        ui.notify("Institutional ID number is required.", type='warning')
-                        return
-
                     prog_val = role_inputs.get('program').value if 'program' in role_inputs else None
                     year_val = role_inputs.get('year_level').value if 'year_level' in role_inputs else None
                     dept_val = (role_inputs.get('department').value or '').strip() if 'department' in role_inputs else None
                     branch_val = (role_inputs.get('branch').value or '').strip() if 'branch' in role_inputs else None
+                    admin_val = (role_inputs.get('admin_code').value or '').strip() if 'admin_code' in role_inputs else None
 
                     if chosen_role == 'faculty' and not dept_val:
                         ui.notify("Faculty department is required.", type='warning')
@@ -348,10 +353,6 @@ async def signup_page():
                             ui.notify("This username is already taken. Please choose another.", type='negative')
                             return
 
-                        if await mongo_db.get_user_by_identifier(inst_id):
-                            ui.notify("This institutional ID is already registered to an account.", type='negative')
-                            return
-
                         hashed = bcrypt.hashpw(clean_pwd.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
                         user_count = await mongo_db.get_total_user_count()
                         role = "admin" if user_count == 0 else chosen_role
@@ -362,24 +363,35 @@ async def signup_page():
                             hashed,
                             role=role,
                             name=clean_fullname,
-                            institutional_id=inst_id,
                             program=prog_val,
                             year_level=year_val,
                             department=dept_val,
                             branch=branch_val,
-                            admin_code=inst_id if role == 'admin' else None
+                            admin_code=admin_val
                         )
                         if not created:
                             ui.notify("Registration failed. Please try again.", type='negative')
                             return
 
-                        # Safe & Explicit Auth: Do not auto-login; prompt user to authenticate first
+                        assigned_id = created.get('institutional_id') or clean_username
+
+                        # Safe & Explicit Auth: Prompt user to authenticate with their assigned ID
                         clear_user_session()
-                        app.storage.user['prefill_identifier'] = clean_username
+                        app.storage.user['prefill_identifier'] = assigned_id
+                        app.storage.user['just_registered_id'] = assigned_id
                         app.storage.user['signup_success'] = True
                         app.storage.user['signup_role'] = role
-                        ui.notify("Account created successfully! Please sign in with your password.", type='positive', duration=5.0)
+                        ui.notify(
+                            f"Account created successfully! Your official ID is {assigned_id}.",
+                            type='positive',
+                            duration=6.0
+                        )
                         ui.navigate.to('/login')
+                    except ValueError as val_err:
+                        ui.notify(str(val_err), type='negative')
+                    except Exception as exc:
+                        logger.error(f"Sign up unexpected error: {exc}")
+                        ui.notify("Registration failed. Please check your details and try again.", type='negative')
                     finally:
                         if signup_btn:
                             signup_btn.props(remove='loading')

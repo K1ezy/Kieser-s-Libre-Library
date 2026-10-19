@@ -246,7 +246,9 @@ class ChatService:
             if not text_body:
                 continue
 
-            header = f"[Source: {source_title}, Page {page_num}]"
+            author = meta.get("author")
+            author_part = f" | Author: {author}" if author and author != "Unknown Author" else ""
+            header = f"[Source: {source_title}{author_part}, Page {page_num}]"
             evidence_blocks.append(f"{header}\n{text_body}")
 
             cite_key = (str(source_title), str(page_num))

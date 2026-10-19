@@ -1,21 +1,26 @@
 import os
+import re
 import logging
 import threading
 from collections import OrderedDict
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict, Tuple, Any, Callable
+import fitz  # PyMuPDF
 
 logger = logging.getLogger("TEXT_EXTRACTOR")
 
+# Optional progress callback signature: (current_step: int, total_steps: int, message: str) -> None
+ProgressCallback = Optional[Callable[[int, int, str], None]]
+
 # Thread-safe in-memory LRU cache for extracted text and document structure
-# Key: (resolved_filepath, mtime, size)
 _TEXT_CACHE: "OrderedDict[Tuple[str, float, int], str]" = OrderedDict()
-_STRUCTURE_CACHE: "OrderedDict[Tuple[str, float, int], List[dict]]" = OrderedDict()
+_STRUCTURE_CACHE: "OrderedDict[Tuple[str, float, int, bool, int], List[dict]]" = OrderedDict()
 _CACHE_LOCK = threading.Lock()
 _MAX_CACHE_SIZE = 32
 
 _OCR_ENGINE = None
 _OCR_LOCK = threading.Lock()
+
 
 def _get_ocr_engine():
     global _OCR_ENGINE
@@ -28,23 +33,26 @@ def _get_ocr_engine():
                     logger.info("RapidOCR engine initialized for image-page extraction.")
                 except Exception as e:
                     logger.debug(f"RapidOCR engine initialization note: {e}")
-    return _OCR_ENGINE
+                    _OCR_ENGINE = False
+    return _OCR_ENGINE if _OCR_ENGINE is not False else None
 
-def _run_page_ocr(page) -> str:
-    """Renders page pixmap and runs RapidOCR on image-only or low-text PDF pages."""
+
+def _run_page_ocr(page: fitz.Page, dpi: int = 150) -> str:
+    """Renders page pixmap at 150 DPI and runs RapidOCR on image-only or low-text PDF pages."""
     try:
         engine = _get_ocr_engine()
         if not engine:
             return ""
-        pix = page.get_pixmap(dpi=150)
+        pix = page.get_pixmap(dpi=dpi, colorspace=fitz.csGRAY)
         img_bytes = pix.tobytes("png")
         res, _ = engine(img_bytes)
         if res:
-            lines = [line[1].strip() for line in res if line and len(line) > 1 and line[1].strip()]
+            lines = [line[1].strip() for line in res if line and len(line) > 1 and isinstance(line[1], str) and line[1].strip()]
             return "\n".join(lines).strip()
     except Exception as err:
         logger.debug(f"Page OCR extraction error: {err}")
     return ""
+
 
 def extract_text_from_file(filepath: str) -> str:
     """
@@ -75,20 +83,20 @@ def extract_text_from_file(filepath: str) -> str:
         if ext == '.pdf':
             extracted_pages = []
             try:
-                import fitz  # PyMuPDF: C-accelerated high performance PDF engine
-                doc = fitz.open(str(path))
-                try:
+                with fitz.open(str(path)) as doc:
                     for i, page in enumerate(doc):
                         t = page.get_text()
                         clean = t.replace('\x00', '').strip() if t else ""
                         if len(clean) < 20:
-                            ocr_txt = _run_page_ocr(page)
-                            if ocr_txt and len(ocr_txt) > len(clean):
-                                clean = ocr_txt
+                            # Pre-check: Only run OCR if page actually contains embedded images (skips blank pages in 0ms)
+                            if not page.get_images(full=False):
+                                pass
+                            else:
+                                ocr_txt = _run_page_ocr(page)
+                                if ocr_txt and len(ocr_txt) > len(clean):
+                                    clean = ocr_txt
                         if clean:
                             extracted_pages.append(f"[Page {i+1}]\n{clean}")
-                finally:
-                    doc.close()
             except Exception as fitz_err:
                 logger.debug(f"PyMuPDF fallback to pypdf ({fitz_err}).")
                 from pypdf import PdfReader
@@ -171,11 +179,21 @@ def extract_text_from_file(filepath: str) -> str:
     return text
 
 
-def extract_document_structure(filepath: str) -> list:
+def extract_document_structure(
+    filepath: str,
+    enable_ocr: bool = True,
+    max_ocr_pages: int = 15,
+    ocr_min_avg_words: int = 25,
+    progress_callback: ProgressCallback = None,
+) -> List[Dict[str, Any]]:
     """
-    Extracts structured document units (pages, slides, or chapters) 
+    Extracts structured document units (pages, slides, or chapters)
     with their respective page numbers.
-    Returns: List of dicts [{"page": int, "type": str, "text": str}]
+    Features:
+    1. Pre-check for embedded images before triggering CPU OCR (skips blank pages in 0ms).
+    2. Adaptive OCR circuit breaker (stops OCR on 1,200-page comic/illustrated books).
+    3. Live page-level telemetry callbacks so the UI never freezes.
+    Returns: List of dicts [{"page": int, "page_number": int, "type": str, "text": str, "source": str}]
     """
     path = Path(filepath)
     if not path.exists():
@@ -185,7 +203,7 @@ def extract_document_structure(filepath: str) -> list:
         stat_res = path.stat()
         if stat_res.st_size == 0:
             return []
-        cache_key = (str(path.resolve()), stat_res.st_mtime, stat_res.st_size)
+        cache_key = (str(path.resolve()), stat_res.st_mtime, stat_res.st_size, enable_ocr, max_ocr_pages)
         with _CACHE_LOCK:
             if cache_key in _STRUCTURE_CACHE:
                 _STRUCTURE_CACHE.move_to_end(cache_key)
@@ -194,35 +212,99 @@ def extract_document_structure(filepath: str) -> list:
         cache_key = None
 
     ext = path.suffix.lower()
-    sections = []
+    sections: List[Dict[str, Any]] = []
 
     try:
         if ext == '.pdf':
+            ocr_pages_used = 0
+            ocr_words_extracted = 0
+            ocr_circuit_tripped = False
             try:
-                import fitz  # PyMuPDF: C-accelerated structure parsing
-                doc = fitz.open(str(path))
-                try:
+                with fitz.open(str(path)) as doc:
+                    total_pages = len(doc)
                     for i, page in enumerate(doc):
+                        page_num = i + 1
+
+                        # Periodic telemetry every 10 digital pages so the UI stays alive
+                        if progress_callback and (page_num == 1 or page_num % 10 == 0 or page_num == total_pages):
+                            progress_callback(
+                                page_num,
+                                total_pages,
+                                f"Extracting Page {page_num}/{total_pages}...",
+                            )
+
                         t = page.get_text()
-                        clean = t.replace('\x00', '').strip() if t else ""
-                        if len(clean) < 20:
-                            ocr_txt = _run_page_ocr(page)
-                            if ocr_txt and len(ocr_txt) > len(clean):
-                                clean = ocr_txt
-                        if clean:
-                            sections.append({"page": i + 1, "type": "page", "text": clean})
-                finally:
-                    doc.close()
+                        clean = re.sub(r"\s+", " ", t).replace('\x00', '').strip() if t else ""
+                        source_type = "digital"
+
+                        # Only consider OCR if digital text is < 20 chars AND OCR is allowed
+                        if len(clean) < 20 and enable_ocr and not ocr_circuit_tripped:
+                            # Check 1: Does this page actually have an embedded image?
+                            # Blank spacer pages have 0 images -> skip immediately!
+                            page_images = page.get_images(full=False)
+                            if not page_images:
+                                pass
+                            else:
+                                if ocr_pages_used >= max_ocr_pages:
+                                    ocr_circuit_tripped = True
+                                    logger.info(
+                                        f"OCR budget ({max_ocr_pages} pages) reached for '{path.name}'. "
+                                        "Switching remaining pages to fast digital extraction."
+                                    )
+                                else:
+                                    if progress_callback:
+                                        progress_callback(
+                                            page_num,
+                                            total_pages,
+                                            f"Running OCR on page {page_num}/{total_pages} ({ocr_pages_used + 1}/{max_ocr_pages} max)...",
+                                        )
+                                    ocr_txt = _run_page_ocr(page)
+                                    ocr_pages_used += 1
+                                    words = len(ocr_txt.split())
+                                    ocr_words_extracted += words
+
+                                    if len(ocr_txt) >= 20:
+                                        clean = ocr_txt
+                                        source_type = "ocr"
+
+                                    # Check 2: Low-density circuit breaker (after 5 OCR pages, average yield < 25 words/page)
+                                    if ocr_pages_used >= 5:
+                                        avg_words = ocr_words_extracted / ocr_pages_used
+                                        if avg_words < ocr_min_avg_words:
+                                            ocr_circuit_tripped = True
+                                            logger.info(
+                                                f"Low OCR text density ({avg_words:.1f} words/page) detected in "
+                                                f"'{path.name}'. Bypassing OCR for remaining pages."
+                                            )
+
+                        if len(clean) >= 20:
+                            sections.append({
+                                "page": page_num,
+                                "page_number": page_num,
+                                "type": "page",
+                                "text": clean,
+                                "source": source_type,
+                            })
             except Exception as fitz_err:
                 logger.debug(f"PyMuPDF structured extraction fallback to pypdf: {fitz_err}")
                 from pypdf import PdfReader
                 reader = PdfReader(str(path))
+                total_pdf_pages = len(reader.pages)
                 for i, page in enumerate(reader.pages):
+                    page_num = i + 1
+                    if progress_callback and (page_num == 1 or page_num % 10 == 0 or page_num == total_pdf_pages):
+                        progress_callback(page_num, total_pdf_pages, f"Extracting Page {page_num}/{total_pdf_pages}...")
                     extracted = page.extract_text()
                     if extracted and extracted.strip():
                         clean = extracted.replace('\x00', '').strip()
-                        if clean:
-                            sections.append({"page": i + 1, "type": "page", "text": clean})
+                        if len(clean) >= 20:
+                            sections.append({
+                                "page": page_num,
+                                "page_number": page_num,
+                                "type": "page",
+                                "text": clean,
+                                "source": "digital",
+                            })
 
         elif ext in ('.pptx', '.ppt'):
             from pptx import Presentation
@@ -238,7 +320,13 @@ def extract_document_structure(filepath: str) -> list:
                         slide_lines.append(f"[Notes: {notes}]")
                 if slide_lines:
                     clean = "\n".join(slide_lines).replace('\x00', '').strip()
-                    sections.append({"page": i + 1, "type": "slide", "text": clean})
+                    sections.append({
+                        "page": i + 1,
+                        "page_number": i + 1,
+                        "type": "slide",
+                        "text": clean,
+                        "source": "digital",
+                    })
 
         elif ext == '.epub':
             try:
@@ -252,7 +340,13 @@ def extract_document_structure(filepath: str) -> list:
                     t = soup.get_text()
                     if t and t.strip():
                         clean = t.replace('\x00', '').strip()
-                        sections.append({"page": idx, "type": "chapter", "text": clean})
+                        sections.append({
+                            "page": idx,
+                            "page_number": idx,
+                            "type": "chapter",
+                            "text": clean,
+                            "source": "digital",
+                        })
                         idx += 1
             except Exception as e:
                 logger.warning(f"Structured EPUB extraction notice: {e}")
@@ -265,19 +359,29 @@ def extract_document_structure(filepath: str) -> list:
             for p in doc.paragraphs:
                 if p.text.strip():
                     current_section.append(p.text.strip())
-                # Group every ~20 paragraphs as a readable logical page/section
                 if len(current_section) >= 20:
-                    sections.append({"page": sec_idx, "type": "section", "text": "\n".join(current_section)})
+                    sections.append({
+                        "page": sec_idx,
+                        "page_number": sec_idx,
+                        "type": "section",
+                        "text": "\n".join(current_section),
+                        "source": "digital",
+                    })
                     sec_idx += 1
                     current_section = []
             if current_section:
-                sections.append({"page": sec_idx, "type": "section", "text": "\n".join(current_section)})
+                sections.append({
+                    "page": sec_idx,
+                    "page_number": sec_idx,
+                    "type": "section",
+                    "text": "\n".join(current_section),
+                    "source": "digital",
+                })
 
         else:
             # Fallback for plain text, markdown, etc.
             raw = extract_text_from_file(filepath)
             if raw:
-                # Split roughly by 3000 chars as virtual pages
                 lines = raw.split('\n')
                 curr_lines = []
                 curr_len = 0
@@ -286,12 +390,24 @@ def extract_document_structure(filepath: str) -> list:
                     curr_lines.append(line)
                     curr_len += len(line)
                     if curr_len > 3000:
-                        sections.append({"page": page_idx, "type": "page", "text": "\n".join(curr_lines)})
+                        sections.append({
+                            "page": page_idx,
+                            "page_number": page_idx,
+                            "type": "page",
+                            "text": "\n".join(curr_lines),
+                            "source": "digital",
+                        })
                         page_idx += 1
                         curr_lines = []
                         curr_len = 0
                 if curr_lines:
-                    sections.append({"page": page_idx, "type": "page", "text": "\n".join(curr_lines)})
+                    sections.append({
+                        "page": page_idx,
+                        "page_number": page_idx,
+                        "type": "page",
+                        "text": "\n".join(curr_lines),
+                        "source": "digital",
+                    })
 
     except Exception as e:
         logger.error(f"Error in extract_document_structure: {e}")
@@ -300,7 +416,13 @@ def extract_document_structure(filepath: str) -> list:
     if not sections:
         full = extract_text_from_file(filepath)
         if full:
-            sections.append({"page": 1, "type": "document", "text": full})
+            sections.append({
+                "page": 1,
+                "page_number": 1,
+                "type": "document",
+                "text": full,
+                "source": "digital",
+            })
 
     if cache_key and sections:
         with _CACHE_LOCK:

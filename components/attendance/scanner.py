@@ -18,18 +18,20 @@ def render_scanner_station(
     feedback_banner_holder: Dict[str, Any]
 ) -> None:
     """Renders the entrance scanner card with camera runner, purpose selector, and barcode field."""
-    with ui.card().classes('w-full p-5 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm gap-0'):
-        with ui.row().classes('items-center justify-between w-full mb-1'):
-            ui.label('ENTRANCE DOOR SCANNER').classes('text-xs font-black text-indigo-600 uppercase tracking-wider')
-            with ui.row().classes('items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200'):
+    with ui.card().classes('w-full p-4 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm gap-0'):
+        with ui.row().classes('items-center justify-between w-full mb-1 flex-wrap gap-2'):
+            with ui.row().classes('items-center gap-2'):
+                ui.label('ENTRANCE DOOR SCANNER').classes('text-xs font-black text-indigo-600 uppercase tracking-wider')
+                ui.label('FM-LIBS-009 Terminal').classes('text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded')
+            with ui.row().classes('items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200'):
                 ui.icon('bolt', size='14px').classes('text-amber-500')
                 ui.label('Latency: < 0.2s')
 
-        ui.label('Hold student QR pass or NEMSU ID barcode in front of the camera').classes('text-xs text-slate-500 mb-4')
+        ui.label('Hold student QR pass or NEMSU ID barcode in front of the camera or USB scanner').classes('text-xs text-slate-500 mb-4')
 
-        # 1. Interactive Purpose of Visit Pill Selector (Hick's & Fitts's Law)
-        ui.label('PURPOSE OF VISIT:').classes('text-xs font-bold text-slate-500 uppercase tracking-wider mb-2')
-        purpose_row = ui.row().classes('w-full flex-wrap gap-2 mb-5')
+        # 1. Responsive 1-Tap Purpose of Visit Grid (Zero-overlap guarantee)
+        ui.label('PURPOSE OF VISIT (SELECT BEFORE TIME-IN):').classes('text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2')
+        purpose_container = ui.element('div').classes('w-full grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-5')
 
         # Normalize active_purpose value to match without leading emoji if present
         current_val = active_purpose.get('val', 'Study / Review')
@@ -39,8 +41,8 @@ def render_scanner_station(
                 break
 
         def render_purpose_chips():
-            purpose_row.clear()
-            with purpose_row:
+            purpose_container.clear()
+            with purpose_container:
                 for label, icon_name in PURPOSE_OPTIONS:
                     is_active = (active_purpose['val'] == label)
                     chip_cls = (
@@ -53,7 +55,7 @@ def render_scanner_station(
                         icon=icon_name,
                         on_click=lambda l=label: select_purpose(l),
                     ).props('unelevated no-caps').classes(
-                        f'px-3.5 py-2 rounded-lg text-xs font-semibold border transition-all duration-150 {chip_cls}'
+                        f'w-full px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all duration-150 min-h-[44px] break-words {chip_cls}'
                     )
 
         def select_purpose(selected_label: str):
@@ -62,11 +64,11 @@ def render_scanner_station(
 
         render_purpose_chips()
 
-        # 2. Camera Viewport with Intentional Standby State (Peak-End & Fitts's Law)
+        # 2. Camera Viewport with html5-qrcode and Web Audio API Synthesis
         scanner_state = {'camera_active': False}
         viewport_box = ui.element('div').classes(
-            'relative w-full aspect-video rounded-2xl bg-slate-900 border border-slate-800 '
-            'overflow-hidden flex flex-col items-center justify-center p-6 text-center shadow-inner'
+            'relative w-full aspect-video max-h-[360px] rounded-2xl bg-slate-950 border border-slate-800 '
+            'overflow-hidden flex flex-col items-center justify-center p-4 text-center shadow-inner'
         )
 
         ui.add_body_html('''
@@ -75,20 +77,68 @@ def render_scanner_station(
         window.libreScannerRunning = false;
         window.html5QrCodeInstance = null;
 
+        window.playLibreChime = function(actionType) {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const now = ctx.currentTime;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                gain.connect(ctx.destination);
+                osc.connect(gain);
+
+                if (actionType === "checkin") {
+                    // Double High Chime
+                    osc.frequency.setValueAtTime(880, now);
+                    osc.frequency.setValueAtTime(1174.66, now + 0.1);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                    osc.start(now);
+                    osc.stop(now + 0.25);
+                } else if (actionType === "checkout") {
+                    // Warm Departure Chime
+                    osc.frequency.setValueAtTime(587.33, now);
+                    osc.frequency.setValueAtTime(440, now + 0.12);
+                    gain.gain.setValueAtTime(0.2, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                    osc.start(now);
+                    osc.stop(now + 0.3);
+                } else {
+                    // Cooldown / Notice Chime
+                    osc.frequency.setValueAtTime(440, now);
+                    gain.gain.setValueAtTime(0.15, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
+                    osc.start(now);
+                    osc.stop(now + 0.18);
+                }
+            } catch(e) {}
+        };
+
         window.startLibreScanner = function() {
             if (window.libreScannerRunning) return;
             try {
                 window.html5QrCodeInstance = new Html5Qrcode("reader");
+                let lastScannedPayload = "";
+                let lastScannedTime = 0;
+
                 const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+                    const now = Date.now();
+                    // Local JS 3-second debounce to reduce UI flutter
+                    if (decodedText === lastScannedPayload && (now - lastScannedTime) < 3000) {
+                        return;
+                    }
+                    lastScannedPayload = decodedText;
+                    lastScannedTime = now;
+
+                    const cleanId = decodedText.replace(/^LIBRE-ID:/i, "").trim();
                     const inputEl = document.querySelector('#attendance-manual-input input');
                     if (inputEl) {
-                        inputEl.value = decodedText;
+                        inputEl.value = cleanId;
                         inputEl.dispatchEvent(new Event('input', { bubbles: true }));
                         const submitBtn = document.querySelector('#attendance-submit-btn');
                         if (submitBtn) submitBtn.click();
                     }
                 };
-                const config = { fps: 12, qrbox: { width: 240, height: 240 } };
+                const config = { fps: 15, qrbox: { width: 220, height: 220 } };
                 window.html5QrCodeInstance.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
                     .then(() => { window.libreScannerRunning = true; })
                     .catch(err => {
@@ -164,12 +214,12 @@ def render_scanner_station(
 
         ui.separator().classes('my-5')
 
-        # 3. Live Status Confirmation Banner Card
+        # 3. Live Status Confirmation Banner Card Holder
         feedback_banner_holder['banner'] = ui.element('div').classes('w-full')
 
-        # 4. Rapid ID / Barcode Input Bar
+        # 4. Rapid ID / Barcode Input Bar (Dual-Mode USB Barcode Gun Support)
         with ui.row().classes('w-full items-center justify-between mb-1.5 flex-wrap gap-1'):
-            ui.label('RAPID ID / BARCODE INPUT:').classes('text-xs font-bold text-slate-500 uppercase tracking-wider')
+            ui.label('RAPID ID / BARCODE GUN INPUT:').classes('text-xs font-bold text-slate-500 uppercase tracking-wider')
             with ui.row().classes(
                 'items-center gap-1 cursor-pointer px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 transition-colors'
             ).on('click', lambda: set_self_input()):
@@ -177,7 +227,7 @@ def render_scanner_station(
                 ui.label(f'Fill My ID: {student_id}').classes('text-[11px] font-bold text-indigo-700')
 
         with ui.row().classes('w-full items-center gap-2.5 flex-wrap sm:flex-nowrap'):
-            manual_input = ui.input(placeholder='Scan barcode gun or type Student ID (e.g. 2024-001)...') \
+            manual_input = ui.input(placeholder='Scan barcode gun or type YY-NNNNN (e.g. 23-00128)...') \
                 .classes('flex-1 text-sm min-h-[44px]').props('id="attendance-manual-input" rounded-xl outlined dense autofocus')
             year_select = ui.select(["1st Year", "2nd Year", "3rd Year", "4th Year", "Graduate"], value="1st Year") \
                 .classes('w-full sm:w-32 sm:shrink-0 text-sm').props('rounded-xl outlined dense options-dense')
@@ -194,7 +244,7 @@ def render_scanner_station(
                 manual_input.value = ""
 
             manual_input.on('keydown.enter', do_submit)
-            ui.button('Check In / Out', icon='login', on_click=do_submit) \
+            ui.button('Record Scan', icon='how_to_reg', on_click=do_submit) \
                 .props('id="attendance-submit-btn" unelevated rounded-xl color=slate-900 text-color=white size=md font-bold') \
                 .classes('w-full sm:w-auto min-h-[44px] px-6 shrink-0 shadow-sm hover:bg-slate-800 active:scale-95 transition-all text-xs')
 
@@ -217,11 +267,10 @@ def render_live_doorway_feed(container: ui.column, recent_logs: List[Dict[str, A
                         ui.label(r.get('name', 'Student')).classes('text-xs font-bold text-slate-900 truncate')
                         with ui.row().classes('items-center gap-1.5 flex-wrap'):
                             ui.label(r.get('program', 'BSCS')).classes('text-[10px] font-black text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded')
-                            ui.label(f"ID: {r.get('student_id')}").classes('text-[10px] text-slate-400 font-mono')
+                            ui.label(f"ID: {r.get('institutional_id') or r.get('student_id')}").classes('text-[10px] text-slate-400 font-mono')
                         ui.label(r.get('purpose', 'Study')).classes('text-[10px] text-slate-500 italic truncate')
 
                 with ui.column().classes('items-end shrink-0 gap-1'):
                     with ui.element('div').classes(f'px-2 py-0.5 rounded-full text-[10px] font-black uppercase border {status_bg}'):
                         ui.label(r.get('status'))
                     ui.label(r.get('time_in_str', '')).classes('text-[10px] font-mono text-slate-400')
-

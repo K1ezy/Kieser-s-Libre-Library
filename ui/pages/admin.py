@@ -1,17 +1,36 @@
-from nicegui import ui, app
-from datetime import datetime
+import asyncio
 import logging
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from components.sidebar import sidebar
+from nicegui import app, ui
+
 from components.header import header
-from core.database.mongo_manager import mongo_db
-from core.config import settings
+from components.sidebar import sidebar
+from core.ai_engine.rag_pipeline import CHROMA_LOCK, ResilientRAGPipeline, tars_archive
 from core.auth.jwt_handler import get_current_user_role
+from core.config import settings
+from core.database.mongo_manager import mongo_db
 from core.services.ingestion_service import ingestion_service
-from core.ai_engine.rag_pipeline import tars_archive
 
 logger = logging.getLogger("ADMIN_UI")
 
+
+def render_vector_store_health_panel(
+    rag_pipeline: Optional[ResilientRAGPipeline] = None,
+    books_collection: Any = None,
+) -> None:
+    """
+    Diagnostic panel renderer for TARS AI Knowledge Store & Vector Health.
+    Provides headless/custom dashboard compatibility.
+    """
+    pipeline = rag_pipeline or tars_archive
+    try:
+        with CHROMA_LOCK:
+            total_chunks = pipeline.collection.count() if pipeline.collection else 0
+        logger.info(f"Vector Store Status: {total_chunks:,} chunks verified in collection.")
+    except Exception as exc:
+        logger.warning(f"Vector store diagnostic check notice: {exc}")
 
 
 async def admin_dashboard():
@@ -26,14 +45,12 @@ async def admin_dashboard():
     header(drawer_reference=drawer)
 
     # Fetch system diagnostics concurrently
-    import asyncio
-    admin_book_proj = {"_id": 0, "id": 1, "title": 1, "chunk_count": 1, "indexing_status": 1, "local_path": 1}
+    admin_book_proj = {"_id": 0, "id": 1, "title": 1, "chunk_count": 1, "indexing_status": 1, "is_indexed": 1, "local_path": 1}
     stats, raw_users, all_books = await asyncio.gather(
         mongo_db.get_system_diagnostics(),
         mongo_db.get_all_users(),
         mongo_db.get_all_books(projection=admin_book_proj)
     )
-
 
     # Sanitize user rows to ensure strict JSON serializability (no BSON ObjectId)
     def format_users(user_list):
@@ -111,7 +128,7 @@ async def admin_dashboard():
         # TARS AI Knowledge Store & Vector Maintenance Card
         unindexed_books = [
             b for b in (all_books or [])
-            if b.get("chunk_count", 0) == 0 or b.get("indexing_status") == "failed"
+            if (b.get("chunk_count", 0) == 0 and not b.get("is_indexed")) or b.get("indexing_status") == "failed"
         ]
         unindexed_count = len(unindexed_books)
         total_books_count = len(all_books or [])
@@ -154,39 +171,73 @@ async def admin_dashboard():
                         "Needs vectorization" if unindexed_count > 0 else "All books fully indexed"
                     ).classes('text-[10px] text-slate-500')
 
-            # Progress Bar and Live Status Banner
-            with ui.column().classes('w-full gap-2 mb-3'):
+            # Batch Indexing Speed & Fallback Settings
+            with ui.row().classes('w-full items-center gap-4 py-2.5 px-3 rounded-xl bg-slate-50 border border-slate-100 mb-2 flex-wrap text-xs'):
+                fast_digital_cb = ui.checkbox(
+                    '⚡ Fast Digital-Only Mode (Skip OCR)',
+                    value=True
+                ).props('dense').tooltip('Recommended for bulk indexing. Prevents CPU freeze on illustrated or scanned PDFs like Diary of a Wimpy Kid.')
+                enable_fallback_cb = ui.checkbox(
+                    '📚 Index Catalog Metadata when File is Missing/Graphical',
+                    value=True
+                ).props('dense').tooltip('Ensures books with missing physical PDFs or image-only pages are still indexed via catalog metadata.')
+
+            # Progress Bar and Live Two-Level Status Banner
+            with ui.column().classes('w-full gap-1.5 mb-3'):
                 progress_bar = ui.linear_progress(value=0.0).props('rounded color=purple size=6px').classes('w-full')
                 progress_bar.set_visibility(False)
                 with ui.row().classes('w-full items-center justify-between text-xs'):
-                    with ui.row().classes('items-center gap-2'):
+                    with ui.row().classes('items-center gap-2 flex-1 min-w-0'):
                         status_spinner = ui.spinner(size='xs', color='purple')
                         status_spinner.set_visibility(False)
                         status_label = ui.label(
                             f"{unindexed_count} unindexed document(s) detected in catalog." if unindexed_count > 0 else "All catalog documents are vectorized in ChromaDB."
-                        ).classes('text-slate-600 font-medium')
-                    sync_time_label = ui.label('Ready').classes('text-[10px] text-slate-400 font-mono')
+                        ).classes('text-slate-600 font-medium truncate')
+                    sync_time_label = ui.label('Ready').classes('text-[10px] text-slate-400 font-mono shrink-0')
+                sub_status_label = ui.label('').classes('text-[11px] text-slate-400 font-mono truncate w-full')
+                sub_status_label.set_visibility(False)
 
             # Action Buttons Row
             with ui.row().classes('w-full items-center justify-between gap-3 pt-2 border-t border-slate-100 flex-wrap'):
                 ui.label('One-click recovery reads documents, extracts pages, and populates ChromaDB facts.').classes('text-[11px] text-slate-400 max-w-md')
 
-                async def run_reindex():
+                async def run_reindex(force_all: bool = False):
                     reindex_btn.disable()
+                    if 'full_reindex_btn' in locals():
+                        full_reindex_btn.disable()
+                    repair_btn.disable()
                     status_spinner.set_visibility(True)
                     progress_bar.set_visibility(True)
+                    sub_status_label.set_visibility(True)
                     progress_bar.value = 0.0
-                    status_label.text = "Scanning catalog for unindexed documents..."
+                    status_label.text = "Scanning catalog for documents..." if force_all else "Scanning catalog for unindexed documents..."
+                    sub_status_label.text = "Initializing pipeline..."
                     status_label.classes('text-purple-700 font-bold', remove='text-slate-600 text-emerald-600 text-rose-600')
 
                     async def handle_progress(idx, total, title, stage):
-                        pct = (idx / max(total, 1))
-                        progress_bar.value = pct
-                        status_label.text = f"Vectorizing [{idx}/{total}]: {title[:40]}..."
+                        fraction = min(1.0, max(0.0, idx / max(total, 1)))
+                        progress_bar.value = fraction
+                        status_label.text = f"Book [{idx} / {total}] — {title}"
+                        if stage:
+                            clean_stage = str(stage).strip()
+                            if clean_stage.lower().startswith("stage"):
+                                sub_status_label.text = f"↳ {clean_stage}"
+                            else:
+                                sub_status_label.text = f"↳ Stage ({clean_stage})"
 
                     try:
-                        res = await ingestion_service.reindex_failed_books(progress_callback=handle_progress)
+                        enable_ocr = not fast_digital_cb.value
+                        enable_fallback = enable_fallback_cb.value
+                        res = await ingestion_service.reindex_failed_books(
+                            progress_callback=handle_progress,
+                            force_all=force_all,
+                            enable_ocr=enable_ocr,
+                            max_ocr_pages=10,
+                            enable_metadata_fallback=enable_fallback,
+                        )
                         reindexed_n = res.get("reindexed", 0)
+                        indexed_full_n = res.get("indexed_full", 0)
+                        indexed_fb_n = res.get("indexed_fallback", 0)
                         failed_n = res.get("failed", 0)
                         total_n = res.get("total", 0)
 
@@ -194,7 +245,7 @@ async def admin_dashboard():
                         updated_books = await mongo_db.get_all_books(projection=admin_book_proj)
                         new_unindexed = len([
                             b for b in (updated_books or [])
-                            if b.get("chunk_count", 0) == 0 or b.get("indexing_status") == "failed"
+                            if (b.get("chunk_count", 0) == 0 and not b.get("is_indexed")) or b.get("indexing_status") == "failed"
                         ])
                         new_total = len(updated_books or [])
                         new_stats = await asyncio.to_thread(tars_archive.get_collection_stats)
@@ -212,15 +263,16 @@ async def admin_dashboard():
                         progress_bar.value = 1.0
                         now_str = datetime.now().strftime("%H:%M:%S")
                         sync_time_label.text = f"Last run: {now_str}"
+                        sub_status_label.text = f"Batch finished: {indexed_full_n} full-text, {indexed_fb_n} catalog fallback, {failed_n} failed."
 
                         if total_n == 0:
                             status_label.text = "All books in the library are already indexed with active vectors."
                             status_label.classes('text-emerald-600 font-bold', remove='text-purple-700')
                             ui.notify("All catalog documents are already fully vectorized.", type='info')
                         else:
-                            status_label.text = f"Re-indexing complete: {reindexed_n} indexed, {failed_n} failed."
+                            status_label.text = f"Indexing complete: {reindexed_n}/{total_n} books indexed ({indexed_full_n} full text, {indexed_fb_n} metadata fallback)."
                             status_label.classes('text-emerald-600 font-bold', remove='text-purple-700')
-                            ui.notify(f"TARS Knowledge Store updated: {reindexed_n} documents indexed successfully.", type='positive')
+                            ui.notify(f"TARS Knowledge Store updated: {reindexed_n} books indexed successfully.", type='positive')
 
                     except Exception as err:
                         logger.error(f"Re-indexing failure: {err}", exc_info=True)
@@ -230,16 +282,64 @@ async def admin_dashboard():
                     finally:
                         status_spinner.set_visibility(False)
                         reindex_btn.enable()
+                        if 'full_reindex_btn' in locals():
+                            full_reindex_btn.enable()
+                        repair_btn.enable()
 
-                reindex_btn = ui.button(
-                    'Re-index Failed / Unindexed Books',
-                    icon='auto_fix_high',
-                    on_click=run_reindex
-                ).props('unelevated rounded-xl color=purple size=sm font-bold shadow-sm')
+                async def run_reset_repair():
+                    with ui.dialog() as diag, ui.card().classes('p-5 rounded-2xl max-w-md bg-white border border-slate-200'):
+                        ui.label('Repair / Reset ChromaDB Vector Store?').classes('font-bold text-slate-900 text-sm')
+                        ui.label(
+                            'This will safely delete corrupted HNSW binary segments and recreate the ChromaDB collection. '
+                            'Catalog metadata in MongoDB will be preserved. You can then click "Re-index" to cleanly rebuild all vectors.'
+                        ).classes('text-xs text-slate-500 leading-relaxed my-2')
+                        with ui.row().classes('w-full justify-end gap-2'):
+                            ui.button('Cancel', on_click=diag.close).props('flat size=sm')
 
+                            async def do_reset():
+                                diag.close()
+                                status_spinner.set_visibility(True)
+                                status_label.text = "Repairing ChromaDB vector store..."
+                                try:
+                                    await asyncio.to_thread(tars_archive.reset_corrupted_vector_store)
+                                    await mongo_db.books.update_many({}, {"$set": {"chunk_count": 0, "indexing_status": "failed", "is_indexed": False}})
+                                    chunks_stat_label.text = "0"
+                                    indexed_stat_label.text = f"0 / {total_books_count}"
+                                    unindexed_stat_label.text = str(total_books_count)
+                                    unindexed_stat_label.classes('text-amber-600', remove='text-emerald-600')
+                                    unindexed_subtext.text = "Needs vectorization"
+                                    status_label.text = "Vector store cleanly reset. Click 'Re-index' to rebuild."
+                                    status_label.classes('text-emerald-600 font-bold', remove='text-purple-700 text-slate-600')
+                                    ui.notify("ChromaDB vector store cleanly reset and repaired.", type='positive')
+                                except Exception as r_err:
+                                    status_label.text = f"Reset failed: {r_err}"
+                                    ui.notify(f"Reset failed: {r_err}", type='negative')
+                                finally:
+                                    status_spinner.set_visibility(False)
+
+                            ui.button('Reset Vector Store', on_click=do_reset).props('unelevated color=rose size=sm font-bold')
+                    diag.open()
+
+                with ui.row().classes('items-center gap-2 flex-wrap'):
+                    reindex_btn = ui.button(
+                        'Re-index Failed / Unindexed Books',
+                        icon='auto_fix_high',
+                        on_click=lambda: run_reindex(force_all=False)
+                    ).props('unelevated rounded-xl color=purple size=sm font-bold shadow-sm')
+
+                    full_reindex_btn = ui.button(
+                        'Full Catalog Re-index (BGE Embeddings)',
+                        icon='refresh',
+                        on_click=lambda: run_reindex(force_all=True)
+                    ).props('outline rounded-xl color=purple size=sm font-bold')
+
+                    repair_btn = ui.button(
+                        'Repair / Reset ChromaDB Vector Store',
+                        icon='build_circle',
+                        on_click=run_reset_repair
+                    ).props('flat rounded-xl color=rose size=sm font-bold').tooltip('Safely recreates the ChromaDB collection if legacy HNSW binary segment files are corrupted.')
 
         # Registered Accounts Management Table (Role-Based Access Control)
-
         with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):
             with ui.row().classes('w-full items-center justify-between mb-4'):
                 with ui.row().classes('items-center gap-2'):
@@ -278,7 +378,7 @@ async def admin_dashboard():
 
                     with ui.row().classes('w-full justify-end gap-2'):
                         ui.button('Cancel', on_click=role_dialog.close).props('flat rounded-xl color=grey size=sm font-bold')
-                        
+
                         async def save_role_change():
                             uid = target_user.get('id')
                             nrole = role_sel.value
@@ -316,7 +416,7 @@ async def admin_dashboard():
                         for u in clean_users:
                             u_role = u.get('role', 'student')
                             badge_cls, badge_ic = ROLE_STYLES.get(u_role, ('bg-slate-100 text-slate-700 border-slate-200', 'person'))
-                            
+
                             with ui.card().classes('w-full p-4 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-indigo-200 transition-all'):
                                 with ui.row().classes('w-full items-start justify-between gap-2 mb-2'):
                                     with ui.row().classes('items-center gap-2.5 min-w-0 flex-1'):
@@ -346,7 +446,7 @@ async def admin_dashboard():
                         selected_user_id = list(user_options.keys())[0]
                         u_select = ui.select(user_options, value=selected_user_id, label='Select Account').props('dense rounded outlined').classes('w-full sm:w-60 text-xs')
                         r_select = ui.select(['student', 'faculty', 'librarian', 'admin'], value='faculty', label='New Role').props('dense rounded outlined').classes('w-full sm:w-32 text-xs')
-                        
+
                         async def apply_role():
                             uid = u_select.value
                             nrole = r_select.value

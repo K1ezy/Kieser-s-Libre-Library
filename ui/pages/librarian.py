@@ -42,13 +42,15 @@ async def librarian_dashboard():
 
     # Load live operational metrics concurrently in a single wave
     import asyncio
-    format_counts, req_counts, pending_reqs, active_visitors, today_logs, recent_books = await asyncio.gather(
+    format_counts, req_counts, pending_reqs, active_visitors, today_logs, recent_books, circ_stats, active_loans = await asyncio.gather(
         mongo_db.get_catalog_format_counts(),
         mongo_db.get_requisition_status_counts(),
         mongo_db.get_requisitions(status='Pending Review', limit=4),
         mongo_db.get_active_checked_in_count(),
         mongo_db.get_today_attendance_logs(limit=100),
-        mongo_db.books.get_recent_books(limit=4)
+        mongo_db.books.get_recent_books(limit=4),
+        mongo_db.get_circulation_stats(),
+        mongo_db.get_all_loans(status='active', limit=10),
     )
 
     total_books = format_counts.get('total', 0)
@@ -79,9 +81,9 @@ async def librarian_dashboard():
         with ui.grid().classes('w-full grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6'):
             metric_cards = [
                 ("menu_book", "Catalog Collection", f"{total_books} Books", f"{epub_count} EPUB • {pdf_count} PDF", "text-indigo-600", "bg-indigo-50"),
+                ("local_library", "Circulation Loans", f"{circ_stats.get('active_loans', 0)} Active", f"{circ_stats.get('faculty_loans', 0)} Faculty • {circ_stats.get('student_loans', 0)} Student", "text-emerald-600", "bg-emerald-50"),
                 ("pending_actions", "Pending Requisitions", f"{pending_count} Requests", "FM-LIBS-002 Curriculum", "text-amber-600", "bg-amber-50"),
-                ("sensor_door", "Currently Inside", f"{active_visitors} Visitors", "Active in Reading Room", "text-emerald-600", "bg-emerald-50"),
-                ("how_to_reg", "Visitors Today", f"{len(today_logs)} Check-Ins", "FM-LIBS-009 Gate Log", "text-blue-600", "bg-blue-50"),
+                ("sensor_door", "Currently Inside", f"{active_visitors} Visitors", f"{len(today_logs)} Today's Entries", "text-purple-600", "bg-purple-50"),
             ]
             for icon_name, label_text, val_text, sub_text, text_col, bg_col in metric_cards:
                 with ui.card().classes('p-3.5 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-sm'):
@@ -116,8 +118,64 @@ async def librarian_dashboard():
         # 4. Two-Column Dashboard Layout
         with ui.grid().classes('w-full grid-cols-1 lg:grid-cols-12 gap-6'):
 
-            # Left Column (7 cols): Requisitions Spotlight & Recent Ingestion
+            # Left Column (7 cols): Circulation Desk, Requisitions Spotlight & Recent Ingestion
             with ui.column().classes('lg:col-span-7 gap-6'):
+
+                # Section 0: Physical Circulation Desk (Active Loans & Check-In)
+                with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):
+                    with ui.row().classes('w-full items-center justify-between gap-2 mb-4'):
+                        with ui.row().classes('items-center gap-2'):
+                            ui.icon('assignment_return', size='sm').classes('text-emerald-600')
+                            ui.label('Circulation Desk — Active Loans').classes('text-sm sm:text-base font-black text-slate-900')
+                            status_badge(f"{len(active_loans)} Active", 'emerald')
+                        with ui.row().classes('items-center gap-1.5'):
+                            status_badge('Faculty: 30d', 'indigo')
+                            status_badge('Student: 7d', 'slate')
+
+                    if not active_loans:
+                        with ui.element('div').classes('w-full p-6 bg-slate-50 rounded-2xl text-center border border-slate-100'):
+                            ui.icon('check_circle', size='32px').classes('text-emerald-500 mb-1')
+                            ui.label('All borrowed physical books are currently checked in!').classes('text-xs font-bold text-slate-700')
+                            ui.label('Loans issued to faculty (30d) or students (7d) will appear here for return processing.').classes('text-[11px] text-slate-400')
+                    else:
+                        with ui.column().classes('w-full gap-2.5'):
+                            for loan in active_loans:
+                                lid = loan.get('id') or loan.get('loan_id')
+                                l_title = loan.get('book_title', 'Untitled')
+                                b_role = str(loan.get('borrower_role', 'student')).upper()
+                                is_fac = b_role == 'FACULTY'
+                                is_overdue = loan.get('is_overdue', False)
+                                days_rem = loan.get('days_remaining', 0)
+                                due_str = datetime.fromtimestamp(loan.get('due_date', 0)).strftime('%b %d') if loan.get('due_date') else 'N/A'
+
+                                with ui.card().classes('w-full p-3.5 rounded-2xl border border-slate-100 bg-slate-50/60 hover:bg-slate-50 hover:border-slate-200 transition-all shadow-xs'):
+                                    with ui.row().classes('w-full items-start justify-between gap-2'):
+                                        with ui.column().classes('gap-0.5 min-w-0 flex-1'):
+                                            with ui.row().classes('items-center gap-2 flex-wrap'):
+                                                ui.label(l_title).classes('text-sm font-black text-slate-900 truncate')
+                                                status_badge(b_role, 'indigo' if is_fac else 'slate')
+                                            with ui.row().classes('items-center gap-1.5 flex-wrap text-[11px] text-slate-500'):
+                                                ui.label(f"Borrower: {loan.get('borrower_name', 'User')}")
+                                                ui.label('•')
+                                                ui.label(f"ID: {loan.get('institutional_id', 'N/A')}").classes('font-mono font-bold text-slate-700')
+                                                ui.label('•')
+                                                ui.label(f"Due: {due_str}").classes('font-bold ' + ('text-red-600' if is_overdue else 'text-slate-700'))
+                                                if is_overdue:
+                                                    status_badge(f"Overdue ({abs(days_rem)}d)", 'amber')
+                                                elif days_rem <= 3:
+                                                    status_badge(f"Due in {days_rem}d", 'amber')
+
+                                        with ui.row().classes('items-center gap-1.5 shrink-0'):
+                                            async def do_return(loan_id=lid, title=l_title):
+                                                res = await mongo_db.return_book(loan_id)
+                                                if res.get('success'):
+                                                    ui.notify(f"Book '{title}' marked as returned successfully!", type='positive')
+                                                    ui.navigate.to('/librarian')
+                                                else:
+                                                    ui.notify(res.get('error', 'Failed to return book.'), type='negative')
+
+                                            ui.button('Check-In Return', icon='assignment_turned_in', on_click=lambda l_id=lid, t=l_title: do_return(l_id, t)) \
+                                                .props('unelevated rounded-xl color=emerald-7 size=xs font-bold')
 
                 # Section A: Curricular Requisitions Spotlight (FM-LIBS-002)
                 with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):

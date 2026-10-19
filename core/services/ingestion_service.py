@@ -151,12 +151,17 @@ class IngestionService:
             indexing_status = "indexed"
             indexing_error = None
             try:
+                subjects_list = local_meta.get('subjects', [])
+                category_val = subjects_list[0] if subjects_list else "General"
                 facts_learned = await run.io_bound(
                     tars_archive.ingest_document,
                     str(file_path),
                     clean_filename,
                     book_id,
-                    clean_title
+                    clean_title,
+                    False,
+                    display_author,
+                    category_val,
                 )
                 if facts_learned == 0:
                     indexing_status = "failed"
@@ -222,55 +227,143 @@ class IngestionService:
                     pass
             return {"success": False, "error": str(e)}
 
-    async def reindex_failed_books(self, progress_callback=None) -> Dict[str, Any]:
-        """Scans MongoDB for books with chunk_count == 0 or indexing_status == 'failed' and re-runs ChromaDB ingestion."""
+    async def reindex_failed_books(
+        self,
+        progress_callback=None,
+        force_all: bool = False,
+        enable_ocr: bool = False,
+        max_ocr_pages: int = 10,
+        enable_metadata_fallback: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Scans MongoDB for books and re-runs ChromaDB ingestion with:
+        1. Auto-healing file resolver to re-link missing/moved paths
+        2. Catalog metadata fallback chunking so 100% of books are indexed
+        3. Deferred single-pass BM25 rebuilding at the very end
+        4. Sub-page / sub-chunk live progress telemetry
+        """
+        from core.ai_engine.rag_pipeline import resolve_missing_book_path
+
         all_books = await mongo_db.get_all_books()
-        target_books = [
-            b for b in all_books
-            if b.get("chunk_count", 0) == 0 or b.get("indexing_status") == "failed"
-        ]
+        if force_all:
+            target_books = all_books
+        else:
+            target_books = [
+                b for b in all_books
+                if b.get("chunk_count", 0) == 0
+                or not b.get("chunk_count")
+                or b.get("indexing_status") == "failed"
+                or b.get("is_indexed") is not True
+            ]
         total = len(target_books)
         reindexed = 0
+        indexed_full = 0
+        indexed_fallback = 0
         failed = 0
-        for i, b in enumerate(target_books, 1):
-            local_path = b.get("local_path")
-            book_id = b.get("id")
-            title = b.get("title", "Untitled")
-            if progress_callback:
+
+        try:
+            for i, b in enumerate(target_books, 1):
+                raw_id = b.get("id") or b.get("_id")
+                book_id = str(raw_id)
+                title = b.get("title") or "Untitled"
+                display_author = b.get("display_author") or (b.get("authors", ["Unknown"])[0] if b.get("authors") else "Unknown")
+                subjects = b.get("subjects") or []
+                category = subjects[0] if subjects else (b.get("category") or "General")
+
+                if progress_callback:
+                    try:
+                        res = progress_callback(i, total, title, "Initializing extraction...")
+                        if asyncio.iscoroutine(res):
+                            await res
+                    except Exception:
+                        pass
+
+                # 1. Auto-heal missing or moved path
+                resolved_path = resolve_missing_book_path(b)
+                if resolved_path and resolved_path != b.get("local_path"):
+                    try:
+                        update_path = {"local_path": resolved_path}
+                        if hasattr(mongo_db.books, "update_book"):
+                            await mongo_db.books.update_book(book_id, update_path)
+                        elif hasattr(mongo_db.books, "update_book_metadata"):
+                            await mongo_db.books.update_book_metadata(book_id, update_path)
+                    except Exception as p_err:
+                        logger.debug("Failed saving auto-healed path for %s: %s", book_id, p_err)
+
+                # 2. Sub-progress reporting callback
+                def sub_progress_reporter(msg: str):
+                    if progress_callback:
+                        try:
+                            cb_res = progress_callback(i, total, title, msg)
+                            if asyncio.iscoroutine(cb_res):
+                                loop = asyncio.get_event_loop()
+                                if loop.is_running():
+                                    asyncio.create_task(cb_res)
+                        except Exception:
+                            pass
+
                 try:
-                    res = progress_callback(i, total, title, "indexing")
-                    if asyncio.iscoroutine(res):
-                        await res
-                except Exception:
-                    pass
-            if local_path and Path(local_path).exists():
-                try:
+                    filename = Path(resolved_path).name if resolved_path else f"{title}.pdf"
                     chunks = await run.io_bound(
                         tars_archive.reindex_document,
-                        str(local_path),
-                        Path(local_path).name,
-                        str(book_id),
-                        str(title)
+                        resolved_path,
+                        filename,
+                        book_id,
+                        title,
+                        display_author,
+                        category,
+                        False,  # CRITICAL: Defer BM25 rebuild until entire batch finishes!
+                        enable_ocr,
+                        max_ocr_pages,
+                        enable_metadata_fallback,
+                        sub_progress_reporter,
+                        b,  # book_doc for catalog metadata fallback
                     )
+
                     if chunks > 0:
+                        is_fallback = not (resolved_path and Path(resolved_path).exists())
                         update_data = {
                             "chunk_count": chunks,
                             "indexing_status": "indexed",
-                            "indexing_error": None
+                            "indexing_error": None,
+                            "is_indexed": True,
+                            "index_mode": "catalog_metadata_fallback" if is_fallback else "full_text",
                         }
                         if hasattr(mongo_db.books, "update_book"):
                             await mongo_db.books.update_book(book_id, update_data)
                         elif hasattr(mongo_db.books, "update_book_metadata"):
                             await mongo_db.books.update_book_metadata(book_id, update_data)
+
                         reindexed += 1
+                        if is_fallback:
+                            indexed_fallback += 1
+                        else:
+                            indexed_full += 1
                     else:
                         failed += 1
                 except Exception as e:
-                    logger.error(f"Failed to re-index book {book_id}: {e}")
+                    logger.error(f"Failed to re-index book {book_id} ('{title}'): {e}", exc_info=True)
                     failed += 1
-            else:
-                failed += 1
-        return {"reindexed": reindexed, "failed": failed, "total": total}
+
+        finally:
+            # Rebuild global BM25 index ONCE at the end of the batch
+            if reindexed > 0 and tars_archive.enable_hybrid_bm25:
+                if progress_callback:
+                    try:
+                        res = progress_callback(total, total, "Finalizing", "Building global BM25 keyword index (single pass)...")
+                        if asyncio.iscoroutine(res):
+                            await res
+                    except Exception:
+                        pass
+                await run.io_bound(tars_archive.refresh_bm25_index)
+
+        return {
+            "reindexed": reindexed,
+            "indexed_full": indexed_full,
+            "indexed_fallback": indexed_fallback,
+            "failed": failed,
+            "total": total,
+        }
 
 
 

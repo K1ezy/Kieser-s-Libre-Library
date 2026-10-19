@@ -3,11 +3,55 @@ import time
 import uuid
 import asyncio
 import logging
+from datetime import datetime
 from typing import Optional, List, Dict, Any
+
+import bcrypt
+from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from core.database.repositories.base_repository import BaseRepository
 
 logger = logging.getLogger("USER_REPOSITORY")
+
+USER_ID_PATTERN = re.compile(r"^\d{2}-\d{5}$")
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def validate_user_id(id_str: str) -> bool:
+    """
+    Strictly validates that an Institutional ID follows the YY-NNNNN numeric format.
+    Rejects letters, spaces, missing/extra hyphens, and invalid digit counts.
+    """
+    if not isinstance(id_str, str):
+        return False
+    if not USER_ID_PATTERN.fullmatch(id_str):
+        return False
+    # Sequence 00000 is invalid; valid range is 00001 - 99999
+    _, seq_part = id_str.split("-")
+    return 1 <= int(seq_part) <= 99999
+
+
+def is_attempted_institutional_id(identifier: str) -> bool:
+    """
+    Detects whether a sign-in identifier is an attempted Institutional ID rather than
+    an email or standard username.
+    Triggers if:
+    - It does not contain an '@'
+    - It contains a hyphen (e.g., '23-0012A', 'FAC-2024-001', '2024-3903E', '23-00130')
+    - Or it consists solely of digits (e.g., '1234', '696969', '2300001')
+    """
+    if not isinstance(identifier, str):
+        return False
+    cleaned = identifier.strip()
+    if not cleaned:
+        return False
+    if "@" in cleaned:
+        return False
+    if "-" in cleaned or cleaned.isdigit():
+        return True
+    return False
+
 
 class UserRepository(BaseRepository):
     """
@@ -272,11 +316,41 @@ class UserRepository(BaseRepository):
             logger.error(f"System Diagnostics Error: {e}")
             return {}
 
+    async def generate_next_user_id(self, year: Optional[int] = None) -> str:
+        """
+        Atomically increments and returns the next sequential user ID in YY-NNNNN format.
+        Safe under high concurrency via MongoDB find_one_and_update + $inc.
+        """
+        if self.db is None:
+            raise RuntimeError("Database connection is not initialized.")
+        if year is None:
+            year = datetime.now().year
+        year_2digit = f"{year % 100:02d}"
+        counter_id = f"user_seq_{year_2digit}"
+
+        counter_doc = await self.db["counters"].find_one_and_update(
+            {"_id": counter_id},
+            {
+                "$inc": {"seq": 1},
+                "$setOnInsert": {"year": year_2digit},
+            },
+            upsert=True,
+            return_document=ReturnDocument.AFTER,
+        )
+
+        seq_num = counter_doc["seq"]
+        if seq_num > 99999:
+            raise ValueError(
+                f"Maximum registration capacity (99999) reached for year {year_2digit}."
+            )
+
+        return f"{year_2digit}-{seq_num:05d}"
+
     async def create_user(
         self,
-        username: str,
-        email: str,
-        hashed_password: str,
+        username: Optional[str] = None,
+        email: Optional[str] = None,
+        hashed_password: Optional[str] = None,
         role: str = "student",
         institutional_id: Optional[str] = None,
         program: Optional[str] = None,
@@ -287,57 +361,100 @@ class UserRepository(BaseRepository):
         name: Optional[str] = None,
         avatar_url: Optional[str] = None,
         cover_url: Optional[str] = None,
+        password: Optional[str] = None,
+        full_name: Optional[str] = None,
+        registration_year: Optional[int] = None,
         **kwargs
     ) -> Optional[Dict[str, Any]]:
-        """Creates a new user account with normalized credentials and role-specific institutional IDs."""
-        if self.db is None: return None
+        """
+        Creates a new user account with a server-generated YY-NNNNN Institutional ID.
+        Any client-supplied 'institutional_id' or 'student_id' is stripped to prevent manipulation.
+        """
+        if self.db is None:
+            raise RuntimeError("Database connection is not initialized.")
+
+        # 1. Strip client-supplied ID parameters
+        kwargs.pop("institutional_id", None)
+        kwargs.pop("student_id", None)
+        kwargs.pop("employee_id", None)
+
+        clean_username = (username or kwargs.get("username") or "").strip()
+        clean_email = (email or kwargs.get("email") or "").strip().lower()
+        display_name = (name or full_name or kwargs.get("name") or kwargs.get("full_name") or clean_username).strip()
+        prog_val = (program or kwargs.get("course") or kwargs.get("program") or "").strip()
+        year_val = (year_level or kwargs.get("year_level") or "").strip()
+        dept_val = (department or kwargs.get("department") or "").strip()
+        branch_val = (branch or kwargs.get("branch") or "").strip()
+
+        if not clean_username:
+            raise ValueError("Username is required.")
+        if not clean_email:
+            raise ValueError("Email is required.")
+
+        if "-" in clean_username or clean_username.isdigit():
+            raise ValueError(
+                "Usernames cannot contain hyphens or consist solely of numbers (reserved for Institutional IDs)."
+            )
+
+        # 2. Determine and hash password
+        raw_password = password or kwargs.get("password")
+        if raw_password:
+            if len(raw_password) < 6:
+                raise ValueError("Password must be at least 6 characters long.")
+            hp_str = bcrypt.hashpw(raw_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        elif hashed_password:
+            hp_str = hashed_password.decode("utf-8") if isinstance(hashed_password, bytes) else str(hashed_password)
+            if not hp_str.startswith("$2"):
+                hp_str = bcrypt.hashpw(hp_str.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        else:
+            raise ValueError("Password is required.")
+
+        # 3. Collision checks
+        if await self.get_user_by_email(clean_email):
+            raise ValueError("An account with this email already exists.")
+        if await self.get_user_by_identifier(clean_username):
+            raise ValueError("This username is already taken. Please choose another.")
+
+        # 4. Atomically generate server-assigned sequential ID
+        assigned_id = await self.generate_next_user_id(year=registration_year)
+
+        user_id = str(uuid.uuid4())
+        user = {
+            "id": user_id,
+            "username": clean_username,
+            "email": clean_email,
+            "hashed_password": hp_str,
+            "password_hash": hp_str,
+            "role": role,
+            "name": display_name,
+            "full_name": display_name,
+            "institutional_id": assigned_id,
+            "student_id": assigned_id,
+            "employee_id": assigned_id if role in ("faculty", "librarian", "admin") else "",
+            "program": prog_val,
+            "year_level": year_val,
+            "department": dept_val,
+            "branch": branch_val,
+            "admin_code": (admin_code or "").strip(),
+            "avatar_url": (avatar_url or "").strip(),
+            "cover_url": (cover_url or "").strip(),
+            "created_at": time.time(),
+            "last_login": None,
+            "type": "account",
+            **kwargs
+        }
+
         try:
-            clean_username = username.strip()
-            clean_email = email.strip().lower()
-            
-            hp_str = hashed_password.decode('utf-8') if isinstance(hashed_password, bytes) else str(hashed_password)
-            
-            existing_email = await self.get_user_by_email(clean_email)
-            if existing_email:
-                logger.warning(f"Attempted to create duplicate user for email: {clean_email}")
-                return None
-
-            existing_user = await self.get_user_by_identifier(clean_username)
-            if existing_user:
-                logger.warning(f"Attempted to create duplicate user for username: {clean_username}")
-                return None
-
-            clean_inst_id = (institutional_id or kwargs.get('student_id') or kwargs.get('employee_id') or '').strip()
-            user_id = str(uuid.uuid4())
-            if not clean_inst_id:
-                clean_inst_id = f"2024-{user_id[:5].upper()}"
-
-            user = {
-                "id": user_id,
-                "username": clean_username,
-                "email": clean_email,
-                "hashed_password": hp_str,
-                "role": role,
-                "name": (name or clean_username).strip(),
-                "institutional_id": clean_inst_id,
-                "student_id": clean_inst_id,
-                "employee_id": clean_inst_id if role in ("faculty", "librarian", "admin") else "",
-                "program": (program or kwargs.get('course') or '').strip(),
-                "year_level": (year_level or '').strip(),
-                "department": (department or '').strip(),
-                "branch": (branch or '').strip(),
-                "admin_code": (admin_code or '').strip(),
-                "avatar_url": (avatar_url or '').strip(),
-                "cover_url": (cover_url or '').strip(),
-                "created_at": time.time(),
-                "last_login": None,
-                "type": "account"
-            }
-            await self.db['users'].insert_one(user)
+            result = await self.db['users'].insert_one(user)
+            user["_id"] = result.inserted_id
             return self.clean_doc(user)
+        except DuplicateKeyError as exc:
+            raise ValueError(
+                "An account with this email, username, or Institutional ID already exists."
+            ) from exc
         except Exception as e:
             logger.error(f"Create User Error: {e}")
-            return None
+            raise
 
     async def get_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         """Case-insensitive search for a user by email."""
@@ -346,6 +463,8 @@ class UserRepository(BaseRepository):
             clean = email.strip()
             regex = {"$regex": f"^{re.escape(clean)}$", "$options": "i"}
             doc = await self.db['users'].find_one({"email": regex, "type": "account"})
+            if not doc:
+                doc = await self.db['users'].find_one({"email": regex})
             return self.clean_doc(doc)
         except Exception as e:
             logger.error(f"Get User By Email Error: {e}")
@@ -353,57 +472,146 @@ class UserRepository(BaseRepository):
 
     async def get_user_by_identifier(self, identifier: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieves a user by email, username, or institutional ID (student ID, employee ID, staff ID, admin code).
-        Returns the primary user record.
+        Retrieves a user by Institutional ID (strictly validated if in ID format),
+        Email, or Username (preserving login access for legacy accounts via email/username).
         """
-        if self.db is None or not identifier: return None
-        try:
-            clean = identifier.strip()
-            regex = {"$regex": f"^{re.escape(clean)}$", "$options": "i"}
+        if self.db is None or not identifier or not isinstance(identifier, str):
+            return None
+
+        cleaned = identifier.strip()
+        if not cleaned:
+            return None
+
+        # 1. Email lookup
+        if "@" in cleaned:
+            return await self.get_user_by_email(cleaned)
+
+        # 2. Institutional ID lookup (if input matches or attempts an ID format)
+        if is_attempted_institutional_id(cleaned):
+            if not validate_user_id(cleaned):
+                raise ValueError(
+                    "Invalid ID format. Institutional IDs must be in YY-NNNNN format with numbers only."
+                )
             doc = await self.db['users'].find_one({
                 "$or": [
-                    {"email": regex},
-                    {"username": regex},
-                    {"institutional_id": regex},
-                    {"student_id": regex},
-                    {"employee_id": regex},
-                    {"staff_id": regex},
-                    {"admin_id": regex},
-                    {"admin_code": regex}
+                    {"institutional_id": cleaned},
+                    {"student_id": cleaned},
+                    {"employee_id": cleaned},
+                    {"staff_id": cleaned},
+                    {"admin_id": cleaned}
                 ],
                 "type": "account"
             })
+            if not doc:
+                doc = await self.db['users'].find_one({
+                    "$or": [
+                        {"institutional_id": cleaned},
+                        {"student_id": cleaned},
+                        {"employee_id": cleaned},
+                        {"staff_id": cleaned},
+                        {"admin_id": cleaned}
+                    ]
+                })
             return self.clean_doc(doc)
-        except Exception as e:
-            logger.error(f"Get User By Identifier Error: {e}")
-            return None
+
+        # 3. Username lookup (supports both new and legacy accounts)
+        regex = {"$regex": f"^{re.escape(cleaned)}$", "$options": "i"}
+        doc = await self.db['users'].find_one({"username": regex, "type": "account"})
+        if not doc:
+            doc = await self.db['users'].find_one({"username": regex})
+        return self.clean_doc(doc)
 
     async def get_users_by_identifier(self, identifier: str) -> List[Dict[str, Any]]:
         """
-        Retrieves all matching user accounts by email, username, or institutional ID (case-insensitive).
+        Retrieves all matching user accounts by email, username, or institutional ID.
         """
-        if self.db is None or not identifier: return []
-        try:
-            clean = identifier.strip()
-            regex = {"$regex": f"^{re.escape(clean)}$", "$options": "i"}
+        if self.db is None or not identifier or not isinstance(identifier, str):
+            return []
+
+        cleaned = identifier.strip()
+        if not cleaned:
+            return []
+
+        if is_attempted_institutional_id(cleaned):
+            if not validate_user_id(cleaned):
+                raise ValueError(
+                    "Invalid ID format. Institutional IDs must be in YY-NNNNN format with numbers only."
+                )
             cursor = self.db['users'].find({
                 "$or": [
-                    {"email": regex},
-                    {"username": regex},
-                    {"institutional_id": regex},
-                    {"student_id": regex},
-                    {"employee_id": regex},
-                    {"staff_id": regex},
-                    {"admin_id": regex},
-                    {"admin_code": regex}
+                    {"institutional_id": cleaned},
+                    {"student_id": cleaned},
+                    {"employee_id": cleaned},
+                    {"staff_id": cleaned},
+                    {"admin_id": cleaned}
                 ],
                 "type": "account"
             })
             docs = await cursor.to_list(length=10)
+            if not docs:
+                cursor = self.db['users'].find({
+                    "$or": [
+                        {"institutional_id": cleaned},
+                        {"student_id": cleaned},
+                        {"employee_id": cleaned},
+                        {"staff_id": cleaned},
+                        {"admin_id": cleaned}
+                    ]
+                })
+                docs = await cursor.to_list(length=10)
             return self.clean_docs(docs)
-        except Exception as e:
-            logger.error(f"Get Users By Identifier Error: {e}")
-            return []
+
+        if "@" in cleaned:
+            regex = {"$regex": f"^{re.escape(cleaned.lower())}$", "$options": "i"}
+            cursor = self.db['users'].find({"email": regex, "type": "account"})
+            docs = await cursor.to_list(length=10)
+            if not docs:
+                cursor = self.db['users'].find({"email": regex})
+                docs = await cursor.to_list(length=10)
+            return self.clean_docs(docs)
+
+        # Username
+        regex = {"$regex": f"^{re.escape(cleaned)}$", "$options": "i"}
+        cursor = self.db['users'].find({"username": regex, "type": "account"})
+        docs = await cursor.to_list(length=10)
+        if not docs:
+            cursor = self.db['users'].find({"username": regex})
+            docs = await cursor.to_list(length=10)
+        return self.clean_docs(docs)
+
+    async def authenticate_user(self, identifier: str, password: str) -> Dict[str, Any]:
+        """
+        Validates identifier format, looks up the account, and strictly verifies the bcrypt password.
+        Raises ValueError with user-safe messages on validation or authentication failure.
+        """
+        if not identifier or not str(identifier).strip():
+            raise ValueError("Please enter your Institutional ID, Username, or Email.")
+        if not password:
+            raise ValueError("Password is required to sign in.")
+
+        # Will raise ValueError if identifier is a malformed Institutional ID
+        user = await self.get_user_by_identifier(identifier)
+        if not user:
+            raise ValueError("Invalid credentials. Please check your identifier and password.")
+
+        stored_hash = user.get("hashed_password") or user.get("password_hash") or user.get("password")
+        if not stored_hash:
+            raise ValueError("Account authentication configuration is invalid.")
+
+        if isinstance(stored_hash, str):
+            stored_hash_bytes = stored_hash.encode("utf-8")
+        else:
+            stored_hash_bytes = stored_hash
+
+        try:
+            is_valid = bcrypt.checkpw(password.encode("utf-8"), stored_hash_bytes)
+        except Exception:
+            is_valid = False
+
+        if not is_valid:
+            raise ValueError("Invalid credentials. Please check your identifier and password.")
+
+        return user
 
     async def update_user_last_login(self, user_id: str):
         if self.db is None: return

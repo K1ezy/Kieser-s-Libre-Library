@@ -1,4 +1,5 @@
 from nicegui import ui, app
+from datetime import datetime
 from core.database.mongo_manager import mongo_db
 from components.sidebar import sidebar
 from components.header import header, refresh_header_avatar
@@ -30,6 +31,7 @@ class UserProfile:
     def __init__(self):
         self.profile_data: Dict[str, Any] = {}
         self.stats: Dict[str, Any] = {}
+        self.active_loans: list = []
         self.is_editing: bool = False
 
         # Input handles for editing
@@ -43,12 +45,13 @@ class UserProfile:
         self.branch_input = None
 
     async def load_data(self):
-        """Loads profile and stats strictly isolated to the current user."""
+        """Loads profile, stats, and active circulation loans strictly isolated to the current user."""
         user_id = app.storage.user.get('user_id')
-        self.profile_data, self.stats, reading_history = await asyncio.gather(
+        self.profile_data, self.stats, reading_history, self.active_loans = await asyncio.gather(
             mongo_db.get_user_profile(user_id=user_id),
             mongo_db.get_library_stats(user_id=user_id),
-            mongo_db.get_reading_history(user_id=user_id)
+            mongo_db.get_reading_history(user_id=user_id),
+            mongo_db.get_user_active_loans(user_id=user_id) if user_id else asyncio.sleep(0, result=[]),
         )
         if user_id:
             try:
@@ -275,6 +278,116 @@ class UserProfile:
                 # 5. Activity & Subsystem Stats
                 ui.separator().classes('my-6 opacity-60')
                 render_profile_stats(self.stats)
+
+                # 6. Physical Book Circulation Loans
+                ui.separator().classes('my-6 opacity-60')
+                self.render_borrowed_books_section(norm_role)
+
+    def render_borrowed_books_section(self, norm_role: str):
+        is_faculty = norm_role == "FACULTY"
+        quota = 10 if is_faculty else 3
+        loan_term_days = 30 if is_faculty else 7
+        count = len(self.active_loans)
+
+        with ui.column().classes('w-full gap-4'):
+            with ui.row().classes('w-full justify-between items-center flex-wrap gap-2'):
+                with ui.row().classes('items-center gap-2'):
+                    with ui.element('div').classes('p-2 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-100'):
+                        ui.icon('local_library', size='20px')
+                    with ui.column().classes('gap-0'):
+                        ui.label('MY BORROWED BOOKS').classes('text-xs font-black uppercase tracking-wider text-slate-700')
+                        ui.label('Physical Circulation Loans & Return Tracking').classes('text-[11px] text-slate-400')
+                
+                with ui.row().classes('items-center gap-1.5'):
+                    with ui.element('span').classes(
+                        'text-xs font-bold px-3 py-1 rounded-full border '
+                        + ('bg-emerald-50 text-emerald-700 border-emerald-200' if count < quota else 'bg-amber-50 text-amber-700 border-amber-200')
+                    ):
+                        ui.label(f"{count} / {quota} Active Loans ({loan_term_days}-Day Loan Terms)")
+
+            if not self.active_loans:
+                with ui.element('div').classes(
+                    'w-full p-8 rounded-2xl bg-slate-50 border border-dashed border-slate-200 flex flex-col items-center justify-center text-center gap-2'
+                ):
+                    ui.icon('book_online', size='36px').classes('text-slate-300')
+                    ui.label('No Active Physical Book Loans').classes('text-sm font-bold text-slate-700')
+                    ui.label(
+                        f"You have no borrowed physical books. {'As a faculty member, you can borrow up to 10 books for 30 days.' if is_faculty else 'Students can borrow up to 3 books for 7 days.'} Browse the catalog to borrow physical copies."
+                    ).classes('text-xs text-slate-500 max-w-md')
+                    ui.button('Browse Catalog', icon='menu_book', on_click=lambda: ui.navigate.to('/books'))\
+                        .props('flat rounded-xl size=sm color=indigo font-bold').classes('mt-1')
+            else:
+                with ui.element('div').classes('w-full grid grid-cols-1 md:grid-cols-2 gap-4'):
+                    for loan in self.active_loans:
+                        lid = loan.get("id") or loan.get("loan_id")
+                        bid = loan.get("book_id", "")
+                        b_title = loan.get("book_title", "Untitled Book")
+                        b_author = loan.get("book_author", "Unknown Author")
+                        days_rem = loan.get("days_remaining", 0)
+                        is_overdue = loan.get("is_overdue", False)
+                        renewals = loan.get("renewal_count", 0)
+                        max_renewals = 2
+                        can_renew = renewals < max_renewals and not is_overdue
+
+                        borrow_dt = datetime.fromtimestamp(loan.get("borrow_date", 0)).strftime("%b %d, %Y") if loan.get("borrow_date") else "N/A"
+                        due_dt = datetime.fromtimestamp(loan.get("due_date", 0)).strftime("%b %d, %Y") if loan.get("due_date") else "N/A"
+
+                        with ui.card().classes('p-4 rounded-2xl border border-slate-200 bg-white shadow-2xs hover:shadow-md transition-shadow gap-3 flex flex-col justify-between'):
+                            with ui.row().classes('w-full items-start gap-3'):
+                                with ui.element('div').classes('w-12 h-16 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden'):
+                                    if loan.get("book_cover") and not str(loan.get("book_cover")).endswith(('default_cover.svg', 'default_cover.png')):
+                                        ui.image(loan["book_cover"]).classes('w-full h-full object-cover')
+                                    else:
+                                        ui.icon('book', size='24px').classes('text-slate-400')
+
+                                with ui.column().classes('gap-1 flex-1 min-w-0'):
+                                    ui.label(b_title).classes('text-sm font-black text-slate-900 truncate leading-snug cursor-pointer hover:text-indigo-600')\
+                                        .on('click', lambda bid=bid: ui.navigate.to(f"/books/{bid}"))
+                                    ui.label(f"by {b_author}").classes('text-xs text-slate-500 truncate')
+                                    with ui.element('span').classes('text-[10px] font-mono font-bold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded w-fit'):
+                                        ui.label(loan.get("loan_id", "LN-00000"))
+
+                            # Dates & Status Badge
+                            with ui.row().classes('w-full items-center justify-between pt-1 border-t border-slate-100 text-xs'):
+                                with ui.column().classes('gap-0'):
+                                    ui.label(f"Borrowed: {borrow_dt}").classes('text-[11px] text-slate-400')
+                                    ui.label(f"Due: {due_dt}").classes('text-[11px] font-bold text-slate-700')
+
+                                if is_overdue:
+                                    with ui.element('div').classes('px-2.5 py-1 rounded-lg bg-red-50 border border-red-200 text-red-700 font-black text-[11px] flex items-center gap-1'):
+                                        ui.icon('warning', size='14px')
+                                        ui.label(f"OVERDUE ({abs(days_rem)}d late)")
+                                elif days_rem <= 3:
+                                    with ui.element('div').classes('px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 font-black text-[11px] flex items-center gap-1'):
+                                        ui.icon('hourglass_top', size='14px')
+                                        ui.label(f"DUE IN {days_rem} DAYS")
+                                else:
+                                    with ui.element('div').classes('px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 font-black text-[11px] flex items-center gap-1'):
+                                        ui.icon('schedule', size='14px')
+                                        ui.label(f"{days_rem} DAYS LEFT")
+
+                            # Actions Row
+                            with ui.row().classes('w-full items-center justify-between pt-1 border-t border-slate-100'):
+                                ui.label(f"Renewals: {renewals} / {max_renewals}").classes('text-[11px] text-slate-400 font-medium')
+
+                                async def handle_renew(target_id=lid):
+                                    ext_days = 15 if is_faculty else 7
+                                    res = await mongo_db.renew_loan(target_id, extension_days=ext_days)
+                                    if res.get("success"):
+                                        ui.notify(f"Loan extended by {ext_days} days!", type='positive')
+                                        await self.load_data()
+                                    else:
+                                        ui.notify(res.get("error", "Failed to renew loan."), type='negative')
+
+                                if can_renew:
+                                    ui.button(
+                                        f"Renew (+{15 if is_faculty else 7}d)",
+                                        icon='autorenew',
+                                        on_click=lambda tid=lid: handle_renew(tid)
+                                    ).props('outline rounded-xl size=xs color=indigo font-bold')
+                                else:
+                                    ui.button('Max Renewals' if renewals >= max_renewals else 'Overdue', icon='block')\
+                                        .props('flat rounded-xl size=xs color=grey font-bold').disable()
 
     def build_ui(self):
         drawer = sidebar()

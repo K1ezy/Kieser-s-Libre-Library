@@ -10,7 +10,7 @@
 ![Local LLM](https://img.shields.io/badge/Local%20LLM-Qwen%202.5%203B%20%7C%20100%25%20GPU-purple?logo=openai&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Multi--Container%20Compose-2496ED?logo=docker&logoColor=white)
 ![CI Pipeline](https://img.shields.io/badge/CI-GitHub%20Actions%20Matrix-2088FF?logo=githubactions&logoColor=white)
-![Tests](https://img.shields.io/badge/Tests-122%2F122%20Passing-brightgreen?logo=pytest&logoColor=white)
+![Tests](https://img.shields.io/badge/Tests-157%2F157%20Passing-brightgreen?logo=pytest&logoColor=white)
 ![Academic](https://img.shields.io/badge/NEMSU-BSCS--4C%20Capstone-crimson)
 ![Rating](https://img.shields.io/badge/System%20Evaluation-9.8%2F10%20(Outstanding)-gold)
 ![License](https://img.shields.io/badge/License-MIT-blue)
@@ -45,6 +45,7 @@ Engineered to resolve traditional operational bottlenecks of university librarie
 11. **Faculty Curriculum Requisition Portal**: Syllabus-driven textbook acquisition system with real-time budget calculator, visual 5-stage procurement stepper, and institutional FM-LIBS-002 Book Request Form generation.
 12. **Librarian Operations Console & Syndication**: Single-drop ingestion pipeline, queue management, safe status badges, and OPDS 1.2 Atom XML feed syndication.
 13. **Containerized Multi-Platform Orchestration**: Automated multi-container deployment via Docker Compose with MongoDB 7.0 health checks and offline SentenceTransformers model downloading.
+14. **Zero-Crash Resilient RAG & Vector Maintenance Engine**: Module-level `CHROMA_LOCK` (`threading.RLock`) protecting native Rust bindings, memory-safe micro-batch embedding (100 chunks) with explicit `gc.collect()`, smart raster pre-check skipping blank pages in 0ms, adaptive OCR circuit breaker (averaging < 25 words/page over 5 pages) preventing CPU freezes on 1,000+ page graphic novels like *Diary of a Wimpy Kid*, single-pass deferred BM25 rebuilding, auto-healing missing file resolver (`resolve_missing_book_path`), catalog metadata fallback chunking guaranteeing 100% (103/103) book vectorization, and real-time two-level Admin progress telemetry.
 
 ---
 
@@ -354,7 +355,8 @@ Libre-Library/
 ├── core/                            # Core backend logic & services
 │   ├── ai_engine/                   # AI & LLM integration layer
 │   │   ├── llm_engine.py            # Local Qwen-2.5 3B runner, bounded queue & cloud failover
-│   │   └── rag_pipeline.py          # ChromaDB semantic query, O(1) LRU cache & hybrid boost
+│   │   ├── rag_pipeline.py          # Resilient hybrid RAG, CHROMA_LOCK, auto-healing resolver & deferred BM25
+│   │   └── text_extractor.py        # Multi-format document extractor with blank-page skip & adaptive OCR breaker
 │   ├── auth/                        # Authentication & session layer
 │   │   └── jwt_handler.py           # JWT token issuance, verification & role helpers
 │   ├── config.py                    # Pydantic Settings & environment configuration
@@ -367,6 +369,7 @@ Libre-Library/
 │   │       ├── base_repository.py         # Base abstract repository pattern & doc sanitizer
 │   │       ├── book_repository.py         # Catalog metadata, shelves & page counts
 │   │       ├── chat_repository.py         # Conversational history & sessions
+│   │       ├── circulation_repository.py  # Circulation management, loan limits, book checkouts & returns
 │   │       ├── planner_repository.py      # Study tasks, milestones & decks
 │   │       ├── progress_repository.py     # Persistent reading progress & CFI tracking
 │   │       ├── requisition_repository.py  # Faculty book requisitions & FM-LIBS-002 export
@@ -403,24 +406,29 @@ Libre-Library/
 │   │   ├── cropper.min.js           # Offline Cropper.js canvas cropping engine
 │   │   └── keyboard_navigation.js   # Accessible keyboard shortcuts engine
 │   └── pdf-viewer/                  # PDF.js in-browser reader interface
-├── tests/                           # Automated unit test suite (122/122 passing)
+├── tests/                           # Automated unit test suite (157/157 passing)
 │   ├── test_admin.py                # Admin console & ObjectId serialization tests
 │   ├── test_annotations.py          # Interactive highlighting, Socratic notes & study guide tests
+│   ├── test_attendance_system.py    # QR attendance, scan debouncing & FM-LIBS-009 CSV logbook tests
 │   ├── test_audit_remediation.py    # Multi-tenant isolation, cascade deletion & ownership tests
 │   ├── test_auth.py                 # Authentication, JWT, bcrypt & role tests
 │   ├── test_book_details.py         # Book metadata, details & reading lifecycle tests
+│   ├── test_circulation.py          # Circulation management, loan limits & return tests
 │   ├── test_config.py               # Security key generation, paths & CORS origins
 │   ├── test_covers.py               # Typographic cover generation & optimization tests
+│   ├── test_enhanced_rag.py         # Hybrid BM25, RRF score blending & CrossEncoder reranker tests
 │   ├── test_keyboard_accessibility.py # HCI accessibility & navigation shortcut tests
 │   ├── test_profile_media_rbac.py   # Media upload validation, sanitization & RBAC tests
 │   ├── test_rag.py                  # ChromaDB vector indexing & scoped retrieval tests
 │   ├── test_reading_progress.py     # High-throughput progress sync & CFI tests
 │   ├── test_repositories.py         # Domain repository CRUD tests
 │   ├── test_reset_and_bootstrap.py  # Data reset, backup & admin bootstrapping tests
+│   ├── test_resilient_rag_pipeline.py # Smart OCR circuit breaker, blank-page skip, catalog fallback & deferred BM25 tests
 │   ├── test_security.py             # Path traversal guards & input sanitization tests
 │   ├── test_services.py             # Ingestion, summarizer & planner service tests
 │   ├── test_srs_modules.py          # Attendance, requisitions & institutional forms tests
-│   └── test_text_extractor.py       # Multi-format document extraction tests
+│   ├── test_text_extractor.py       # Multi-format document extraction tests
+│   └── test_user_id_auth.py         # Institutional ID validation, auth resilience & legacy account compatibility tests
 ├── tools/                           # Standalone maintenance & administrative CLI tools
 │   ├── bootstrap_admin.py           # Administrator account bootstrap & restore utility
 │   ├── cleanup_bad_data.py          # Cleans corrupt/placeholder metadata records
@@ -429,6 +437,7 @@ Libre-Library/
 │   ├── force_migrate.py             # Force-indexes book files into MongoDB
 │   ├── generate_all_covers.py       # Batch cover generation for catalog
 │   ├── manage_users.py              # User account listing & deletion utility
+│   ├── reindex_catalog.py           # Standalone CLI utility for full-catalog batch re-indexing with BGE embeddings
 │   ├── reset_dev_data.py            # Development data reset & JSON backup utility
 │   └── verify_system.py             # Pre-flight system check & benchmark utility
 ├── ui/                              # User interface views and theme
@@ -539,9 +548,9 @@ python -m unittest discover -s tests -p "test_*.py" -v
 
 **Verification Output:**
 ```plaintext
-Ran 122 tests in 16.031s
+Ran 157 tests in 67.060s
 
-OK (122/122 passing, 0 failures, 0 errors)
+OK (157/157 passing, 0 failures, 0 errors)
 ```
 
 ```powershell

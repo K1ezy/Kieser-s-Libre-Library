@@ -15,6 +15,7 @@ from components.book_details import (
     open_cover_dialog,
     open_edit_metadata_dialog,
     open_delete_dialog,
+    open_borrow_dialog,
     render_reading_card,
     render_specs_grid,
 )
@@ -256,6 +257,8 @@ class BookDetailsPage:
                     with ui.column().classes('w-full gap-2.5 mt-2'):
                         ui.button('Read Now', icon='menu_book', on_click=lambda: ui.navigate.to(f"/read/{self.book_id}"))\
                             .props('unelevated rounded-xl size=lg color=indigo').classes('w-full font-bold shadow-md shadow-indigo-100 py-3 text-sm sm:text-base')
+                        ui.button('Borrow Physical Copy', icon='local_library', on_click=lambda: open_borrow_dialog(self.book_id, self.book))\
+                            .props('unelevated rounded-xl size=md color=emerald-700').classes('w-full font-bold shadow-md shadow-emerald-100 py-2.5 text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-700 text-white')
                         ui.button(f"Download {file_type}", icon='download', on_click=lambda: self.handle_download(title, file_type))\
                             .props('outline rounded-xl size=md color=slate').classes('w-full font-bold bg-white text-slate-700 hover:bg-slate-50 hover:text-indigo-600 border border-slate-200 py-2.5 text-xs sm:text-sm shadow-xs')
 

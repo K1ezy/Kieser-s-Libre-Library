@@ -7,6 +7,7 @@ from core.database.repositories.user_repository import UserRepository
 from core.database.repositories.attendance_repository import AttendanceRepository
 from core.database.repositories.requisition_repository import RequisitionRepository
 from core.database.repositories.annotation_repository import AnnotationRepository
+from core.database.repositories.circulation_repository import CirculationRepository
 
 __all__ = [
     "BaseRepository",
@@ -18,4 +19,5 @@ __all__ = [
     "AttendanceRepository",
     "RequisitionRepository",
     "AnnotationRepository",
+    "CirculationRepository",
 ]

@@ -90,8 +90,8 @@ class TestRBACIdentifierSystem(unittest.IsolatedAsyncioTestCase):
             "username": "student_jane",
             "email": "jane@nemsu.edu.ph",
             "role": "student",
-            "institutional_id": "2024-8841-CS",
-            "student_id": "2024-8841-CS",
+            "institutional_id": "24-08841",
+            "student_id": "24-08841",
             "program": "BSCS",
             "year_level": "3rd Year",
             "avatar_url": "/static/uploads/avatars/u-101_avatar.png",
@@ -100,10 +100,10 @@ class TestRBACIdentifierSystem(unittest.IsolatedAsyncioTestCase):
         mock_collection.find_one = AsyncMock(return_value=mock_user)
 
         # Query by institutional ID
-        result = await repo.get_user_by_identifier("2024-8841-CS")
+        result = await repo.get_user_by_identifier("24-08841")
         self.assertIsNotNone(result)
         self.assertEqual(result["username"], "student_jane")
-        self.assertEqual(result["institutional_id"], "2024-8841-CS")
+        self.assertEqual(result["institutional_id"], "24-08841")
 
         # Verify query had $or clause checking institutional fields
         call_args = mock_collection.find_one.call_args[0][0]

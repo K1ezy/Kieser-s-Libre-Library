@@ -1,6 +1,6 @@
 from .qr_pass import generate_qr_base64, render_digital_pass_card
 from .scanner import PURPOSE_OPTIONS, render_scanner_station, render_live_doorway_feed
-from .log_table import PROGRAM_OPTIONS, render_visitor_logs_table
+from .log_table import PROGRAM_OPTIONS, render_visitor_logs_table, render_dashboard_kpis, render_program_breakdown
 
 __all__ = [
     'generate_qr_base64',
@@ -10,4 +10,6 @@ __all__ = [
     'render_live_doorway_feed',
     'PROGRAM_OPTIONS',
     'render_visitor_logs_table',
+    'render_dashboard_kpis',
+    'render_program_breakdown',
 ]

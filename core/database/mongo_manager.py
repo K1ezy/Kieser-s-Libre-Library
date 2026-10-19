@@ -1,7 +1,11 @@
 import asyncio
 import logging
+import re
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+
+STRICT_ID_REGEX = re.compile(r"^\d{2}-\d{5}$")
 
 from core.config import settings
 from core.database.repositories import (
@@ -13,6 +17,7 @@ from core.database.repositories import (
     AttendanceRepository,
     RequisitionRepository,
     AnnotationRepository,
+    CirculationRepository,
 )
 
 logger = logging.getLogger("TARS_DB")
@@ -48,6 +53,7 @@ class MongoManager:
         self.attendance = AttendanceRepository()
         self.requisitions = RequisitionRepository()
         self.annotations = AnnotationRepository()
+        self.circulation = CirculationRepository()
 
     async def initialize(self):
         """Connects to MongoDB, configures optimized query indexes, and binds repositories."""
@@ -72,6 +78,7 @@ class MongoManager:
             self.attendance.set_db(self.db)
             self.requisitions.set_db(self.db)
             self.annotations.set_db(self.db)
+            self.circulation.set_db(self.db)
 
             # Confirm connection
             await self.client.admin.command('ping')
@@ -100,17 +107,54 @@ class MongoManager:
                 await self.db['reading_progress'].create_index([("user_id", 1), ("book_id", 1)], unique=True)
                 await self.db['reading_progress'].create_index([("user_id", 1), ("last_read_at", -1)])
                 await self.db['system_settings'].create_index("key", unique=True)
-                await self.db['users'].create_index("email", unique=True, sparse=True)
-                await self.db['users'].create_index("username", sparse=True)
-                await self.db['users'].create_index("student_id", sparse=True)
-                await self.db['users'].create_index("id", unique=True, sparse=True)
-                await self.db['users'].create_index("type")
-                await self.db['users'].create_index([("email", 1), ("type", 1)])
-                await self.db['users'].create_index([("id", 1), ("type", 1)])
+
+                # 1. Clean up explicit None/empty string values on legacy user documents so sparse unique indexes succeed
+                await self.db["users"].update_many(
+                    {"institutional_id": {"$in": [None, ""]}},
+                    {"$unset": {"institutional_id": ""}}
+                )
+                await self.db["users"].update_many(
+                    {"student_id": {"$in": [None, ""]}},
+                    {"$unset": {"student_id": ""}}
+                )
+
+                # 2. Drop legacy non-unique indexes if they exist to prevent IndexOptionsConflict
+                try:
+                    existing_indexes = await self.db["users"].index_information()
+                    for idx_name in ("student_id_1", "institutional_id_1", "student_id", "institutional_id", "username_1", "username"):
+                        if idx_name in existing_indexes:
+                            idx_info = existing_indexes[idx_name]
+                            if not idx_info.get("unique", False):
+                                logger.info(f"Dropping legacy non-unique index on users: {idx_name}")
+                                await self.db["users"].drop_index(idx_name)
+                except Exception as drop_err:
+                    logger.warning(f"Index migration check notice: {drop_err}")
+
+                # 3. Enforce unique indexes for user accounts
+                for idx_spec, idx_kwargs in [
+                    ([("email", 1)], {"unique": True, "sparse": True, "name": "email_1"}),
+                    ([("username", 1)], {"unique": True, "sparse": True, "name": "username_1"}),
+                    ([("institutional_id", 1)], {"unique": True, "sparse": True, "name": "institutional_id_1"}),
+                    ([("student_id", 1)], {"unique": True, "sparse": True, "name": "student_id_1"}),
+                    ("id", {"unique": True, "sparse": True}),
+                    ("type", {}),
+                    ([("email", 1), ("type", 1)], {}),
+                    ([("id", 1), ("type", 1)], {}),
+                ]:
+                    try:
+                        await self.db['users'].create_index(idx_spec, **idx_kwargs)
+                    except Exception as u_idx_err:
+                        logger.warning(f"User index notice for {idx_spec}: {u_idx_err}")
+
+                # 4. Counters collection safe annual sequence seeding
+                await self._seed_user_counters()
+
                 await self.db['decks'].create_index("id", unique=True, sparse=True)
                 await self.db['decks'].create_index("task_id")
                 await self.db['attendance_logs'].create_index("id", unique=True, sparse=True)
                 await self.db['attendance_logs'].create_index([("student_id", 1), ("date_str", 1), ("status", 1)])
+                await self.db['attendance_logs'].create_index([("institutional_id", 1), ("date_str", 1), ("status", 1)])
+                await self.db['attendance_logs'].create_index([("date_str", -1), ("program", 1), ("timestamp_in", -1)])
                 await self.db['attendance_logs'].create_index([("date_str", 1), ("timestamp_in", -1)])
                 await self.db['attendance_logs'].create_index([("user_id", 1), ("timestamp_in", -1)])
                 await self.db['attendance_logs'].create_index([("timestamp_in", -1)])
@@ -122,6 +166,12 @@ class MongoManager:
                 await self.db['annotations'].create_index([("user_id", 1), ("book_id", 1), ("created_at", -1)])
                 await self.db['annotations'].create_index([("user_id", 1), ("book_id", 1), ("created_at", 1)])
                 await self.db['user_favorites'].create_index([("user_id", 1), ("book_id", 1)], unique=True)
+                await self.db['book_loans'].create_index("id", unique=True, sparse=True)
+                await self.db['book_loans'].create_index("loan_id", unique=True, sparse=True)
+                await self.db['book_loans'].create_index([("user_id", 1), ("status", 1)])
+                await self.db['book_loans'].create_index([("book_id", 1), ("status", 1)])
+                await self.db['book_loans'].create_index([("due_date", 1)])
+                await self.db['book_loans'].create_index([("borrower_role", 1), ("status", 1)])
                 await self.users.normalize_existing_users()
                 self._covers_task = asyncio.create_task(self._ensure_covers_background())
             except Exception as idx_err:
@@ -424,6 +474,54 @@ class MongoManager:
     async def get_user_preferences(self, user_id: str) -> Dict[str, Any]:
         return await self.users.get_user_preferences(user_id)
 
+    async def generate_next_user_id(self, year: Optional[int] = None) -> str:
+        return await self.users.generate_next_user_id(year=year)
+
+    async def authenticate_user(self, identifier: str, password: str) -> Dict[str, Any]:
+        return await self.users.authenticate_user(identifier, password)
+
+    async def _seed_user_counters(self) -> None:
+        """
+        Scans existing users for valid YY-NNNNN IDs and guarantees the counter for each
+        year is at least equal to the highest existing sequence number (minimum 127 for '23').
+        """
+        if self.db is None:
+            return
+        highest_by_year: Dict[str, int] = {"23": 127}
+
+        try:
+            cursor = self.db["users"].find(
+                {}, {"institutional_id": 1, "student_id": 1}
+            )
+            async for doc in cursor:
+                for field in ("institutional_id", "student_id"):
+                    val = doc.get(field)
+                    if isinstance(val, str) and STRICT_ID_REGEX.match(val):
+                        yy, seq_str = val.split("-")
+                        seq_num = int(seq_str)
+                        if seq_num > highest_by_year.get(yy, 0):
+                            highest_by_year[yy] = seq_num
+
+            # Ensure current calendar year counter document exists (starts at 0 if no accounts yet)
+            current_yy = f"{datetime.now().year % 100:02d}"
+            highest_by_year.setdefault(current_yy, 0)
+
+            for yy, min_seq in highest_by_year.items():
+                counter_id = f"user_seq_{yy}"
+                # Ensure document exists
+                await self.db["counters"].update_one(
+                    {"_id": counter_id},
+                    {"$setOnInsert": {"year": yy, "seq": min_seq}},
+                    upsert=True,
+                )
+                # If the existing counter is lower than min_seq, bump it safely
+                await self.db["counters"].update_one(
+                    {"_id": counter_id, "seq": {"$lt": min_seq}},
+                    {"$set": {"seq": min_seq}},
+                )
+        except Exception as seed_err:
+            logger.warning(f"Error seeding user counters: {seed_err}")
+
     # =========================================================================
     # 🎫 ATTENDANCE DELEGATE METHODS (QR-Code Visitor Tracking)
     # =========================================================================
@@ -476,6 +574,9 @@ class MongoManager:
 
     async def get_purpose_attendance_distribution(self) -> Dict[str, int]:
         return await self.attendance.get_purpose_distribution()
+
+    async def get_attendance_live_metrics(self, date_str: Optional[str] = None) -> Dict[str, Any]:
+        return await self.attendance.get_live_metrics(date_str=date_str)
 
     # =========================================================================
     # 📑 REQUISITION DELEGATE METHODS (Faculty Curriculum Requests)
@@ -580,6 +681,43 @@ class MongoManager:
 
     async def get_favorite_books(self, user_id: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
         return await self.users.get_user_favorites(user_id=user_id, limit=limit)
+
+    # =========================================================================
+    # 📖 PHYSICAL BOOK BORROWING & CIRCULATION DELEGATE METHODS
+    # =========================================================================
+    async def borrow_book(
+        self,
+        user_id: str,
+        book_id: str,
+        custom_days: Optional[int] = None,
+        notes: str = ""
+    ) -> Dict[str, Any]:
+        return await self.circulation.borrow_book(
+            user_id=user_id, book_id=book_id, custom_days=custom_days, notes=notes
+        )
+
+    async def return_book(self, loan_id: str, notes: str = "") -> Dict[str, Any]:
+        return await self.circulation.return_book(loan_id=loan_id, notes=notes)
+
+    async def renew_loan(self, loan_id: str, extension_days: int = 15) -> Dict[str, Any]:
+        return await self.circulation.renew_loan(loan_id=loan_id, extension_days=extension_days)
+
+    async def get_user_active_loans(self, user_id: str) -> List[Dict[str, Any]]:
+        return await self.circulation.get_user_active_loans(user_id=user_id)
+
+    async def get_user_loan_history(self, user_id: str, limit: int = 50) -> List[Dict[str, Any]]:
+        return await self.circulation.get_user_loan_history(user_id=user_id, limit=limit)
+
+    async def get_all_loans(
+        self,
+        status: Optional[str] = None,
+        role: Optional[str] = None,
+        limit: int = 150
+    ) -> List[Dict[str, Any]]:
+        return await self.circulation.get_all_loans(status=status, role=role, limit=limit)
+
+    async def get_circulation_stats(self) -> Dict[str, Any]:
+        return await self.circulation.get_circulation_stats()
 
 # Global Singleton Instance
 mongo_db = MongoManager()
