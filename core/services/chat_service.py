@@ -126,10 +126,12 @@ class ChatService:
         top_k: int = 4,
         max_distance: float = RAG_MAX_DISTANCE,
         history: Optional[List[Dict[str, Any]]] = None,
+        course_code_scope: Optional[str] = None,
     ) -> Tuple[str, List[Dict[str, Any]]]:
         """
         Executes thresholded vector retrieval, dynamic alias resolution across MongoDB and ChromaDB,
         expands adjacent chunks, injects verified catalog synopses, and formats verified [DOCUMENT EVIDENCE].
+        Supports multi-book course syllabus scoping when course_code_scope is set.
         """
         if self.should_skip_rag(query):
             return "", []
@@ -158,6 +160,18 @@ class ChatService:
         candidate_sources: List[str] = []
         verified_synopsis = ""
         effective_title = focus_book_title or "Library Document"
+
+        # Resolve syllabus coursebooks if course_code_scope is active
+        if course_code_scope:
+            try:
+                from core.database.mongo_manager import mongo_db
+                if mongo_db.db is not None and getattr(mongo_db, "syllabus", None) is not None:
+                    syllabus_bids = await mongo_db.syllabus.get_book_ids_for_course(course_code_scope)
+                    for s_bid in syllabus_bids:
+                        if s_bid not in candidate_ids:
+                            candidate_ids.append(s_bid)
+            except Exception as e:
+                logger.debug("Syllabus book lookup notice: %s", e)
 
         if book:
             effective_title = book.get("title") or effective_title
@@ -192,9 +206,10 @@ class ChatService:
             query=normalized_query,
             top_k=top_k,
             filter_source=candidate_sources[0] if candidate_sources else focus_book_title,
-            book_id=candidate_ids[0] if candidate_ids else focus_book_id,
+            book_id=candidate_ids[0] if (candidate_ids and not course_code_scope) else focus_book_id,
             candidate_sources=candidate_sources,
             candidate_book_ids=candidate_ids,
+            course_code_scope=course_code_scope,
             fallback_to_library=False,
             max_distance=max_distance,
         )
@@ -257,13 +272,24 @@ class ChatService:
                 citations.append(
                     {
                         "source": str(source_title),
+                        "title": str(source_title),
                         "page": page_num,
                         "book_id": meta.get("book_id") or (candidate_ids[0] if candidate_ids else focus_book_id),
+                        "format": meta.get("format", "PDF"),
+                        "cfi": meta.get("cfi"),
+                        "text": text_body[:300],
                         "distance": item.get("distance", 0.0),
                     }
                 )
 
         if not evidence_blocks:
+            if course_code_scope:
+                fallback_rag = (
+                    f"[NOTICE: COURSE-SYLLABUS SCOPED SEARCH ({course_code_scope})]\n"
+                    f"No verified passages matching '{query}' were found in the approved textbooks for course {course_code_scope}.\n"
+                    f"Inform the user clearly: 'I couldn't find verified information about that topic in your approved {course_code_scope} course textbooks. Would you like me to search across the entire library catalog?'"
+                )
+                return f"[DOCUMENT EVIDENCE]\n{fallback_rag}\n[/DOCUMENT EVIDENCE]", []
             return "", []
 
         rag_text = (
@@ -356,7 +382,7 @@ class ChatService:
             "CRITICAL ACCURACY & ANTI-HALLUCINATION RULES:",
             "1. DIRECT ANSWER FIRST: Begin immediately with the direct, factual answer and key citations in the first 1-2 sentences. Do NOT include filler pleasantries or meta-preambles (such as 'Based on the provided documents...', 'Sure! I can help with that', or 'According to the text...').",
             "2. STRICT CLASSIFICATION FIDELITY: Meticulously follow category hierarchies in [DOCUMENT EVIDENCE]. Do NOT conflate or swap attributes between categories.",
-            "3. GROUNDING & VERIFIED CITATIONS: ONLY cite pages explicitly present in brackets (e.g. '[Source: title, Page X]'). NEVER invent or assume page numbers or source titles.",
+            "3. GROUNDING & VERIFIED CITATIONS: Cite sources using natural bracketed tags like '[Book: <Title> | Page <N>]', '[Title, p. <N>]', or '[Source <Idx>, Page <N>]'. ONLY cite pages explicitly present in brackets (e.g. '[Source: title, Page X]'). NEVER invent or assume page numbers, source titles, or fictional URL links.",
             "4. HONEST REFUSAL: If the provided documents do not contain the answer, state clearly: 'The library documents do not contain information regarding [topic].' Do not guess or fabricate unstated claims.",
             rule_5,
         ]

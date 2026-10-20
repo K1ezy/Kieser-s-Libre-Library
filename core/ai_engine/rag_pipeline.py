@@ -15,7 +15,6 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import chromadb
 from rank_bm25 import BM25Okapi
-from sentence_transformers import SentenceTransformer
 
 from core.ai_engine.text_extractor import extract_document_structure, extract_text_from_file
 from core.config import (
@@ -269,6 +268,7 @@ class ResilientRAGPipeline:
     @property
     def embedder(self):
         if self._embedder is None:
+            from sentence_transformers import SentenceTransformer
             self._embedder = SentenceTransformer(self.embedding_model_name)
         return self._embedder
 
@@ -347,6 +347,7 @@ class ResilientRAGPipeline:
                     self._bm25_docs = new_bm25_docs
                     self._bm25_index = BM25Okapi(tokenized_corpus)
                     logger.info("BM25 index synchronized with %d chunks.", len(tokenized_corpus))
+                    self._save_bm25_cache_unlocked()
                     return len(self._bm25_docs)
                 else:
                     self._bm25_docs = []
@@ -355,6 +356,70 @@ class ResilientRAGPipeline:
         except Exception as e:
             logger.warning("Notice building BM25 index: %s", e)
             return 0
+
+    def _save_bm25_cache_unlocked(self) -> bool:
+        """Serializes the BM25 in-memory index to disk cache in data/cache/bm25_cache.pkl."""
+        try:
+            import pickle
+            cache_path = os.path.join("data", "cache", "bm25_cache.pkl")
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            data = {"docs": self._bm25_docs, "index": self._bm25_index}
+            with open(cache_path, "wb") as f:
+                pickle.dump(data, f)
+            logger.info("BM25 index serialized to %s.", cache_path)
+            return True
+        except Exception as exc:
+            logger.debug("Notice saving BM25 cache: %s", exc)
+            return False
+
+    def load_bm25_cache_if_available(self) -> bool:
+        """Loads BM25 index from disk cache in under 50ms without querying ChromaDB."""
+        cache_path = os.path.join("data", "cache", "bm25_cache.pkl")
+        if not os.path.isfile(cache_path) or not self.enable_hybrid_bm25:
+            return False
+        try:
+            import pickle
+            with open(cache_path, "rb") as f:
+                data = pickle.load(f)
+            with self._bm25_lock:
+                self._bm25_docs = data.get("docs", [])
+                self._bm25_index = data.get("index")
+            logger.info("BM25 index loaded from disk cache in <50ms (%d chunks).", len(self._bm25_docs))
+            return True
+        except Exception as exc:
+            logger.debug("Notice loading BM25 cache: %s", exc)
+            return False
+
+    def ensure_initialized(self) -> bool:
+        """Verifies or initializes ChromaDB collection and resources cleanly."""
+        with CHROMA_LOCK:
+            if self.client is None:
+                self.client = chromadb.PersistentClient(path=self.persist_directory)
+            if self.collection is None:
+                self.collection = self.client.get_or_create_collection(
+                    name=self.collection_name,
+                    metadata={"hnsw:space": "cosine"},
+                )
+        if self._bm25_index is None and self.enable_hybrid_bm25:
+            self.load_bm25_cache_if_available()
+        return True
+
+    def upsert_batch_threadsafe(
+        self,
+        ids: List[str],
+        documents: List[str],
+        embeddings: List[List[float]],
+        metadatas: List[Dict[str, Any]],
+    ) -> None:
+        """Thread-safe batch upsert into ChromaDB."""
+        with CHROMA_LOCK:
+            if self.collection:
+                self.collection.upsert(
+                    ids=ids,
+                    documents=documents,
+                    embeddings=embeddings,
+                    metadatas=metadatas,
+                )
 
     def index_single_book(
         self,
@@ -763,11 +828,13 @@ class ResilientRAGPipeline:
         book_id: Optional[str] = None,
         candidate_sources: Optional[List[str]] = None,
         candidate_book_ids: Optional[List[str]] = None,
+        course_code_scope: Optional[str] = None,
         fallback_to_library: bool = False,
         max_distance: Optional[float] = RAG_MAX_DISTANCE,
     ) -> List[dict]:
         """
         Queries ChromaDB with metadata scoping, dynamic alias resolution, and strict distance filtering.
+        Supports multi-book course syllabus scoping via native $in operator without premature loop breaks.
         """
         if not query or not query.strip():
             return []
@@ -781,6 +848,7 @@ class ResilientRAGPipeline:
             str(book_id or ""),
             c_srcs,
             c_bids,
+            str(course_code_scope or ""),
             fallback_to_library,
             max_distance,
         )
@@ -810,7 +878,7 @@ class ResilientRAGPipeline:
             all_sources.append(filter_source)
 
         is_scoped = bool(all_book_ids or all_sources)
-        candidate_pool_size = max(top_k * 3, 15) if (self.enable_hybrid_bm25 or ENABLE_RERANKER) else max(top_k, 1)
+        candidate_pool_size = max(top_k * 3, 16) if (self.enable_hybrid_bm25 or ENABLE_RERANKER) else max(top_k, 1)
 
         if not is_scoped:
             try:
@@ -824,47 +892,61 @@ class ResilientRAGPipeline:
             except Exception as exc:
                 logger.error("Unscoped ChromaDB query failed: %s", exc)
         else:
-            # 1. Try Candidate Book IDs first
-            for bid in all_book_ids:
-                try:
-                    with CHROMA_LOCK:
-                        res = self.collection.query(
-                            query_embeddings=query_embedding,
-                            n_results=candidate_pool_size,
-                            where={"book_id": str(bid)},
-                            include=["documents", "metadatas", "distances"],
-                        )
-                    hits = self._filter_results(res, effective_threshold)
-                    if hits:
-                        matched_chunks.extend(hits)
-                        break
-                except Exception as e:
-                    logger.debug("Query by book_id %s notice: %s", bid, e)
+            # 1. Native Multi-Book ChromaDB Filtering ($in operator across all syllabus textbooks)
+            if all_book_ids:
+                clean_bids = [str(bid).strip() for bid in all_book_ids if str(bid).strip()]
+                if clean_bids:
+                    where_clause = {"book_id": clean_bids[0]} if len(clean_bids) == 1 else {"book_id": {"$in": clean_bids}}
+                    try:
+                        with CHROMA_LOCK:
+                            res = self.collection.query(
+                                query_embeddings=query_embedding,
+                                n_results=candidate_pool_size,
+                                where=where_clause,
+                                include=["documents", "metadatas", "distances"],
+                            )
+                        hits = self._filter_results(res, effective_threshold)
+                        if hits:
+                            matched_chunks.extend(hits)
+                    except Exception as e:
+                        logger.debug("ChromaDB multi-book query error (%s), attempting per-book fallback: %s", clean_bids, e)
+                        for bid in clean_bids:
+                            try:
+                                with CHROMA_LOCK:
+                                    res = self.collection.query(
+                                        query_embeddings=query_embedding,
+                                        n_results=candidate_pool_size,
+                                        where={"book_id": str(bid)},
+                                        include=["documents", "metadatas", "distances"],
+                                    )
+                                hits = self._filter_results(res, effective_threshold)
+                                if hits:
+                                    matched_chunks.extend(hits)
+                            except Exception:
+                                pass
 
-            # 2. Try Candidate Sources / Filename Aliases
-            if not matched_chunks:
+            # 2. Try Candidate Sources / Filename Aliases if book_id yielded nothing
+            if not matched_chunks and all_sources:
                 resolved_source = self.resolve_source_name(all_sources)
                 query_sources = [resolved_source] if resolved_source else all_sources
-
-                for src in query_sources:
-                    if not src:
-                        continue
+                clean_srcs = [str(src).strip() for src in query_sources if str(src).strip()]
+                if clean_srcs:
+                    where_src = {"source": clean_srcs[0]} if len(clean_srcs) == 1 else {"source": {"$in": clean_srcs}}
                     try:
                         with CHROMA_LOCK:
                             src_results = self.collection.query(
                                 query_embeddings=query_embedding,
                                 n_results=candidate_pool_size,
-                                where={"source": str(src)},
+                                where=where_src,
                                 include=["documents", "metadatas", "distances"],
                             )
                         hits = self._filter_results(src_results, effective_threshold)
                         if hits:
                             matched_chunks.extend(hits)
-                            break
                     except Exception as exc:
-                        logger.debug("Source query failed for %s: %s", src, exc)
+                        logger.debug("Source query failed for %s: %s", clean_srcs, exc)
 
-            # 3. Optional fallback to entire library only if scoped search yielded nothing
+            # 3. Optional fallback to entire library only if scoped search yielded nothing and allowed
             if not matched_chunks and fallback_to_library:
                 try:
                     with CHROMA_LOCK:
@@ -909,6 +991,8 @@ class ResilientRAGPipeline:
         candidate_sources: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         with self._bm25_lock:
+            if self._bm25_index is None or not self._bm25_docs:
+                self.load_bm25_cache_if_available()
             if self._bm25_index is None or not self._bm25_docs:
                 return []
             index = self._bm25_index
@@ -1425,6 +1509,180 @@ class ResilientRAGPipeline:
         return persisted
 
 
+class ScopedHybridRAGPipeline:
+    """
+    Lightweight, thread-safe scoped Hybrid RAG Pipeline for course-syllabus filtering.
+    Enforces native ChromaDB $in multi-book queries, scoped BM25 token matching,
+    and out-of-scope distance guarding.
+    """
+    def __init__(
+        self,
+        chroma_collection,
+        embedder,
+        bm25_cache=None,
+        reranker=None,
+        rag_max_distance: float = 0.68,
+    ) -> None:
+        self.collection = chroma_collection
+        self.embedder = embedder
+        self.bm25_cache = bm25_cache
+        self.reranker = reranker
+        self.rag_max_distance = rag_max_distance
+
+    def search_with_metadata(
+        self,
+        query: str,
+        candidate_book_ids: Optional[List[str]] = None,
+        course_code_scope: Optional[str] = None,
+        top_k: int = 5,
+        candidate_pool_size: int = 16,
+    ) -> Dict[str, Any]:
+        clean_query = query.strip()
+        query_embedding = self.embedder.encode(
+            [clean_query],
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        ).tolist()
+
+        where_clause: Optional[Dict[str, Any]] = None
+        allowed_bids_set: Optional[set] = None
+
+        if candidate_book_ids:
+            clean_bids = [str(bid).strip() for bid in candidate_book_ids if str(bid).strip()]
+            allowed_bids_set = set(clean_bids)
+            if len(clean_bids) == 1:
+                where_clause = {"book_id": clean_bids[0]}
+            elif len(clean_bids) > 1:
+                where_clause = {"book_id": {"$in": clean_bids}}
+
+        with CHROMA_LOCK:
+            chroma_res = self.collection.query(
+                query_embeddings=query_embedding,
+                n_results=candidate_pool_size,
+                where=where_clause,
+                include=["documents", "metadatas", "distances"],
+            )
+
+        vector_hits: List[Dict[str, Any]] = []
+        best_distance = 999.0
+
+        if chroma_res and chroma_res.get("ids") and chroma_res["ids"][0]:
+            for cid, doc_text, meta, dist in zip(
+                chroma_res["ids"][0],
+                chroma_res["documents"][0],
+                chroma_res["metadatas"][0],
+                chroma_res["distances"][0],
+            ):
+                d_val = float(dist)
+                if d_val < best_distance:
+                    best_distance = d_val
+                if d_val <= self.rag_max_distance:
+                    vector_hits.append(
+                        {
+                            "id": cid,
+                            "text": doc_text,
+                            "metadata": meta or {},
+                            "distance": d_val,
+                        }
+                    )
+
+        bm25_hits: List[Dict[str, Any]] = []
+        if self.bm25_cache is not None:
+            bm25_hits = self._search_bm25_scoped(
+                query=clean_query,
+                allowed_bids=allowed_bids_set,
+                limit=candidate_pool_size,
+            )
+
+        if course_code_scope and not vector_hits and not bm25_hits:
+            return {
+                "chunks": [],
+                "out_of_scope": True,
+                "course_code_scope": course_code_scope,
+                "best_distance": best_distance,
+                "fallback_message": (
+                    f"I couldn't find verified information about that topic in your approved "
+                    f"**{course_code_scope}** course textbooks."
+                ),
+            }
+
+        fused = self._reciprocal_rank_fusion(vector_hits, bm25_hits)[:candidate_pool_size]
+
+        if self.reranker is not None and fused:
+            pairs: List[Tuple[str, str]] = [(clean_query, item["text"]) for item in fused]
+            scores = self.reranker.predict(pairs)
+            for item, sc in zip(fused, scores):
+                item["rerank_score"] = float(sc)
+            fused.sort(key=lambda x: x.get("rerank_score", -999.0), reverse=True)
+
+        return {
+            "chunks": fused[:top_k],
+            "out_of_scope": False,
+            "course_code_scope": course_code_scope,
+            "best_distance": best_distance,
+            "fallback_message": None,
+        }
+
+    def _search_bm25_scoped(
+        self,
+        query: str,
+        allowed_bids: Optional[set],
+        limit: int = 16,
+    ) -> List[Dict[str, Any]]:
+        if not self.bm25_cache or not getattr(self.bm25_cache, "bm25", None):
+            return []
+
+        tokens = re.findall(r"\w+", query.lower())
+        if not tokens:
+            return []
+
+        scores = self.bm25_cache.bm25.get_scores(tokens)
+        docs = getattr(self.bm25_cache, "docs", [])
+
+        candidate_indices = []
+        for idx, sc in enumerate(scores):
+            if sc <= 0.0:
+                continue
+            if allowed_bids is not None:
+                doc_bid = str(docs[idx].get("metadata", {}).get("book_id", ""))
+                if doc_bid not in allowed_bids:
+                    continue
+            candidate_indices.append(idx)
+
+        candidate_indices.sort(key=lambda i: scores[i], reverse=True)
+        return [
+            {
+                "id": docs[i]["id"],
+                "text": docs[i]["text"],
+                "metadata": docs[i]["metadata"],
+                "bm25_score": float(scores[i]),
+            }
+            for i in candidate_indices[:limit]
+        ]
+
+    @staticmethod
+    def _reciprocal_rank_fusion(
+        vector_hits: List[Dict[str, Any]],
+        bm25_hits: List[Dict[str, Any]],
+        k: int = 60,
+    ) -> List[Dict[str, Any]]:
+        scores: Dict[str, float] = {}
+        lookup: Dict[str, Dict[str, Any]] = {}
+
+        for rank, item in enumerate(vector_hits, start=1):
+            cid = item["id"]
+            lookup[cid] = item
+            scores[cid] = scores.get(cid, 0.0) + (1.0 / (k + rank))
+
+        for rank, item in enumerate(bm25_hits, start=1):
+            cid = item["id"]
+            lookup.setdefault(cid, item)
+            scores[cid] = scores.get(cid, 0.0) + (1.0 / (k + rank))
+
+        ranked_ids = sorted(scores.keys(), key=lambda c: scores[c], reverse=True)
+        return [lookup[cid] for cid in ranked_ids]
+
+
 # Backwards compatibility aliases
 TarsArchive = ResilientRAGPipeline
 RAGPipeline = ResilientRAGPipeline
@@ -1440,6 +1698,7 @@ __all__ = [
     "tokenize_for_bm25",
     "build_contextual_chunk",
     "ResilientRAGPipeline",
+    "ScopedHybridRAGPipeline",
     "TarsArchive",
     "RAGPipeline",
     "EnhancedRAGPipeline",

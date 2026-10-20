@@ -9,6 +9,7 @@ from core.external_api.opds_router import opds_router
 from core.ai_engine.llm_engine import tars_engine
 from core.ai_engine.rag_pipeline import tars_archive
 from pathlib import Path
+from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import logging
@@ -122,11 +123,16 @@ async def books_route():
     FloatingChat()
 
 @ui.page('/read/{book_id}')
-async def reader_route(book_id: str):
+async def reader_route(
+    book_id: str,
+    page: Optional[int] = None,
+    cfi: Optional[str] = None,
+    highlight: Optional[str] = None,
+):
     if not check_auth(): return
     app.storage.client['page_path'] = '/read'
     apply_theme()
-    await reader.reader_page(book_id)
+    await reader.reader_page(book_id, page=page, cfi=cfi, highlight=highlight)
 
 @ui.page('/profile')
 async def profile_route():
@@ -234,35 +240,16 @@ async def admin_route():
     FloatingChat()
 
 # --- STARTUP & SHUTDOWN LIFECYCLE ---
-_ai_warmup_task = None
-
-async def _background_ai_warmup():
-    """Non-blocking background worker to prewarm vector embedding and LLM models for zero-lag first response."""
-    try:
-        await asyncio.to_thread(tars_archive.ensure_initialized)
-        await asyncio.to_thread(tars_engine.ensure_loaded)
-        # Background metadata alignment between MongoDB and ChromaDB
-        try:
-            from tools.sync_chroma_metadata import sync_chroma_with_mongo
-            await sync_chroma_with_mongo()
-        except Exception as sync_err:
-            logger.debug("Startup Chroma metadata sync note: %s", sync_err)
-    except Exception:
-        pass
+from app_startup import init_app_startup, shutdown_app
 
 @app.on_startup
 async def startup():
-    global _ai_warmup_task
-    await mongo_db.initialize()
-    await tars_engine.ensure_db_settings_loaded()
-    # Non-blocking background warm-up of ChromaDB and LLM for zero cold-start delay
-    _ai_warmup_task = asyncio.create_task(_background_ai_warmup())
+    await init_app_startup()
 
 @app.on_shutdown
 async def shutdown():
     await shutdown_client()
-    await mongo_db.close()
-    await tars_engine.close()
+    await shutdown_app()
 
 def _ensure_port_available(port: int = 8080):
     """Releases port if occupied by a stale process on Windows to prevent Errno 10048."""

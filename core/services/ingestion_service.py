@@ -12,6 +12,7 @@ from nicegui import run
 from core.database.mongo_manager import mongo_db
 from core.database.models import BookMetadata
 from core.ai_engine.rag_pipeline import tars_archive
+from core.ai_engine.fast_chunker import compute_fast_file_signature
 from core.utils.text_extractor import extract_text_from_file
 from core.config import settings
 
@@ -187,7 +188,9 @@ class IngestionService:
                 indexing_status=indexing_status,
                 indexing_error=indexing_error,
                 file_size=len(content),
-                chunk_count=facts_learned
+                chunk_count=facts_learned,
+                file_signature=compute_fast_file_signature(str(file_path)),
+                is_indexed=(indexing_status == "indexed"),
             )
             metadata = book_model.model_dump()
 
@@ -278,8 +281,13 @@ class IngestionService:
                     except Exception:
                         pass
 
-                # 1. Auto-heal missing or moved path
+                # 1. Auto-heal missing or moved path & Fast Fingerprint Check
                 resolved_path = resolve_missing_book_path(b)
+                sig = compute_fast_file_signature(resolved_path)
+                if not force_all and b.get("is_indexed") is True and b.get("file_signature") == sig and b.get("chunk_count", 0) > 0:
+                    reindexed += 1
+                    continue
+
                 if resolved_path and resolved_path != b.get("local_path"):
                     try:
                         update_path = {"local_path": resolved_path}
@@ -327,6 +335,7 @@ class IngestionService:
                             "indexing_status": "indexed",
                             "indexing_error": None,
                             "is_indexed": True,
+                            "file_signature": sig,
                             "index_mode": "catalog_metadata_fallback" if is_fallback else "full_text",
                         }
                         if hasattr(mongo_db.books, "update_book"):

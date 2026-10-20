@@ -825,3 +825,26 @@ canvas {
         box-shadow: 0 -10px 32px rgba(0, 0, 0, 0.3) !important;
     }
 }
+
+/* --- TARS AI Citation Deep-Link Pulsing Highlight --- */
+.citation-pulse {
+    background-color: rgba(253, 224, 71, 0.45) !important;
+    border-bottom: 2px solid #eab308 !important;
+    border-radius: 3px !important;
+    animation: pulseHighlight 2.4s ease-out !important;
+}
+
+@keyframes pulseHighlight {
+    0% {
+        background-color: rgba(250, 204, 21, 0.95);
+        box-shadow: 0 0 14px rgba(234, 179, 8, 0.85);
+    }
+    50% {
+        background-color: rgba(253, 224, 71, 0.65);
+        box-shadow: 0 0 6px rgba(234, 179, 8, 0.4);
+    }
+    100% {
+        background-color: rgba(253, 224, 71, 0.45);
+        box-shadow: none;
+    }
+}

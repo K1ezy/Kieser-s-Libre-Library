@@ -18,6 +18,8 @@ from core.database.repositories import (
     RequisitionRepository,
     AnnotationRepository,
     CirculationRepository,
+    LibraryOperationsRepository,
+    SyllabusRepository,
 )
 
 logger = logging.getLogger("TARS_DB")
@@ -35,6 +37,7 @@ class MongoManager:
       - attendance: AttendanceRepository (QR check-in/out, entrance logs, foot traffic)
       - requisitions: RequisitionRepository (faculty curriculum book requests, tracking)
       - annotations: AnnotationRepository (highlights, sticky notes, quotes, exports)
+      - syllabus: SyllabusRepository (course codes, curricular alignments, scoped RAG)
     """
 
     def __init__(self):
@@ -54,6 +57,8 @@ class MongoManager:
         self.requisitions = RequisitionRepository()
         self.annotations = AnnotationRepository()
         self.circulation = CirculationRepository()
+        self.operations = LibraryOperationsRepository(None)
+        self.syllabus = SyllabusRepository(None)
 
     async def initialize(self):
         """Connects to MongoDB, configures optimized query indexes, and binds repositories."""
@@ -79,6 +84,9 @@ class MongoManager:
             self.requisitions.set_db(self.db)
             self.annotations.set_db(self.db)
             self.circulation.set_db(self.db)
+            self.operations = LibraryOperationsRepository(self.db)
+            await self.operations.ensure_indexes()
+            self.syllabus.set_db(self.db)
 
             # Confirm connection
             await self.client.admin.command('ping')
@@ -96,6 +104,7 @@ class MongoManager:
                 await self.db['books'].create_index([("display_author", 1), ("added_at", -1)])
                 await self.db['books'].create_index("shelves")
                 await self.db['books'].create_index("subjects")
+                await self.db['books'].create_index("course_codes")
                 await self.db['chats'].create_index("id", unique=True)
                 await self.db['chats'].create_index([("user_id", 1), ("timestamp", -1)])
                 await self.db['chats'].create_index([("timestamp", -1)])

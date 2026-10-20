@@ -27,6 +27,13 @@ class TestAttendanceSystem(unittest.IsolatedAsyncioTestCase):
         self.test_user_ids = []
         self.test_log_ids = []
 
+        await mongo_db.db['users'].delete_many({
+            "$or": [
+                {"username": {"$in": ["mares_cs", "juan_it"]}},
+                {"institutional_id": {"$in": ["23-00128", "26-00001"]}},
+            ]
+        })
+
         # Seed test user 1 (Mares Susette - BSCS)
         self.u1_id = f"test_att_user_{uuid.uuid4().hex[:6]}"
         self.test_user_ids.append(self.u1_id)

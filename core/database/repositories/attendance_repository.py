@@ -141,14 +141,14 @@ class AttendanceRepository(BaseRepository):
         clean_prog = clean_prog or "GENERAL"
 
         try:
-            # 3. Check if user already checked in today and has not checked out yet
+            # 3. Check if user already checked in (today or within last 24h) and has not checked out yet
             active_entry = await self.db['attendance_logs'].find_one({
                 "$or": [
                     {"institutional_id": clean_id},
                     {"student_id": clean_id}
                 ],
-                "date_str": today_str,
-                "status": "Checked In"
+                "status": "Checked In",
+                "timestamp_in": {"$gte": now_ts - (24 * 3600)}
             }, sort=[("timestamp_in", -1)])
 
             # 4. Anti-bounce check on active session (prevent instant accidental check-out)

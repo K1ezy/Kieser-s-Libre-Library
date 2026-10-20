@@ -4,6 +4,8 @@ from .message_bubble import (
     render_user_message,
     render_assistant_message,
     render_welcome_state,
+    linkify_tars_citations,
+    build_deep_link_url,
 )
 from .history_drawer import ChatHistoryDrawer
 from .dialogs import BookPickerDialog, open_upload_dialog, show_architecture_dialog
@@ -15,6 +17,8 @@ __all__ = [
     'render_user_message',
     'render_assistant_message',
     'render_welcome_state',
+    'linkify_tars_citations',
+    'build_deep_link_url',
     'ChatHistoryDrawer',
     'BookPickerDialog',
     'open_upload_dialog',

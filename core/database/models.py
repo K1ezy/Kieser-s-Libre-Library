@@ -57,6 +57,8 @@ class BookMetadata(BaseModel):
     indexing_error: Optional[str] = None
     file_size: int = 0
     chunk_count: int = 0
+    file_signature: Optional[str] = None
+    is_indexed: bool = False
 
     @field_validator("title")
     @classmethod

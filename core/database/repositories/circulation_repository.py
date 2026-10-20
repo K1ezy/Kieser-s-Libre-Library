@@ -5,6 +5,12 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 
 from core.database.repositories.base_repository import BaseRepository
+from core.security.rbac_policy import (
+    CIRCULATION_POLICIES,
+    get_circulation_policy,
+    Permission,
+    require_permission,
+)
 
 logger = logging.getLogger("CIRCULATION_REPOSITORY")
 
@@ -16,17 +22,13 @@ class CirculationRepository(BaseRepository):
     """
 
     ROLE_BORROW_LIMITS = {
-        "faculty": 10,
-        "student": 3,
-        "librarian": 15,
-        "admin": 15,
+        role.value: policy.max_active_loans
+        for role, policy in CIRCULATION_POLICIES.items()
     }
 
     ROLE_LOAN_DAYS = {
-        "faculty": 30,     # Faculty members enjoy extended 30-day curricular loan duration
-        "student": 7,      # Students standard 7-day borrowing period
-        "librarian": 30,
-        "admin": 30,
+        role.value: policy.loan_duration_days
+        for role, policy in CIRCULATION_POLICIES.items()
     }
 
     MAX_RENEWALS = 2

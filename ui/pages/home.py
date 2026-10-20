@@ -182,15 +182,12 @@ async def home_page():
                     for book_prog in active_reading_items:
                         continue_reading_card(book_prog)
             else:
-                with ui.card().classes('w-full p-4 sm:p-5 bg-white border border-slate-200/80 rounded-2xl flex-row items-center justify-between gap-4 flex-wrap shadow-2xs'):
-                    with ui.row().classes('items-center gap-3.5'):
-                        with ui.element('div').classes('p-2.5 rounded-xl bg-indigo-50 text-indigo-600 shrink-0 border border-indigo-100'):
-                            ui.icon('bookmark_border', size='22px')
-                        with ui.column().classes('gap-0'):
-                            ui.label("No active reading sessions in progress").classes('text-xs sm:text-sm font-bold text-slate-800')
-                            ui.label("Choose a book from your library archive to pick up where you left off.").classes('text-xs text-slate-500')
-                    ui.button('Browse Library Archive', icon='library_books', on_click=lambda: ui.navigate.to('/books'))\
-                        .props('unelevated rounded-xl color=indigo size=sm font-bold').classes('shadow-xs')
+                with ui.card().classes('w-full p-4 sm:p-5 bg-white border border-slate-200/80 rounded-2xl flex-row items-center gap-3.5 shadow-2xs'):
+                    with ui.element('div').classes('p-2.5 rounded-xl bg-indigo-50 text-indigo-600 shrink-0 border border-indigo-100'):
+                        ui.icon('bookmark_border', size='22px')
+                    with ui.column().classes('gap-0'):
+                        ui.label("No active reading sessions in progress").classes('text-xs sm:text-sm font-bold text-slate-800')
+                        ui.label("Choose a book from your library archive to pick up where you left off.").classes('text-xs text-slate-500')
 
         # 3. Quick Actions (The 4 Core Pillars)
         ui.label('QUICK ACTIONS').classes('text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 px-1')

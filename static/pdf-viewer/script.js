@@ -17,6 +17,8 @@
     const userId = urlParams.get('user_id') || 'guest';
     const initialPage = Math.max(1, parseInt(urlParams.get('page') || '1', 10));
     const paramTotal = parseInt(urlParams.get('total') || '0', 10);
+    const highlightQuery = (urlParams.get('highlight') || '').trim();
+    let hasScrolledToHighlight = false;
 
     const viewerContainer = document.getElementById('viewer-container');
     const pdfViewer = document.getElementById('pdf-viewer');
@@ -64,6 +66,31 @@
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
         });
+    }
+
+    function applyCitationHighlight(container, query) {
+        if (!query || !query.trim()) return;
+        const normTokens = query.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(t => t.length > 2);
+        if (normTokens.length === 0) return;
+
+        const spans = container.querySelectorAll('span');
+        let firstMatch = null;
+
+        spans.forEach(span => {
+            const spanText = (span.textContent || '').toLowerCase();
+            const matched = normTokens.some(tok => spanText.includes(tok));
+            if (matched) {
+                span.classList.add('citation-pulse');
+                if (!firstMatch) firstMatch = span;
+            }
+        });
+
+        if (firstMatch && !hasScrolledToHighlight) {
+            hasScrolledToHighlight = true;
+            setTimeout(() => {
+                firstMatch.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 350);
+        }
     }
 
     // 3. Progress Synchronization & Telemetry
@@ -283,6 +310,11 @@
                     viewport,
                     textDivs: []
                 }).promise;
+
+                // TARS AI Citation Deep-Link Passage Highlighting
+                if (highlightQuery && (pageNum === initialPage || !initialPage)) {
+                    applyCitationHighlight(textLayer, highlightQuery);
+                }
             }
 
             renderedPages.add(pageNum);

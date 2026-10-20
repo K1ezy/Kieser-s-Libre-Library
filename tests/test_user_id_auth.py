@@ -8,6 +8,7 @@ from core.database.repositories.user_repository import (
     UserRepository,
     validate_user_id,
     is_attempted_institutional_id,
+    format_and_clean_user_id,
 )
 
 
@@ -74,6 +75,35 @@ class TestUserIdValidation(unittest.TestCase):
         for non_att in non_attempted:
             with self.subTest(non_att=non_att):
                 self.assertFalse(is_attempted_institutional_id(non_att), f"Expected {non_att} NOT to be flagged as attempted ID.")
+
+    def test_format_and_clean_user_id(self):
+        # 1. Valid 7-digit inputs (with hyphen or pure 7 digits)
+        self.assertEqual(format_and_clean_user_id("23-00125"), "23-00125")
+        self.assertEqual(format_and_clean_user_id("2300125"), "23-00125")
+        self.assertEqual(format_and_clean_user_id(" 23-00125 "), "23-00125")
+        self.assertEqual(format_and_clean_user_id("26-00001"), "26-00001")
+        self.assertEqual(format_and_clean_user_id("2600001"), "26-00001")
+        self.assertEqual(format_and_clean_user_id("99-99999"), "99-99999")
+
+        # 2. Invalid sequences (e.g. 00000)
+        with self.assertRaises(ValueError) as ctx_zero:
+            format_and_clean_user_id("23-00000")
+        self.assertIn("between 00001 and 99999", str(ctx_zero.exception))
+
+        # 3. Letters or special symbols rejected
+        invalid_chars = ["23-0012A", "230012A", "FAC-2024-001", "2024-3903E", "abc-defgh"]
+        for inv in invalid_chars:
+            with self.subTest(inv=inv):
+                with self.assertRaises(ValueError) as ctx:
+                    format_and_clean_user_id(inv)
+                self.assertIn("numbers only", str(ctx.exception))
+
+        # 4. Incorrect length (must be exactly 7 numbers)
+        invalid_lengths = ["230012", "23000012", "23-001", "23-000001", "", None]
+        for inv_len in invalid_lengths:
+            with self.subTest(inv_len=inv_len):
+                with self.assertRaises(ValueError):
+                    format_and_clean_user_id(inv_len)
 
 
 class TestUserIdAuthIntegration(unittest.IsolatedAsyncioTestCase):
@@ -212,6 +242,45 @@ class TestUserIdAuthIntegration(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError) as ctx_legacy:
             await self.repo.authenticate_user(legacy_inst_id, "LegacySecret123!")
         self.assertIn("Invalid ID format", str(ctx_legacy.exception))
+
+    async def test_registration_with_custom_institutional_id_and_collision(self):
+        """Tests that a student can supply their registered 7-digit ID (e.g. 23-00125) and collisions are rejected."""
+        unique_ts = int(time.time() * 1000)
+        custom_id = "23-00125"
+        pwd = "StudentSecurePass123!"
+
+        # Ensure ID is not already in DB from prior test run
+        await mongo_db.db['users'].delete_many({"institutional_id": custom_id})
+
+        # 1. Register with custom ID
+        user = await self.repo.create_user(
+            full_name="Custom ID Test Student",
+            username=f"student_{unique_ts}",
+            email=f"student_{unique_ts}@libre.edu",
+            password=pwd,
+            role="student",
+            institutional_id=custom_id
+        )
+        self.created_test_user_ids.append(user["id"])
+        self.assertEqual(user["institutional_id"], custom_id)
+        self.assertEqual(user["student_id"], custom_id)
+
+        # 2. Attempting duplicate registration with identical ID is rejected
+        with self.assertRaises(ValueError) as ctx_dup:
+            await self.repo.create_user(
+                full_name="Duplicate Student",
+                username=f"dup_{unique_ts}",
+                email=f"dup_{unique_ts}@libre.edu",
+                password=pwd,
+                role="student",
+                institutional_id=custom_id
+            )
+        self.assertIn(f"Institutional ID '{custom_id}' already exists", str(ctx_dup.exception))
+
+        # 3. Authenticate using the custom Institutional ID
+        auth_user = await self.repo.authenticate_user(custom_id, pwd)
+        self.assertEqual(auth_user["id"], user["id"])
+        self.assertEqual(auth_user["institutional_id"], custom_id)
 
 
 if __name__ == "__main__":

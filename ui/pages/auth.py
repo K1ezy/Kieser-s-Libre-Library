@@ -6,7 +6,8 @@ import logging
 from core.database.mongo_manager import mongo_db
 from core.database.repositories.user_repository import (
     validate_user_id,
-    is_attempted_institutional_id
+    is_attempted_institutional_id,
+    format_and_clean_user_id
 )
 from core.auth.jwt_handler import (
     create_access_token,
@@ -84,15 +85,15 @@ async def login_page():
                         if assigned_id_display:
                             with ui.row().classes('items-center gap-2 py-1 px-3 rounded-xl bg-white border border-emerald-300 w-fit'):
                                 ui.icon('badge', size='18px').classes('text-emerald-700')
-                                ui.label('Your Assigned Institutional ID:').classes('text-xs text-slate-600 font-semibold')
+                                ui.label('Your Registered Institutional ID:').classes('text-xs text-slate-600 font-semibold')
                                 ui.label(assigned_id_display).classes('text-sm font-black text-emerald-700 tracking-wider font-mono')
-                            ui.label('Your official ID has been pre-filled below. Please enter your password to sign in.').classes('text-xs text-emerald-800')
+                            ui.label('Your ID has been pre-filled below. Please enter your password to sign in.').classes('text-xs text-emerald-800')
                         else:
                             role_text = f"Your {registered_role.capitalize()} account" if registered_role else "Your account"
                             ui.label(f'{role_text} has been registered. Please sign in below with your password to continue.').classes('text-xs text-emerald-700 leading-snug')
 
                 # Identifier Field (Institutional ID YY-NNNNN, Username, or Email)
-                identifier = ui.input(placeholder='Institutional ID (e.g., 26-00001), Username, or Email', value=prefill_val) \
+                identifier = ui.input(placeholder='Institutional ID (e.g., 23-00125), Username, or Email', value=prefill_val) \
                     .classes(INPUT_CLASSES) \
                     .props('rounded outlined dense autocomplete="username" autocapitalize="none" spellcheck="false"')
                 with identifier.add_slot('prepend'):
@@ -195,7 +196,20 @@ async def signup_page():
                     .classes(INPUT_CLASSES) \
                     .props('rounded outlined dense autocomplete="name"')
                 with fullname.add_slot('prepend'):
-                    ui.icon('badge').classes('text-indigo-500 opacity-70')
+                    ui.icon('person').classes('text-indigo-500 opacity-70')
+
+                # Institutional ID Input Bar (Only accepts 7 integer numbers: YY-NNNNN)
+                with ui.column().classes('w-full gap-1 mb-3 sm:mb-4'):
+                    institutional_id_input = ui.input(
+                        placeholder='Input registered ID e.g, : (23-00125) *'
+                    ).classes('w-full text-base').props(
+                        'rounded outlined dense mask="##-#####" unmasked-value=false inputmode="numeric" autocomplete="off"'
+                    )
+                    with institutional_id_input.add_slot('prepend'):
+                        ui.icon('badge').classes('text-indigo-500 opacity-70')
+                    with ui.row().classes('w-full items-center justify-between px-2 text-[11px] text-slate-500 leading-tight'):
+                        ui.label('7 integer numbers: 2 digits for year + 5 digits for student number (e.g. 23-00125).')
+                        ui.label('Capacity: Max 5 digits (00001–99999)').classes('font-semibold text-indigo-600')
 
                 # Username Field
                 username = ui.input(placeholder='Username *') \
@@ -248,13 +262,6 @@ async def signup_page():
                     role_inputs.clear()
                     current_role = role_select.value or 'student'
                     with dynamic_container:
-                        # Informative badge replacing manual ID entry
-                        with ui.row().classes('w-full p-3.5 mb-3 rounded-2xl bg-indigo-50/90 border border-indigo-200/80 items-center gap-3 shadow-xs'):
-                            ui.icon('badge', size='24px').classes('text-indigo-600 shrink-0')
-                            with ui.column().classes('gap-0.5 flex-1'):
-                                ui.label('Official Institutional ID Assignment').classes('text-xs font-bold text-indigo-950')
-                                ui.label('An official Institutional ID (YY-NNNNN) will be automatically generated upon registration.').classes('text-[11px] text-indigo-700 leading-snug')
-
                         if current_role == 'student':
                             with ui.row().classes('w-full gap-2 mb-2'):
                                 role_inputs['program'] = ui.select(
@@ -292,6 +299,7 @@ async def signup_page():
 
                 async def try_signup():
                     clean_fullname = (fullname.value or '').strip()
+                    raw_inst_id = (institutional_id_input.value or '').strip()
                     clean_username = (username.value or '').strip()
                     clean_email = (email.value or '').strip().lower()
                     clean_pwd = (pwd.value or '').strip()
@@ -299,8 +307,15 @@ async def signup_page():
                     chosen_role = (role_select.value or 'student').strip().lower()
 
                     # Validations
-                    if not clean_fullname or not clean_username or not clean_email or not clean_pwd or not clean_confirm:
+                    if not clean_fullname or not raw_inst_id or not clean_username or not clean_email or not clean_pwd or not clean_confirm:
                         ui.notify("All core account fields are required (*).", type='warning')
+                        return
+
+                    # Strict Institutional ID validation & formatting
+                    try:
+                        clean_inst_id = format_and_clean_user_id(raw_inst_id)
+                    except ValueError as id_err:
+                        ui.notify(str(id_err), type='warning', duration=5.0)
                         return
 
                     if len(clean_username) < 3:
@@ -344,7 +359,11 @@ async def signup_page():
                         signup_btn.props('loading')
 
                     try:
-                        # Case-insensitive collision checks
+                        # Collision checks
+                        if await mongo_db.get_user_by_identifier(clean_inst_id):
+                            ui.notify(f"An account with Institutional ID '{clean_inst_id}' already exists. Please sign in or verify your ID.", type='negative')
+                            return
+
                         if await mongo_db.get_user_by_email(clean_email):
                             ui.notify("An account with this email already exists.", type='negative')
                             return
@@ -362,6 +381,7 @@ async def signup_page():
                             clean_email,
                             hashed,
                             role=role,
+                            institutional_id=clean_inst_id,
                             name=clean_fullname,
                             program=prog_val,
                             year_level=year_val,
@@ -373,16 +393,16 @@ async def signup_page():
                             ui.notify("Registration failed. Please try again.", type='negative')
                             return
 
-                        assigned_id = created.get('institutional_id') or clean_username
+                        assigned_id = created.get('institutional_id') or clean_inst_id
 
-                        # Safe & Explicit Auth: Prompt user to authenticate with their assigned ID
+                        # Safe & Explicit Auth: Prompt user to authenticate with their registered ID
                         clear_user_session()
                         app.storage.user['prefill_identifier'] = assigned_id
                         app.storage.user['just_registered_id'] = assigned_id
                         app.storage.user['signup_success'] = True
                         app.storage.user['signup_role'] = role
                         ui.notify(
-                            f"Account created successfully! Your official ID is {assigned_id}.",
+                            f"Account created successfully! Your Institutional ID is {assigned_id}.",
                             type='positive',
                             duration=6.0
                         )

@@ -25,6 +25,7 @@ from components.chat import (
     render_user_message,
     render_assistant_message,
     render_welcome_state,
+    linkify_tars_citations,
     ChatHistoryDrawer,
     BookPickerDialog,
     open_upload_dialog,
@@ -58,6 +59,9 @@ class ChatInterface:
         # 2. Scoped Book Focus State
         self.focus_book_id = app.storage.user.get('chat_focus_book_id')
         self.focus_book_title = app.storage.user.get('chat_focus_book_title')
+        self.course_code_scope = app.storage.user.get('chat_course_code_scope')
+        self.course_options = {"": "All Library Catalog"}
+        self.course_select = None
         self.focus_badge_row = None
         self.default_badge_row = None
         self.focus_title_label = None
@@ -168,6 +172,36 @@ class ChatInterface:
         ui.notify(f"Chat focused on: '{self.focus_book_title}'", type='positive')
         if hasattr(self, 'welcome_container') and self.welcome_container:
             self.render_welcome_state()
+
+    async def load_course_scopes(self):
+        try:
+            user_prog = app.storage.user.get('program') or app.storage.user.get('department')
+            courses = await mongo_db.syllabus.get_available_course_scopes(user_prog)
+            opts = {"": "All Library Catalog"}
+            for c in courses:
+                opts[c["course_code"]] = c["display_name"]
+            self.course_options = opts
+            if self.course_select:
+                self.course_select.options = self.course_options
+                if self.course_code_scope and self.course_code_scope in self.course_options:
+                    self.course_select.value = self.course_code_scope
+                else:
+                    self.course_select.value = ""
+                self.course_select.update()
+        except Exception as e:
+            logger.debug("Failed loading course scopes: %s", e)
+
+    def on_course_scope_change(self, e):
+        val = (e.value or "").strip()
+        if val:
+            self.course_code_scope = val
+            app.storage.user['chat_course_code_scope'] = val
+            label = self.course_options.get(val, val)
+            ui.notify(f"Vector search scoped to: {label}", type='positive')
+        else:
+            self.course_code_scope = None
+            app.storage.user.pop('chat_course_code_scope', None)
+            ui.notify("Vector search scoped to entire library catalog.", type='info')
 
     async def open_book_picker(self):
         if not self.cached_books:
@@ -392,6 +426,7 @@ class ChatInterface:
         if self.continue_btn:
             self.continue_btn.disable()
         await self.load_and_refresh_history()
+        await self.load_course_scopes()
 
     def stop_generation(self):
         if self.thinking or self.is_generating:
@@ -413,8 +448,14 @@ class ChatInterface:
         history_context = await mongo_db.get_recent_history(self.session_id, limit=6)
         rag_text = ""
         citations = []
-        if self.focus_book_id:
-            rag_text, citations = await chat_service.perform_rag_search("continue", self.focus_book_id, self.focus_book_title, history=history_context)
+        if self.focus_book_id or self.course_code_scope:
+            rag_text, citations = await chat_service.perform_rag_search(
+                "continue",
+                self.focus_book_id,
+                self.focus_book_title,
+                history=history_context,
+                course_code_scope=self.course_code_scope,
+            )
 
         persona_text = (
             "You are TARS, the Digital Librarian. CONTINUE your response by advancing to the next sections or principles of the document. "
@@ -462,7 +503,8 @@ class ChatInterface:
                 return
 
             try:
-                message_content.content = response_buffer
+                linkified = linkify_tars_citations(response_buffer, citations) if citations else response_buffer
+                message_content.content = linkified
                 self.last_response_text = response_buffer
                 await mongo_db.add_message_to_session(self.session_id, "assistant", response_buffer)
                 if citations and citations_container:
@@ -563,6 +605,7 @@ class ChatInterface:
                 query=text,
                 focus_book_id=self.focus_book_id,
                 focus_book_title=focus_title,
+                course_code_scope=self.course_code_scope,
             )
         else:
             if status:
@@ -638,7 +681,8 @@ class ChatInterface:
 
             try:
                 full_response = response_buffer.strip()
-                message_content.content = full_response
+                linkified = linkify_tars_citations(full_response, citations) if citations else full_response
+                message_content.content = linkified
                 setup_message_actions(full_response, copy_btn, tts_btn)
 
                 # 7. Render verified citation chips only when grounded chunks were used
@@ -748,6 +792,16 @@ class ChatInterface:
                         ui.label('Library Wide').classes('text-xs font-bold text-emerald-700')
                         ui.icon('arrow_drop_down', size='16px').classes('text-emerald-600 -ml-1')
                     self.default_badge_row.set_visibility(not bool(self.focus_book_title))
+
+                    # Course Syllabus Scope Dropdown
+                    self.course_select = ui.select(
+                        self.course_options,
+                        value=self.course_code_scope or "",
+                        on_change=self.on_course_scope_change,
+                    ).props('dense outlined rounded-xl options-dense bg-color=white').classes(
+                        'text-xs min-w-[125px] max-w-[175px] shrink-0'
+                    )
+                    self.course_select.tooltip('Scope RAG vector search to approved course curriculum textbooks')
 
                 with ui.row().classes('items-center gap-1 sm:gap-2 shrink-0'):
                     with ui.row().classes('hidden md:flex items-center gap-1.5'):

@@ -9,6 +9,7 @@ from components.chat.message_bubble import (
     render_assistant_message,
     render_citation_chips,
     render_user_message,
+    linkify_tars_citations,
 )
 
 
@@ -58,9 +59,10 @@ class FloatingChat:
             is_greeting = chat_service.is_greeting_or_identity(text)
             rag_text = ""
             citations = []
+            course_scope = app.storage.user.get('chat_course_code_scope') if hasattr(app, 'storage') else None
             if not skip_rag:
                 rag_text, citations = await chat_service.perform_rag_search(
-                    text, None, None
+                    text, None, None, course_code_scope=course_scope
                 )
 
             history = await mongo_db.get_recent_history(self.session_id, limit=4)
@@ -118,10 +120,11 @@ class FloatingChat:
                     last_render_time = now
 
             final_answer = "".join(chunks).strip()
+            linkified = linkify_tars_citations(final_answer, citations) if citations else final_answer
             if hasattr(bubble_label, 'set_content'):
-                bubble_label.set_content(final_answer)
+                bubble_label.set_content(linkified)
             elif hasattr(bubble_label, 'content'):
-                bubble_label.content = final_answer
+                bubble_label.content = linkified
 
             if citations and final_answer and citations_container:
                 render_citation_chips(citations, citations_container)

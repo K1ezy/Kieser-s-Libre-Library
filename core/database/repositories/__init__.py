@@ -8,6 +8,9 @@ from core.database.repositories.attendance_repository import AttendanceRepositor
 from core.database.repositories.requisition_repository import RequisitionRepository
 from core.database.repositories.annotation_repository import AnnotationRepository
 from core.database.repositories.circulation_repository import CirculationRepository
+from core.database.repositories.operations_repository import LibraryOperationsRepository
+
+from core.database.repositories.syllabus_repository import SyllabusRepository, get_course_syllabus_map
 
 __all__ = [
     "BaseRepository",
@@ -20,4 +23,7 @@ __all__ = [
     "RequisitionRepository",
     "AnnotationRepository",
     "CirculationRepository",
+    "LibraryOperationsRepository",
+    "SyllabusRepository",
+    "get_course_syllabus_map",
 ]

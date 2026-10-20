@@ -32,6 +32,54 @@ def validate_user_id(id_str: str) -> bool:
     return 1 <= int(seq_part) <= 99999
 
 
+def format_and_clean_user_id(raw_id: Any) -> str:
+    """
+    Sanitizes, validates, and standardizes an Institutional ID into 'YY-NNNNN' format.
+    Accepts:
+      - '23-00125' (7 integer numbers separated by a hyphen after the 2-digit year)
+      - '2300125'  (7 pure integer numbers, automatically formatted to '23-00125')
+    Enforces:
+      - Numbers only (no alphabetic characters, spaces, or special symbols).
+      - Exactly 7 integer numbers (2 digits for registration year, 5 digits for student sequence no.).
+      - Student sequence number must be in range 00001 to 99999 (5 digits maximum capacity).
+    Returns formatted ID string (e.g., '23-00125').
+    Raises ValueError with descriptive guidance if invalid.
+    """
+    if raw_id is None:
+        raise ValueError("Input registered ID e.g, : (23-00125).")
+
+    cleaned = str(raw_id).strip()
+    if not cleaned:
+        raise ValueError("Input registered ID e.g, : (23-00125).")
+
+    # Reject letters, spaces, and non-numeric characters (only digits and hyphens allowed)
+    if not re.match(r"^[\d-]+$", cleaned):
+        raise ValueError("Institutional ID must contain numbers only (e.g., 23-00125).")
+
+    # If entered as pure digits without hyphen (e.g. 7 integer numbers '2300125')
+    if cleaned.isdigit():
+        if len(cleaned) != 7:
+            raise ValueError(
+                f"Institutional ID must contain exactly 7 digits (2 for registration year and 5 for student number). Got {len(cleaned)} digits."
+            )
+        cleaned = f"{cleaned[:2]}-{cleaned[2:]}"
+
+    # Verify standard YY-NNNNN pattern (2 digits, hyphen, 5 digits)
+    if not USER_ID_PATTERN.fullmatch(cleaned):
+        raise ValueError(
+            "Institutional ID must follow the (YY-NNNNN) format, for example: 23-00125 (2 digits for year, 5 digits for student number)."
+        )
+
+    year_str, seq_str = cleaned.split("-")
+    seq_num = int(seq_str)
+    if seq_num < 1 or seq_num > 99999:
+        raise ValueError(
+            "The 5-digit student registration number must be between 00001 and 99999 (maximum capacity is 5 digits)."
+        )
+
+    return f"{year_str}-{seq_num:05d}"
+
+
 def is_attempted_institutional_id(identifier: str) -> bool:
     """
     Detects whether a sign-in identifier is an attempted Institutional ID rather than
@@ -367,16 +415,33 @@ class UserRepository(BaseRepository):
         **kwargs
     ) -> Optional[Dict[str, Any]]:
         """
-        Creates a new user account with a server-generated YY-NNNNN Institutional ID.
-        Any client-supplied 'institutional_id' or 'student_id' is stripped to prevent manipulation.
+        Creates a new user account with a validated Institutional ID.
+        If 'institutional_id' is provided, it is sanitized, formatted, and verified for uniqueness.
+        If omitted, the next sequential ID in the YY-NNNNN series is generated automatically.
         """
         if self.db is None:
             raise RuntimeError("Database connection is not initialized.")
 
-        # 1. Strip client-supplied ID parameters
-        kwargs.pop("institutional_id", None)
-        kwargs.pop("student_id", None)
+        # 1. Process Institutional ID
+        raw_inst_id = institutional_id or kwargs.pop("institutional_id", None) or kwargs.pop("student_id", None)
         kwargs.pop("employee_id", None)
+
+        if raw_inst_id:
+            assigned_id = format_and_clean_user_id(raw_inst_id)
+            if await self.get_user_by_identifier(assigned_id):
+                raise ValueError(f"An account with Institutional ID '{assigned_id}' already exists.")
+            # Synchronize sequence counter with provided ID
+            try:
+                y_str, s_str = assigned_id.split("-")
+                await self.db['counters'].update_one(
+                    {"_id": f"user_seq_{y_str}"},
+                    {"$max": {"seq": int(s_str), "year": y_str}},
+                    upsert=True
+                )
+            except Exception as counter_err:
+                logger.debug(f"Counter update skipped: {counter_err}")
+        else:
+            assigned_id = await self.generate_next_user_id(year=registration_year)
 
         clean_username = (username or kwargs.get("username") or "").strip()
         clean_email = (email or kwargs.get("email") or "").strip().lower()
@@ -414,9 +479,6 @@ class UserRepository(BaseRepository):
             raise ValueError("An account with this email already exists.")
         if await self.get_user_by_identifier(clean_username):
             raise ValueError("This username is already taken. Please choose another.")
-
-        # 4. Atomically generate server-assigned sequential ID
-        assigned_id = await self.generate_next_user_id(year=registration_year)
 
         user_id = str(uuid.uuid4())
         user = {

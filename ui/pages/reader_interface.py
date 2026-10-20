@@ -23,7 +23,9 @@ class BookReader:
         theme: str = "light",
         font_size: int = 16,
         font_family: str = "sans",
-        line_height: float = 1.65
+        line_height: float = 1.65,
+        highlight: Optional[str] = None,
+        is_deep_linked: bool = False,
     ):
         self.book_id = str(book_id).strip()
         self.current_page = max(1, current_page)
@@ -35,6 +37,8 @@ class BookReader:
         self.font_size = max(12, min(32, int(font_size)))
         self.font_family = font_family
         self.line_height = line_height
+        self.highlight = (highlight or "").strip() or None
+        self.is_deep_linked = is_deep_linked
         self.books_root = (settings.BASE_DIR / 'data' / 'books').resolve()
         self.book_path = None
         self.file_url = None
@@ -360,6 +364,16 @@ class BookReader:
                     ui.button(icon='fullscreen', on_click=lambda: ui.run_javascript('if(document.fullscreenElement){document.exitFullscreen()}else{document.documentElement.requestFullscreen()}')) \
                         .props('flat round dense color=grey-7 size=sm sm:size=md').tooltip('Toggle Fullscreen')
 
+        if self.is_deep_linked:
+            with ui.row().classes('w-full items-center justify-between bg-sky-950 text-sky-100 px-3 sm:px-4 py-1.5 border-b border-sky-800 text-xs shrink-0 z-40 gap-2 shadow-sm'):
+                with ui.row().classes('items-center gap-1.5 min-w-0'):
+                    ui.icon('auto_stories', size='15px').classes('text-sky-300 shrink-0')
+                    loc_desc = f"Page {self.current_page}" if self.current_page else ("EPUB Section" if self.saved_cfi else "Cited Passage")
+                    ui.label(f"📖 Opened via TARS AI Citation — Jumped directly to {loc_desc}").classes('font-semibold text-sky-200 truncate')
+                if self.highlight:
+                    quote_snip = f'"{self.highlight[:35]}..."' if len(self.highlight) > 35 else f'"{self.highlight}"'
+                    ui.badge(f"Key quote: {quote_snip}", color="amber").classes('text-[10px] hidden sm:inline-flex')
+
         with ui.column().props('id=reader-content-container').classes('w-full h-[calc(100dvh-3.5rem)] pt-[env(safe-area-inset-top,0px)] pb-[env(safe-area-inset-bottom,0px)] p-0 m-0 items-center justify-center overflow-hidden transition-colors').style(f'background-color: {container_bg}'):
             if not found:
                 with ui.card().classes('items-center text-center p-6 sm:p-8 bg-white shadow-xl rounded-2xl sm:rounded-3xl border-l-4 border-rose-500 w-[calc(100vw-2rem)] max-w-md mx-4'):
@@ -369,10 +383,11 @@ class BookReader:
                     ui.button('Back to Collection', on_click=lambda: ui.navigate.to('/books')).props('unelevated rounded color=indigo size=sm font-bold').classes('mt-4')
 
             elif self.file_type == 'pdf':
+                encoded_highlight = f"&highlight={urllib.parse.quote(self.highlight)}" if self.highlight else ""
                 viewer_path = (
-                    f"/static/pdf-viewer/index.html?v=2.0.2&file={self.file_url}"
+                    f"/static/pdf-viewer/index.html?v=2.0.3&file={self.file_url}"
                     f"&book_id={self.book_id}&user_id={self.user_id}"
-                    f"&page={self.current_page}&total={self.total_pages}"
+                    f"&page={self.current_page}&total={self.total_pages}{encoded_highlight}"
                 )
                 self.pdf_iframe = ui.element('iframe').props(
                     f'id="reader-pdf-frame" src="{viewer_path}" frameborder="0"'
@@ -449,7 +464,12 @@ class BookReader:
                     ui.notify(f"Error reading text: {e}", type='negative')
 
 
-async def reader_page(book_id: str):
+async def reader_page(
+    book_id: str,
+    page: Optional[int] = None,
+    cfi: Optional[str] = None,
+    highlight: Optional[str] = None,
+):
     app.storage.client['page_path'] = '/read'
     from core.database.mongo_manager import mongo_db
 
@@ -491,6 +511,16 @@ async def reader_page(book_id: str):
             if existing_prog.get('line_height'):
                 pref_line_height = existing_prog['line_height']
 
+    is_deep_linked = False
+    if page is not None and int(page) >= 1:
+        cur_p = int(page)
+        is_deep_linked = True
+    if cfi:
+        saved_cfi = str(cfi)
+        is_deep_linked = True
+    if highlight:
+        is_deep_linked = True
+
     cur_p = max(1, min(cur_p, total_pages))
 
     reader = BookReader(
@@ -503,10 +533,12 @@ async def reader_page(book_id: str):
         theme=pref_theme,
         font_size=pref_font_size,
         font_family=pref_font_family,
-        line_height=pref_line_height
+        line_height=pref_line_height,
+        highlight=highlight,
+        is_deep_linked=is_deep_linked,
     )
     await reader.build_ui()
 
-    # Only initialize a brand-new reading entry if the user has no prior history with this book
-    if not existing_prog:
+    # Only initialize persistent reading entry if not arriving via a citation link
+    if not existing_prog and not is_deep_linked:
         await reader.save_progress(cur_p)
