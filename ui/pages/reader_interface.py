@@ -4,7 +4,7 @@ from pathlib import Path
 import urllib.parse
 import re
 import logging
-from typing import Optional
+from typing import Optional, Dict, Any, List
 
 from core.config import settings
 from core.utils.security_utils import is_valid_book_id
@@ -26,8 +26,10 @@ class BookReader:
         line_height: float = 1.65,
         highlight: Optional[str] = None,
         is_deep_linked: bool = False,
+        book_doc: Optional[Dict[str, Any]] = None,
     ):
         self.book_id = str(book_id).strip()
+        self.book_doc = book_doc
         self.current_page = max(1, current_page)
         self.total_pages = max(1, total_pages)
         self.user_id = user_id
@@ -64,10 +66,84 @@ class BookReader:
             self.error_msg = "Unauthorized document directory access."
             return False
 
-        self.book_path = candidate_path
-        if not self.book_path.exists():
-            self.error_msg = f"Book folder not found on disk: {self.book_id}"
-            return False
+        if candidate_path.exists() and candidate_path.is_dir():
+            self.book_path = candidate_path
+        else:
+            # Multi-tier auto-resolution via book_doc (resolves MongoDB _id, UUID, or aliases)
+            resolved_folder = None
+            if self.book_doc:
+                # 1. Check canonical ID aliases (id, book_id, folder_name)
+                candidate_ids = [
+                    self.book_doc.get("id"),
+                    self.book_doc.get("book_id"),
+                    self.book_doc.get("folder_name"),
+                ]
+                for cid in candidate_ids:
+                    if cid and is_valid_book_id(str(cid)):
+                        p = (self.books_root / str(cid)).resolve()
+                        if p.exists() and p.is_dir() and p.is_relative_to(self.books_root) and p != self.books_root:
+                            resolved_folder = p
+                            self.book_id = str(cid)
+                            break
+
+                # 2. Check local_path or formats in book_doc
+                if not resolved_folder:
+                    raw_path = self.book_doc.get("local_path") or self.book_doc.get("file_path")
+                    if raw_path and isinstance(raw_path, str):
+                        norm = raw_path.replace("\\", "/")
+                        if "data/books/" in norm:
+                            sub = norm.split("data/books/", 1)[1]
+                            candidate_file = (self.books_root / sub).resolve()
+                            if candidate_file.is_file() and candidate_file.is_relative_to(self.books_root):
+                                resolved_folder = candidate_file.parent
+                                self.book_id = resolved_folder.name
+                        if not resolved_folder:
+                            rp = Path(raw_path)
+                            if rp.is_file():
+                                parent = rp.parent.resolve()
+                                if parent.is_relative_to(self.books_root) and parent != self.books_root:
+                                    resolved_folder = parent
+                                    self.book_id = parent.name
+
+                # 3. Check formats in book_doc
+                if not resolved_folder:
+                    formats = self.book_doc.get("formats") or {}
+                    for fmt_url in formats.values():
+                        if isinstance(fmt_url, str) and "/static_books/" in fmt_url:
+                            sub = fmt_url.split("/static_books/", 1)[1]
+                            candidate_file = (self.books_root / sub).resolve()
+                            if candidate_file.is_file() and candidate_file.is_relative_to(self.books_root):
+                                resolved_folder = candidate_file.parent
+                                self.book_id = resolved_folder.name
+                                break
+                            # Also check if the folder part under /static_books/ exists
+                            folder_part = sub.split("/")[0] if "/" in sub else sub
+                            if folder_part and is_valid_book_id(folder_part):
+                                candidate_dir = (self.books_root / folder_part).resolve()
+                                if candidate_dir.is_dir() and candidate_dir.is_relative_to(self.books_root) and candidate_dir != self.books_root:
+                                    resolved_folder = candidate_dir
+                                    self.book_id = folder_part
+                                    break
+
+                # 4. Check title slug
+                if not resolved_folder and self.book_doc.get("title"):
+                    from core.ai_engine.rag_pipeline import _slugify
+                    t_slug = _slugify(self.book_doc.get("title", ""))
+                    if t_slug and len(t_slug) >= 4:
+                        for folder in self.books_root.iterdir():
+                            if folder.is_dir():
+                                f_slug = _slugify(folder.name)
+                                if t_slug in f_slug or f_slug in t_slug:
+                                    resolved_folder = folder
+                                    self.book_id = folder.name
+                                    break
+
+            if resolved_folder and resolved_folder.exists() and resolved_folder.is_dir():
+                self.book_path = resolved_folder
+            else:
+                self.book_path = candidate_path
+                self.error_msg = f"Book folder not found on disk: {self.book_id}"
+                return False
 
         files = sorted([f for f in self.book_path.iterdir() if f.is_file()])
 
@@ -254,6 +330,12 @@ class BookReader:
         ''')
 
     async def build_ui(self):
+        if not self.book_doc:
+            try:
+                from core.database.mongo_manager import mongo_db
+                self.book_doc = await mongo_db.get_book_details(self.book_id)
+            except Exception:
+                pass
         found = self.find_content_file()
         card_cls, container_bg = self.get_prose_theme_classes()
 
@@ -306,12 +388,19 @@ class BookReader:
                     }
                 }
             });
+            // Mobile Tap-to-toggle HUD on parent window
+            window.toggleReaderHUD = function() {
+                const h = document.getElementById('reader-top-header');
+                if (h) {
+                    h.classList.toggle('-translate-y-full');
+                }
+            };
         })();
         </script>
         ''')
 
-        # Fluid Non-Overlapping Header with Live HUD
-        with ui.header().classes('bg-white/95 backdrop-blur-md border-b border-slate-200 text-slate-800 h-14 pt-[env(safe-area-inset-top,0px)] items-center px-2.5 sm:px-4 z-50 shadow-sm'):
+        # Fluid Non-Overlapping Header with Live HUD & Mobile Tap-to-Toggle
+        with ui.header().classes('bg-white/95 backdrop-blur-md border-b border-slate-200 text-slate-800 h-14 pt-[env(safe-area-inset-top,0px)] items-center px-2.5 sm:px-4 z-50 shadow-sm transition-transform duration-200').props('id=reader-top-header'):
             with ui.row().classes('w-full items-center justify-between flex-nowrap gap-1.5 sm:gap-2'):
                 # Left: Back button & Title
                 with ui.row().classes('items-center gap-1.5 flex-1 min-w-0'):
@@ -477,7 +566,8 @@ async def reader_page(
     from core.auth.jwt_handler import get_current_user_role
     user_role = get_current_user_role()
     book_doc = await mongo_db.get_book_details(book_id)
-    total_pages = await mongo_db.get_or_resolve_page_count(book_id, book_doc)
+    canonical_id = (book_doc.get('id') or book_doc.get('book_id') if book_doc else None) or book_id
+    total_pages = await mongo_db.get_or_resolve_page_count(canonical_id, book_doc)
     total_pages = max(1, total_pages)
 
     cur_p = 1
@@ -496,7 +586,9 @@ async def reader_page(
             pref_font_family = user_prefs.get('font_family', pref_font_family)
             pref_line_height = user_prefs.get('line_height', pref_line_height)
 
-        existing_prog = await mongo_db.progress.get_reading_progress(user_id, book_id)
+        existing_prog = await mongo_db.progress.get_reading_progress(user_id, canonical_id)
+        if not existing_prog and canonical_id != book_id:
+            existing_prog = await mongo_db.progress.get_reading_progress(user_id, book_id)
         if existing_prog:
             if existing_prog.get('current_page'):
                 cur_p = int(existing_prog['current_page'])
@@ -524,7 +616,7 @@ async def reader_page(
     cur_p = max(1, min(cur_p, total_pages))
 
     reader = BookReader(
-        book_id=book_id,
+        book_id=canonical_id,
         current_page=cur_p,
         total_pages=total_pages,
         user_id=user_id,
@@ -536,6 +628,7 @@ async def reader_page(
         line_height=pref_line_height,
         highlight=highlight,
         is_deep_linked=is_deep_linked,
+        book_doc=book_doc,
     )
     await reader.build_ui()
 

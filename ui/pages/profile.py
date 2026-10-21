@@ -87,6 +87,7 @@ class UserProfile:
         year_val = self.year_input.value if self.year_input else self.profile_data.get('year_level')
         dept_val = self.dept_input.value if self.dept_input else self.profile_data.get('department')
         branch_val = self.branch_input.value if self.branch_input else self.profile_data.get('branch')
+        address_val = self.address_input.value if hasattr(self, 'address_input') and self.address_input else self.profile_data.get('address')
 
         await mongo_db.update_user_profile(
             user_id=user_id,
@@ -98,7 +99,8 @@ class UserProfile:
             program=prog_val,
             year_level=year_val,
             department=dept_val,
-            branch=branch_val
+            branch=branch_val,
+            address=address_val
         )
         self.is_editing = False
         ui.notify('Profile & Institutional Credentials updated successfully!', type='positive')
@@ -153,6 +155,7 @@ class UserProfile:
         dept = self.profile_data.get('department') or 'College of Computing'
         branch = self.profile_data.get('branch') or 'Main Library Archive'
         admin_code = self.profile_data.get('admin_code') or inst_id
+        address = self.profile_data.get('address') or self.profile_data.get('branch') or 'NEMSU Tandag Campus'
         avatar_url = self.profile_data.get('avatar_url')
         cover_url = self.profile_data.get('cover_url')
         initials = get_user_initials(user_name, username)
@@ -222,6 +225,9 @@ class UserProfile:
                                         ui.label("System Governance").classes('text-xs font-black text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-0.5 rounded-lg')
 
                                     ui.label(self.profile_data.get('headline', 'Academic Scholar & Researcher')).classes('text-xs text-slate-500 font-medium')
+                                    with ui.row().classes('items-center gap-1 text-xs text-slate-500'):
+                                        ui.icon('home', size='14px').classes('text-emerald-600')
+                                        ui.label(address).classes('font-medium')
                             else:
                                 self.name_input = ui.input(value=user_name, label='Full Legal Name').props('outlined dense rounded bg-color=white').classes('w-full text-sm')
                                 with ui.row().classes('w-full gap-2.5 flex-wrap sm:flex-nowrap'):
@@ -235,6 +241,11 @@ class UserProfile:
                                         self.branch_input = ui.input(value=branch, label='Library Branch / Section').props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
                                     elif norm_role == 'ADMIN':
                                         self.branch_input = ui.input(value=admin_code, label='Admin Verification Code').props('outlined dense rounded bg-color=white').classes('flex-1 text-sm')
+
+                                self.address_input = ui.input(
+                                    value=address,
+                                    label='Residential / Campus Address'
+                                ).props('outlined dense rounded bg-color=white').classes('w-full text-sm')
 
                                 self.headline_input = ui.input(
                                     value=self.profile_data.get('headline', 'Academic Scholar & Researcher'),
@@ -265,6 +276,7 @@ class UserProfile:
                         admin_code=admin_code,
                         avatar_url=avatar_url,
                         initials=initials,
+                        address=address,
                     )
 
                 # 4. Biography Section
@@ -393,7 +405,7 @@ class UserProfile:
         drawer = sidebar()
         header(drawer_reference=drawer)
         with ui.column().classes(
-            'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] md:pt-24 px-3 sm:px-6 md:px-8 max-w-5xl mx-auto pb-16'
+            'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] md:pt-24 px-3 sm:px-6 md:px-8 max-w-5xl mx-auto pb-16 safe-pb-mobile-nav'
         ):
             self.render_content()
 

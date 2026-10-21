@@ -54,7 +54,7 @@ async def analytics_page():
 
     with ui.column().classes(
         'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1700px] mx-auto pb-16'
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1700px] mx-auto pb-16 safe-pb-mobile-nav'
     ):
         # Header Banner with Reporting Period Selector
         with ui.row().classes('w-full items-center justify-between gap-4 mb-6 flex-wrap'):

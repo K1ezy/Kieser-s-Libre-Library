@@ -352,7 +352,7 @@ class IngestionHub:
             </style>
         ''')
 
-        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-16'):
+        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-4 md:pt-24 md:px-8 max-w-7xl mx-auto pb-16 safe-pb-mobile-nav'):
             
             # Page Title
             with ui.row().classes('w-full justify-between items-end mb-6 sm:mb-8'):

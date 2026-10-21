@@ -12,6 +12,8 @@ from core.auth.jwt_handler import get_current_user_role
 from core.config import settings
 from core.database.mongo_manager import mongo_db
 from core.services.ingestion_service import ingestion_service
+from components.attendance.scanner import render_live_doorway_feed
+from core.events import attendance_event_bus
 
 logger = logging.getLogger("ADMIN_UI")
 
@@ -79,7 +81,7 @@ async def admin_dashboard():
 
     with ui.column().classes(
         'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16'
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16 safe-pb-mobile-nav'
     ):
         # Page Title Banner
         with ui.row().classes('w-full items-start justify-between gap-4 mb-6 sm:mb-8 flex-wrap'):
@@ -338,6 +340,46 @@ async def admin_dashboard():
                         icon='build_circle',
                         on_click=run_reset_repair
                     ).props('flat rounded-xl color=rose size=sm font-bold').tooltip('Safely recreates the ChromaDB collection if legacy HNSW binary segment files are corrupted.')
+
+        # Live Doorway Stream (Security & Campus Entrance Monitoring - Admin Exclusive)
+        with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm mb-6'):
+            with ui.row().classes('w-full items-center justify-between mb-4 flex-wrap gap-2'):
+                with ui.row().classes('items-center gap-3'):
+                    with ui.element('div').classes('p-2.5 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 shadow-sm'):
+                        ui.icon('sensor_door', size='22px')
+                    with ui.column().classes('gap-0'):
+                        with ui.row().classes('items-center gap-2'):
+                            ui.label('Live Doorway Entrance Stream').classes('text-base font-black text-slate-900 tracking-tight')
+                            ui.element('span').classes('text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200') \
+                                .text = 'Admin Security Exclusive'
+                        ui.label('Real-time contactless QR check-in & departure surveillance for campus library security.').classes('text-xs text-slate-500')
+                with ui.row().classes('items-center gap-2'):
+                    ui.element('div').classes('w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse')
+                    ui.label('LIVE STREAM').classes('text-xs font-black text-emerald-600 uppercase tracking-wider')
+                    ui.button('Open Gate Terminal', icon='open_in_new', on_click=lambda: ui.navigate.to('/attendance')) \
+                        .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-xs')
+
+            admin_feed_container = ui.column().classes('w-full gap-2.5 max-h-[380px] overflow-y-auto')
+
+            async def refresh_admin_doorway_stream():
+                recent_logs = await mongo_db.get_today_attendance_logs(limit=15)
+                render_live_doorway_feed(admin_feed_container, recent_logs)
+
+            await refresh_admin_doorway_stream()
+
+            async def on_admin_doorway_update(event_payload):
+                try:
+                    await refresh_admin_doorway_stream()
+                except Exception:
+                    pass
+
+            unsub_admin_doorway = attendance_event_bus.subscribe("*", on_admin_doorway_update)
+            try:
+                from nicegui import context
+                if context.client:
+                    context.client.on_disconnect(unsub_admin_doorway)
+            except Exception:
+                pass
 
         # Registered Accounts Management Table (Role-Based Access Control)
         with ui.card().classes('w-full p-4 sm:p-6 rounded-2xl sm:rounded-3xl bg-white border border-slate-200 shadow-sm'):

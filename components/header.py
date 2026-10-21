@@ -54,7 +54,7 @@ def header(drawer_reference=None):
                 e.sender.value = ""
 
     def open_mobile_search():
-        with ui.dialog() as search_dialog, ui.card().classes('w-[calc(100vw-2rem)] max-w-md p-5 rounded-3xl shadow-2xl bg-white border border-slate-200'):
+        with ui.dialog() as search_dialog, ui.card().classes('w-full max-w-md p-5 rounded-t-3xl sm:rounded-3xl shadow-2xl bg-white border border-slate-200'):
             with ui.row().classes('w-full justify-between items-center mb-2'):
                 ui.label('Search Library').classes('text-base font-black text-slate-800')
                 ui.button(icon='close', on_click=search_dialog.close).props('flat round dense size=sm color=grey')
@@ -81,7 +81,8 @@ def header(drawer_reference=None):
         with ui.row().classes('items-center gap-1.5 sm:gap-2 shrink-0 min-w-0'):
             if drawer_reference:
                 ui.button(icon='menu', on_click=drawer_reference.toggle) \
-                    .props('flat round dense color=grey-8 size=md') \
+                    .props('flat round dense color=grey-8 size=md aria-label="Open Navigation Menu"') \
+                    .classes('w-10 h-10 flex items-center justify-center hover:bg-slate-100 rounded-full transition-colors') \
                     .tooltip('Toggle Sidebar')
 
             with ui.row().classes('cursor-pointer items-center gap-2.5 min-w-0 group').on('click', lambda: ui.navigate.to('/')):

@@ -401,6 +401,7 @@ class MongoManager:
         year_level: Optional[str] = None,
         department: Optional[str] = None,
         branch: Optional[str] = None,
+        address: Optional[str] = None,
         avatar_url: Optional[str] = None,
         cover_url: Optional[str] = None
     ) -> bool:
@@ -413,6 +414,7 @@ class MongoManager:
             year_level=year_level,
             department=department,
             branch=branch,
+            address=address,
             avatar_url=avatar_url,
             cover_url=cover_url
         )
@@ -541,13 +543,23 @@ class MongoManager:
         program: str = "",
         purpose: str = "Study / Review",
         user_id: Optional[str] = None,
-        year_level: str = "1st Year",
+        year_level: str = "",
         purpose_attained: str = "Yes",
         remarks: str = ""
     ) -> Dict[str, Any]:
         return await self.attendance.record_scan(
             identifier, name, program, purpose, user_id,
             year_level=year_level, purpose_attained=purpose_attained, remarks=remarks
+        )
+
+    async def get_user_today_attendance(
+        self,
+        identifier: Optional[str] = None,
+        user_id: Optional[str] = None,
+        date_str: Optional[str] = None
+    ) -> Dict[str, Any]:
+        return await self.attendance.get_user_today_attendance(
+            identifier=identifier, user_id=user_id, date_str=date_str
         )
 
     def export_fmlibs009_csv(

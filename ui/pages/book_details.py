@@ -393,7 +393,7 @@ class BookDetailsPage:
     def build_ui(self):
         drawer = sidebar()
         header(drawer_reference=drawer)
-        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-4 sm:px-6 md:pt-24 md:px-8 lg:px-12 max-w-7xl mx-auto pb-16'):
+        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-4 sm:px-6 md:pt-24 md:px-8 lg:px-12 max-w-7xl mx-auto pb-16 safe-pb-mobile-nav'):
             self.content_container = ui.column().classes('w-full')
 
 

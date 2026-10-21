@@ -187,7 +187,7 @@ class SummarizerTool:
         drawer = sidebar()
         header(drawer_reference=drawer)
 
-        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16'):
+        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16 safe-pb-mobile-nav'):
             with ui.column().classes('gap-1 mb-6 sm:mb-8'):
                 ui.label('AI Document Summarizer').classes('text-2xl sm:text-3xl font-black text-slate-900 tracking-tight')
                 ui.label('Extract authoritative insights, chapters, study guides, and executive summaries directly from your documents.').classes('text-xs sm:text-sm text-slate-500')

@@ -38,6 +38,7 @@ class Permission(str, Enum):
     SCAN_ATTENDANCE_PASS = "scan_attendance_pass"
     OPERATE_GATE_TERMINAL = "operate_gate_terminal"
     VIEW_EXPORT_FM_LIBS_009 = "view_export_fm_libs_009"
+    VIEW_LIVE_DOORWAY_STREAM = "view_live_doorway_stream"
 
     # OPDS E-Reader Feed
     READ_OPDS_FEED = "read_opds_feed"

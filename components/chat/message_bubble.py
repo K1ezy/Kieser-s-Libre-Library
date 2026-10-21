@@ -35,7 +35,12 @@ def _extract_highlight_snippet(chunk_text: str, max_words: int = 8) -> str:
 
 def build_deep_link_url(chunk_meta: Dict[str, Any], chunk_text: str = "") -> str:
     """Constructs format-aware deep links to exact reader coordinates with highlight query."""
-    book_id = quote_plus(str(chunk_meta.get("book_id", "")))
+    raw_id = (
+        chunk_meta.get("book_uuid")
+        or chunk_meta.get("id")
+        or chunk_meta.get("book_id", "")
+    )
+    book_id = quote_plus(str(raw_id))
     doc_format = str(chunk_meta.get("format", "PDF")).upper()
     page = chunk_meta.get("page") or chunk_meta.get("page_number")
     cfi = chunk_meta.get("cfi") or chunk_meta.get("epub_cfi")
@@ -77,7 +82,7 @@ def linkify_tars_citations(
 
     for idx, chunk in enumerate(retrieved_chunks, start=1):
         meta = chunk.get("metadata") or chunk
-        book_id = meta.get("book_id")
+        book_id = meta.get("book_uuid") or meta.get("id") or meta.get("book_id")
         if not book_id:
             continue
 
@@ -138,8 +143,8 @@ def linkify_tars_citations(
         href = build_deep_link_url(target_meta, matched_entry.get("text", ""))
         safe_title = html.escape(matched_entry["title"])
         return (
-            f'<a href="{href}" class="tars-citation-chip" '
-            f'title="Open {safe_title} at Page {page_num}">'
+            f'<a href="{href}" target="_blank" rel="noopener noreferrer" class="tars-citation-chip" '
+            f'title="Open {safe_title} at Page {page_num} in new window">'
             f"📖 {safe_title} — p. {page_num}</a>"
         )
 
@@ -167,6 +172,13 @@ CITATION_CHIP_CSS = """
     text-overflow: ellipsis;
     vertical-align: middle;
     transition: background 0.15s ease, transform 0.12s ease;
+    cursor: pointer;
+}
+.tars-citation-chip::after {
+    content: " ↗";
+    font-size: 0.75em;
+    opacity: 0.75;
+    margin-left: 0.15rem;
 }
 .tars-citation-chip:hover {
     background: rgba(14, 165, 233, 0.28);
@@ -209,7 +221,7 @@ def setup_message_actions(content: str, copy_btn, tts_btn) -> None:
 
 
 def render_citation_chips(citations: list, container) -> None:
-    """Renders interactive citation chips linking directly to document reader coordinates."""
+    """Renders interactive citation chips linking directly to document reader coordinates in a new window."""
     if not container or not citations:
         return
 
@@ -229,20 +241,29 @@ def render_citation_chips(citations: list, container) -> None:
                     label_txt += f" (p.{cit['page']})"
 
                 b_id = cit.get('book_id')
-                badge_row = ui.row().classes(
-                    'items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 '
-                    'border border-indigo-200 text-[11px] text-indigo-700 '
-                    'font-semibold shadow-sm transition-all hover:scale-105'
-                )
                 if b_id:
                     deep_href = build_deep_link_url(cit, cit.get('text', ''))
-                    badge_row.classes('cursor-pointer hover:bg-indigo-100')
-                    badge_row.on('click', lambda h=deep_href: ui.navigate.to(h))
-                    badge_row.tooltip("Click to open document at cited page")
+                    badge_row = ui.element('a').props(
+                        f'href="{deep_href}" target="_blank" rel="noopener noreferrer"'
+                    ).classes(
+                        'inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 '
+                        'border border-indigo-200 text-[11px] text-indigo-700 '
+                        'font-semibold shadow-sm transition-all hover:scale-105 no-underline '
+                        'cursor-pointer hover:bg-indigo-100 hover:text-indigo-800'
+                    )
+                    badge_row.tooltip("Open document at cited page in new window")
+                else:
+                    badge_row = ui.row().classes(
+                        'items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 '
+                        'border border-indigo-200 text-[11px] text-indigo-700 '
+                        'font-semibold shadow-sm transition-all'
+                    )
 
                 with badge_row:
-                    ui.icon('menu_book' if b_id else 'description', size='12px').classes('text-indigo-500')
-                    ui.label(label_txt)
+                    ui.icon('menu_book' if b_id else 'description', size='12px').classes('text-indigo-500 shrink-0')
+                    ui.label(label_txt).classes('text-inherit')
+                    if b_id:
+                        ui.icon('open_in_new', size='10px').classes('text-indigo-400 opacity-80 shrink-0 ml-0.5')
     except Exception:
         return
 

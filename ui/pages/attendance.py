@@ -6,12 +6,14 @@ from components.sidebar import sidebar
 from components.header import header
 from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import get_current_user_role
+from core.events import attendance_event_bus
 from components.attendance import (
     generate_qr_base64,
     render_digital_pass_card,
     PURPOSE_OPTIONS,
     render_scanner_station,
     render_live_doorway_feed,
+    render_attendee_dossier_card,
     PROGRAM_OPTIONS,
     render_visitor_logs_table,
     render_dashboard_kpis,
@@ -37,6 +39,7 @@ async def attendance_page():
     user_name = app.storage.user.get('username') or 'Student'
     user_role = get_current_user_role()
     is_staff = user_role in ['admin', 'librarian']
+    is_admin = (user_role == 'admin')
     user_profile = await mongo_db.get_user_profile(user_id) if user_id else {}
     student_id = (
         user_profile.get('institutional_id')
@@ -44,6 +47,9 @@ async def attendance_page():
         or (f"26-{str(user_id)[:5].upper()}" if user_id else "26-00001")
     )
     user_program = user_profile.get('program') or user_profile.get('department') or "BSCS"
+    user_address = user_profile.get('address') or "NEMSU Tandag Campus"
+    user_year_level = user_profile.get('year_level') or "1st Year"
+    user_department = user_profile.get('department') or user_program
 
     # State
     active_purpose = {'val': "Study / Review"}
@@ -79,7 +85,7 @@ async def attendance_page():
 
     with ui.column().classes(
         'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16'
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16 safe-pb-mobile-nav'
     ):
         # 1. Page Title Banner
         with ui.column().classes('gap-1 mb-6'):
@@ -131,8 +137,21 @@ async def attendance_page():
 
             # TAB 1: Fast Entrance Scanner
             with ui.tab_panel(tab_scanner).classes('p-0'):
-                with ui.grid().classes('w-full grid-cols-1 lg:grid-cols-12 gap-6'):
-                    with ui.column().classes('lg:col-span-7 gap-5'):
+                refresh_doorway_stream = None
+
+                scanner_wrapper = (
+                    ui.grid().classes('w-full grid-cols-1 lg:grid-cols-12 gap-6')
+                    if is_admin
+                    else ui.column().classes('w-full max-w-4xl mx-auto gap-5')
+                )
+
+                with scanner_wrapper:
+                    scanner_col = (
+                        ui.column().classes('lg:col-span-7 gap-5')
+                        if is_admin
+                        else ui.column().classes('w-full gap-5')
+                    )
+                    with scanner_col:
                         feedback_banner_holder = {}
 
                         async def handle_scan(val: str, purpose: str, year_level: str):
@@ -162,41 +181,23 @@ async def attendance_page():
                                     ui.run_javascript('if(window.playLibreChime) window.playLibreChime("cooldown");')
                                     ui.notify(msg, type='warning', duration=4000)
 
-                                # Visual Banner Card
+                                # Visual Attendee Dossier Card
                                 if 'banner' in feedback_banner_holder and feedback_banner_holder['banner']:
                                     with feedback_banner_holder['banner']:
-                                        if act == 'checkin':
-                                            banner_bg = 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                                            banner_icon = 'verified'
-                                            badge_txt = "✓ CHECKED IN • TIME-IN"
-                                        elif act == 'checkout':
-                                            banner_bg = 'bg-blue-50 border-blue-200 text-blue-900'
-                                            banner_icon = 'waving_hand'
-                                            badge_txt = f"👋 CHECKED OUT ({res.get('duration_minutes', 1)}m)"
-                                        else:
-                                            banner_bg = 'bg-amber-50 border-amber-200 text-amber-900'
-                                            banner_icon = 'hourglass_empty'
-                                            badge_txt = "⏳ COOLDOWN GUARD"
+                                        def dismiss_banner():
+                                            if 'banner' in feedback_banner_holder and feedback_banner_holder['banner']:
+                                                feedback_banner_holder['banner'].clear()
 
-                                        with ui.card().classes(f'w-full p-4 rounded-2xl border mb-3 flex flex-row items-center justify-between gap-3 {banner_bg} shadow-sm animate-fade-in'):
-                                            with ui.row().classes('items-center gap-3 min-w-0 flex-1'):
-                                                ui.icon(banner_icon, size='26px').classes('shrink-0')
-                                                with ui.column().classes('gap-0 min-w-0 flex-1'):
-                                                    ui.label(entry.get('name', val)).classes('text-base font-black truncate')
-                                                    with ui.row().classes('items-center gap-1.5 flex-wrap text-xs opacity-90'):
-                                                        ui.label(f"ID: {entry.get('institutional_id') or entry.get('student_id', val)}").classes('font-mono font-bold')
-                                                        ui.label('•')
-                                                        ui.label(f"{entry.get('program', 'BSCS')} ({entry.get('role', 'Student')})")
-                                                        ui.label('•')
-                                                        ui.label(f"Purpose: {entry.get('purpose', 'Study')}")
-                                                        if act == 'checkout':
-                                                            ui.label('•')
-                                                            ui.label(f"Stay: {res.get('duration_minutes', 1)} min(s)").classes('font-black')
-                                            with ui.element('div').classes('px-3 py-1.5 rounded-xl text-xs font-black uppercase bg-white/90 shadow-xs shrink-0'):
-                                                ui.label(badge_txt)
+                                        render_attendee_dossier_card(
+                                            entry=entry,
+                                            action=act,
+                                            duration_minutes=res.get('duration_minutes', 1),
+                                            on_dismiss=dismiss_banner,
+                                        )
 
                                 await refresh_stats()
-                                await refresh_doorway_stream()
+                                if is_admin and refresh_doorway_stream is not None:
+                                    await refresh_doorway_stream()
                                 if is_staff and refresh_table_data is not None:
                                     await refresh_table_data()
                             else:
@@ -209,50 +210,61 @@ async def attendance_page():
                             feedback_banner_holder=feedback_banner_holder,
                         )
 
-                    # Right: Live Doorway Feed
-                    with ui.column().classes('lg:col-span-5 gap-4'):
-                        with ui.card().classes('w-full p-5 rounded-3xl bg-white border border-slate-200 shadow-sm'):
-                            with ui.row().classes('w-full items-center justify-between mb-3'):
-                                with ui.row().classes('items-center gap-2'):
-                                    ui.element('div').classes('w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse')
-                                    ui.label('LIVE DOORWAY STREAM').classes('text-xs font-black text-slate-900 uppercase tracking-wider')
-                                ui.label('Real-time Logs').classes('text-[11px] font-bold text-slate-400')
+                    # Right: Live Doorway Feed (STRICTLY Admin Only - Hidden from Students, Faculty, and Librarians)
+                    if is_admin:
+                        with ui.column().classes('lg:col-span-5 gap-4'):
+                            with ui.card().classes('w-full p-5 rounded-3xl bg-white border border-slate-200 shadow-sm'):
+                                with ui.row().classes('w-full items-center justify-between mb-3'):
+                                    with ui.row().classes('items-center gap-2'):
+                                        ui.element('div').classes('w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse')
+                                        ui.label('LIVE DOORWAY STREAM').classes('text-xs font-black text-slate-900 uppercase tracking-wider')
+                                    ui.label('Real-time Logs (Admin Only)').classes('text-[11px] font-bold text-slate-400')
 
-                            live_feed_container = ui.column().classes('w-full gap-2.5 max-h-[520px] overflow-y-auto')
+                                live_feed_container = ui.column().classes('w-full gap-2.5 max-h-[520px] overflow-y-auto')
 
-                            async def refresh_doorway_stream():
-                                recent_logs = await mongo_db.get_today_attendance_logs(limit=10)
-                                render_live_doorway_feed(live_feed_container, recent_logs)
+                                async def refresh_doorway_stream_impl():
+                                    recent_logs = await mongo_db.get_today_attendance_logs(limit=10)
+                                    render_live_doorway_feed(live_feed_container, recent_logs)
 
-                            await refresh_doorway_stream()
+                                refresh_doorway_stream = refresh_doorway_stream_impl
+                                await refresh_doorway_stream()
+
+                    async def on_doorway_scan_update(event_payload):
+                        try:
+                            await refresh_stats()
+                            if is_admin and refresh_doorway_stream is not None:
+                                await refresh_doorway_stream()
+                            if is_staff and refresh_table_data is not None:
+                                await refresh_table_data()
+                        except Exception:
+                            pass
+
+                    # Event bus subscription: only admins and staff need live updates on this terminal
+                    if is_admin or is_staff:
+                        unsub_doorway = attendance_event_bus.subscribe("*", on_doorway_scan_update)
+                        try:
+                            from nicegui import context
+                            if context.client:
+                                context.client.on_disconnect(unsub_doorway)
+                        except Exception:
+                            pass
 
             # TAB 2: Digital Pass (Default for Students)
             with ui.tab_panel(tab_pass).classes('p-0'):
-                async def handle_self_checkin():
-                    res = await mongo_db.record_attendance_scan(
-                        identifier=student_id,
-                        name=user_name,
-                        program=user_program,
-                        purpose=active_purpose['val'],
-                        user_id=user_id
-                    )
-                    if res.get('success'):
-                        act = res.get('action')
-                        if act == 'checkin':
-                            ui.run_javascript('if(window.playLibreChime) window.playLibreChime("checkin");')
-                        elif act == 'checkout':
-                            ui.run_javascript('if(window.playLibreChime) window.playLibreChime("checkout");')
-                        ui.notify(res.get('message'), type='positive' if act != 'cooldown' else 'warning', duration=4000)
-                        await refresh_stats()
-                    else:
-                        ui.notify(res.get('error'), type='negative')
+                user_initial_attendance = await mongo_db.get_user_today_attendance(
+                    identifier=student_id, user_id=user_id
+                )
 
                 render_digital_pass_card(
                     user_name=user_name,
                     student_id=student_id,
                     user_program=user_program,
                     user_role=user_role,
-                    on_self_checkin=handle_self_checkin,
+                    user_address=user_address,
+                    user_year_level=user_year_level,
+                    user_department=user_department,
+                    user_id=user_id,
+                    initial_attendance=user_initial_attendance,
                 )
 
             # TAB 3: Daily Visitor Log Summary (FM-LIBS-009) - Strictly Staff (Admin/Librarian) Only

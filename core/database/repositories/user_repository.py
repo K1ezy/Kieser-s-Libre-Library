@@ -112,7 +112,10 @@ class UserRepository(BaseRepository):
         if self.db is None: return {}
         try:
             if user_id:
-                user = await self.db['users'].find_one({"id": user_id, "type": "account"})
+                user = await self.db['users'].find_one({
+                    "id": user_id,
+                    "$or": [{"type": "account"}, {"type": {"$exists": False}}]
+                })
                 if user:
                     inst_id = user.get("institutional_id") or user.get("student_id") or user.get("employee_id") or user.get("staff_id") or user.get("admin_id") or f"2024-{str(user_id)[:5].upper()}"
                     return {
@@ -127,6 +130,7 @@ class UserRepository(BaseRepository):
                         "year_level": user.get("year_level") or "1st Year",
                         "department": user.get("department") or "",
                         "branch": user.get("branch") or "",
+                        "address": user.get("address") or user.get("branch") or "NEMSU Tandag Campus",
                         "admin_code": user.get("admin_code") or "",
                         "headline": user.get("headline", "Student / Researcher"),
                         "bio": user.get("bio", "Exploring knowledge with Libre-Library."),
@@ -145,6 +149,7 @@ class UserRepository(BaseRepository):
                 "year_level": "1st Year",
                 "department": "",
                 "branch": "",
+                "address": "NEMSU Tandag Campus",
                 "admin_code": "",
                 "headline": "Student / Researcher",
                 "bio": "Exploring knowledge with Libre-Library.",
@@ -166,6 +171,7 @@ class UserRepository(BaseRepository):
         year_level: Optional[str] = None,
         department: Optional[str] = None,
         branch: Optional[str] = None,
+        address: Optional[str] = None,
         avatar_url: Optional[str] = None,
         cover_url: Optional[str] = None
     ) -> bool:
@@ -194,13 +200,15 @@ class UserRepository(BaseRepository):
                 updates["department"] = department.strip()
             if branch is not None:
                 updates["branch"] = branch.strip()
+            if address is not None:
+                updates["address"] = address.strip()
             if avatar_url is not None:
                 updates["avatar_url"] = avatar_url.strip()
             if cover_url is not None:
                 updates["cover_url"] = cover_url.strip()
 
             result = await self.db['users'].update_one(
-                {"id": user_id, "type": "account"},
+                {"id": user_id, "$or": [{"type": "account"}, {"type": {"$exists": False}}]},
                 {"$set": updates}
             )
             return result.modified_count > 0 or result.matched_count > 0

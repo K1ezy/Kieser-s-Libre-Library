@@ -71,7 +71,8 @@ def render_pvc_id_card(
     branch: str,
     admin_code: str,
     avatar_url: Optional[str],
-    initials: str
+    initials: str,
+    address: str = "NEMSU Tandag Campus"
 ) -> None:
     """Renders official institutional digital PVC ID badge with QR attendance pass."""
     qr_code_b64 = generate_qr_base64(inst_id)
@@ -121,6 +122,9 @@ def render_pvc_id_card(
                         ui.label(f"Branch: {branch}").classes('text-xs text-slate-300 font-medium')
                     elif norm_role == 'ADMIN':
                         ui.label(f"Access Code: {admin_code}").classes('text-xs text-slate-300 font-medium')
+
+                    if address:
+                        ui.label(f"Address: {address}").classes('text-[11px] text-slate-400 font-medium truncate max-w-sm')
 
             with ui.row().classes('items-center gap-3 shrink-0 self-center md:self-auto'):
                 with ui.element('div').classes('p-2 bg-white rounded-xl shadow-md border border-white/20 shrink-0'):

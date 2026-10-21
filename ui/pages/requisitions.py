@@ -45,7 +45,7 @@ async def requisitions_page():
 
     with ui.column().classes(
         'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16'
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16 safe-pb-mobile-nav'
     ):
         # Header Banner
         with ui.row().classes('w-full items-center justify-between gap-4 mb-6 flex-wrap'):
@@ -87,7 +87,7 @@ async def requisitions_page():
 
         # Filter Tabs Row (Rendered above list container, calling load_requisitions_list)
         with ui.row().classes('w-full items-center justify-between gap-3 mb-4 flex-wrap'):
-            with ui.row().classes('gap-1 bg-slate-100 p-1 rounded-2xl flex-wrap'):
+            with ui.row().classes('gap-1 bg-slate-100 p-1 rounded-2xl flex-nowrap overflow-x-auto mobile-scroll-row max-w-full'):
                 filter_tabs = ["All", "Pending Review", "Approved", "In Procurement", "Available in Library", "Declined"]
                 tab_btns = {}
                 for st in filter_tabs:

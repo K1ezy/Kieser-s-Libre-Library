@@ -418,7 +418,7 @@ class ChatInterface:
                     if msg.get('role') == 'user':
                         self.render_user_message(msg.get('content', ''))
                     else:
-                        self.render_assistant_message(msg.get('content', ''))
+                        self.render_assistant_message(msg.get('content', ''), citations=msg.get('citations'))
             self.scroll_to_bottom()
         except Exception as e:
             ui.notify(f"History Load Error: {e}", type='warning')
@@ -761,6 +761,10 @@ class ChatInterface:
         ).props('elevated=False'):
             with ui.row().classes('w-full max-w-5xl mx-auto items-center justify-between gap-1.5 sm:gap-2 flex-nowrap'):
                 with ui.row().classes('items-center gap-1 sm:gap-2 min-w-0 flex-1'):
+                    ui.button(icon='arrow_back', on_click=lambda: ui.navigate.to('/')) \
+                        .props('flat round dense color=indigo size=md').classes('md:hidden shrink-0') \
+                        .tooltip('Back to Library')
+
                     if drawer:
                         ui.button(icon='menu', on_click=drawer.toggle) \
                             .props('flat round dense color=grey-8 size=md') \
@@ -858,9 +862,9 @@ class ChatInterface:
         drawer = sidebar(chat_interface=self)
         self._build_top_control_bar(drawer)
 
-        # 3. Main Chat Viewport
+        # 3. Main Chat Viewport with Dynamic Viewport Units
         with ui.column().classes(
-            'w-full fixed top-14 sm:top-16 inset-x-0 bottom-0 flex flex-col bg-slate-50 overflow-hidden p-0 m-0'
+            'w-full fixed top-14 sm:top-16 inset-x-0 bottom-0 h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)] flex flex-col bg-slate-50 overflow-hidden p-0 m-0'
         ):
             with ui.column().classes('w-full flex-1 min-h-0 overflow-y-auto p-2.5 sm:p-4 md:p-6 no-scrollbar touch-pan-y overscroll-contain') as self.scroll_container:
                 with ui.column().classes('w-full max-w-4xl mx-auto gap-3 sm:gap-4 pb-4') as self.log_container:

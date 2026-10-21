@@ -81,16 +81,27 @@ class BackgroundRAGIndexer:
         }
 
     def _resolve_collection(self):
-        """Resolves MongoDB books collection safely whether pymongo or motor is passed."""
+        """Resolves MongoDB books collection safely for worker threads (prefers synchronous pymongo)."""
         if self.books_col is not None:
-            return self.books_col
+            # If Motor collection, extract synchronous pymongo delegate for thread safety
+            if hasattr(self.books_col, "delegate"):
+                return self.books_col.delegate
+            if hasattr(self.books_col, "db") and self.books_col.db is not None:
+                if hasattr(self.books_col.db, "client") and hasattr(self.books_col.db.client, "delegate"):
+                    return self.books_col.db.client.delegate[self.books_col.db.name]["books"]
+                if hasattr(self.books_col.db, "delegate"):
+                    return self.books_col.db.delegate["books"]
+            if hasattr(self.books_col, "find"):
+                return self.books_col
 
         try:
             from core.database.mongo_manager import mongo_db
             if hasattr(mongo_db, "db") and mongo_db.db is not None:
-                # Use synchronous pymongo client delegate if running inside worker thread
+                # Use synchronous pymongo client delegate in worker thread
                 if hasattr(mongo_db.client, "delegate"):
                     return mongo_db.client.delegate[mongo_db.db.name]["books"]
+                if hasattr(mongo_db.db, "delegate"):
+                    return mongo_db.db.delegate["books"]
                 return mongo_db.db["books"]
         except Exception as exc:
             logger.warning("Could not resolve books collection via mongo_db: %s", exc)
@@ -130,15 +141,13 @@ class BackgroundRAGIndexer:
                 "chunk_count": 1,
             }
 
-            # Supports both synchronous pymongo and async Motor in worker thread
-            import inspect
             find_res = col.find(query, projection)
-            if inspect.isawaitable(find_res):
-                import asyncio
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                pending_books = loop.run_until_complete(find_res.to_list(length=2000))
-                loop.close()
+            if hasattr(find_res, "to_list"):
+                # Fallback to sync delegate if async cursor was returned
+                if hasattr(col, "delegate"):
+                    pending_books = list(col.delegate.find(query, projection))
+                else:
+                    pending_books = []
             else:
                 pending_books = list(find_res)
 

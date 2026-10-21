@@ -127,6 +127,7 @@ class TestRBACAndOperations(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(has_permission("student", Permission.SUBMIT_REQUISITION_FM_LIBS_002))
         self.assertFalse(has_permission("student", Permission.OPERATE_CIRCULATION_DESK))
         self.assertFalse(has_permission("student", Permission.MANAGE_RBAC_USERS))
+        self.assertFalse(has_permission("student", Permission.VIEW_LIVE_DOORWAY_STREAM))
 
         # Faculty permissions
         self.assertTrue(has_permission("faculty", Permission.BORROW_BOOKS))
@@ -135,6 +136,7 @@ class TestRBACAndOperations(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(has_permission("faculty", Permission.VIEW_CURRICULAR_ANALYTICS))
         self.assertFalse(has_permission("faculty", Permission.REVIEW_REQUISITION_FM_LIBS_002))
         self.assertFalse(has_permission("faculty", Permission.OPERATE_CIRCULATION_DESK))
+        self.assertFalse(has_permission("faculty", Permission.VIEW_LIVE_DOORWAY_STREAM))
 
         # Librarian permissions
         self.assertTrue(has_permission("librarian", Permission.OPERATE_CIRCULATION_DESK))
@@ -143,8 +145,10 @@ class TestRBACAndOperations(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(has_permission("librarian", Permission.PURGE_CATALOG_TITLES))
         self.assertFalse(has_permission("librarian", Permission.MANAGE_RBAC_USERS))
         self.assertFalse(has_permission("librarian", Permission.MANAGE_CHROMADB_VECTORS))
+        self.assertFalse(has_permission("librarian", Permission.VIEW_LIVE_DOORWAY_STREAM))
 
-        # Admin universal permissions across all tiers
+        # Admin universal permissions across all tiers (including VIEW_LIVE_DOORWAY_STREAM)
+        self.assertTrue(has_permission("admin", Permission.VIEW_LIVE_DOORWAY_STREAM))
         for perm in Permission:
             self.assertTrue(has_permission("admin", perm), f"Admin missing permission {perm}")
 

@@ -3,7 +3,7 @@ from core.config import settings
 
 # --- MODERN CLEAN LIGHT DESIGN SYSTEM ---
 GLOBAL_THEME_STYLES = '''
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#4f46e5">
     <meta name="color-scheme" content="light">
     <meta name="mobile-web-app-capable" content="yes">
@@ -22,6 +22,7 @@ GLOBAL_THEME_STYLES = '''
             --safe-area-bottom: env(safe-area-inset-bottom, 0px);
             --safe-area-left: env(safe-area-inset-left, 0px);
             --safe-area-right: env(safe-area-inset-right, 0px);
+            --mobile-nav-height: 0px;
         }
 
         *, *::before, *::after {
@@ -266,6 +267,21 @@ GLOBAL_THEME_STYLES = '''
 
         .safe-pb-nav {
             padding-bottom: max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom, 0px))) !important;
+        }
+
+        .safe-pb-mobile-nav {
+            padding-bottom: max(1.5rem, calc(1rem + env(safe-area-inset-bottom, 0px))) !important;
+        }
+
+        /* Optimized Mobile Sidebar Drawer */
+        .q-drawer--left.q-drawer--bordered {
+            border-right: 1px solid #e2e8f0 !important;
+        }
+        .q-drawer__backdrop {
+            background-color: rgba(15, 23, 42, 0.45) !important;
+            backdrop-filter: blur(4px) !important;
+            -webkit-backdrop-filter: blur(4px) !important;
+            transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
         }
 
         /* Responsive Text and Preformatted Code Blocks */
@@ -735,10 +751,29 @@ GLOBAL_THEME_STYLES = '''
                 position: fixed !important;
                 bottom: 0 !important;
                 margin: 0 !important;
-                max-height: 85dvh !important;
+                max-height: 88dvh !important;
+                display: flex !important;
+                flex-direction: column !important;
                 overflow-y: auto !important;
                 padding-bottom: max(20px, env(safe-area-inset-bottom, 20px)) !important;
+                box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.25) !important;
+                animation: slideUpBottomSheet 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
             }
+            .q-dialog__inner--minimized > div::before {
+                content: '';
+                display: block;
+                width: 40px;
+                height: 4px;
+                background-color: #cbd5e1;
+                border-radius: 9999px;
+                margin: 10px auto 4px auto;
+                flex-shrink: 0;
+            }
+        }
+
+        @keyframes slideUpBottomSheet {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
         }
 
         /* 5. Scoped Cropper.js Alignment & Precision Crop Overlays */

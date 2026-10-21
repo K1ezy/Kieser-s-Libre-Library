@@ -58,11 +58,55 @@ def render_scanner_station(
                         f'w-full px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all duration-150 min-h-[44px] break-words {chip_cls}'
                     )
 
+        kiosk_reset_timer = [None]
+
         def select_purpose(selected_label: str):
             active_purpose['val'] = selected_label
             render_purpose_chips()
+            # Fix 5: Auto-reset Kiosk Purpose chip to default ("Study / Review") 5s after any non-default selection
+            if selected_label != "Study / Review":
+                if kiosk_reset_timer[0]:
+                    try:
+                        kiosk_reset_timer[0].cancel()
+                    except Exception:
+                        pass
+                import threading
+                def auto_reset():
+                    active_purpose['val'] = "Study / Review"
+                    try:
+                        render_purpose_chips()
+                    except Exception:
+                        pass
+                t = threading.Timer(5.0, auto_reset)
+                t.daemon = True
+                t.start()
+                kiosk_reset_timer[0] = t
 
         render_purpose_chips()
+
+        # Hidden event bridge element directly wired to on_scan
+        scan_carrier = ui.element('div').classes('hidden')
+
+        async def handle_direct_camera_scan(args):
+            raw_val = args.get('val') if isinstance(args, dict) else args
+            val = str(raw_val or '').strip()
+            if val:
+                manual_input.value = val
+                await on_scan(val, active_purpose['val'], year_select.value)
+
+        scan_carrier.on('scan_received', lambda e: handle_direct_camera_scan(e.args))
+        ui.on('libre_qr_scan', lambda e: handle_direct_camera_scan(e.args))
+
+        ui.add_head_html(f'''
+        <script>
+        window.libreScannerCarrierId = {scan_carrier.id};
+        </script>
+        ''')
+
+        window_carrier_script = f'''
+        window.libreScannerCarrierId = {scan_carrier.id};
+        '''
+        ui.run_javascript(window_carrier_script)
 
         # 2. Camera Viewport with html5-qrcode and Web Audio API Synthesis
         scanner_state = {'camera_active': False}
@@ -76,6 +120,21 @@ def render_scanner_station(
         <script>
         window.libreScannerRunning = false;
         window.html5QrCodeInstance = null;
+
+        // Fix 3: Unified 2.5-second frontend debounce across all scan vectors
+        window.libreLastScannedPayload = "";
+        window.libreLastScannedTime = 0;
+        window.libreCanScan = function(payload) {
+            const now = Date.now();
+            const clean = String(payload || "").trim().toUpperCase();
+            if (!clean) return false;
+            if (clean === window.libreLastScannedPayload && (now - window.libreLastScannedTime) < 2500) {
+                return false;
+            }
+            window.libreLastScannedPayload = clean;
+            window.libreLastScannedTime = now;
+            return true;
+        };
 
         window.playLibreChime = function(actionType) {
             try {
@@ -117,25 +176,57 @@ def render_scanner_station(
             if (window.libreScannerRunning) return;
             try {
                 window.html5QrCodeInstance = new Html5Qrcode("reader");
-                let lastScannedPayload = "";
-                let lastScannedTime = 0;
 
                 const qrCodeSuccessCallback = (decodedText, decodedResult) => {
-                    const now = Date.now();
-                    // Local JS 3-second debounce to reduce UI flutter
-                    if (decodedText === lastScannedPayload && (now - lastScannedTime) < 3000) {
+                    // Fix 3: Shared frontend debounce guard
+                    if (!window.libreCanScan(decodedText)) {
                         return;
                     }
-                    lastScannedPayload = decodedText;
-                    lastScannedTime = now;
 
-                    const cleanId = decodedText.replace(/^LIBRE-ID:/i, "").trim();
-                    const inputEl = document.querySelector('#attendance-manual-input input');
+                    let cleanId = decodedText.trim();
+                    if (cleanId.toUpperCase().startsWith("LIBRE-ID:")) {
+                        cleanId = cleanId.substring(9).trim();
+                    }
+
+                    // Fix 4: Single Primary Reliable Event Dispatch to NiceGUI Backend (fallback on error only)
+                    let dispatched = false;
+                    try {
+                        if (typeof emitEvent === "function") {
+                            emitEvent("libre_qr_scan", { val: cleanId });
+                            dispatched = true;
+                        }
+                    } catch(err) {
+                        dispatched = false;
+                    }
+
+                    if (!dispatched) {
+                        try {
+                            const targetId = window.libreScannerCarrierId;
+                            if (targetId !== undefined && targetId !== null) {
+                                if (window.socket && typeof window.socket.emit === "function") {
+                                    window.socket.emit("event", {
+                                        id: targetId,
+                                        name: "scan_received",
+                                        args: [{ val: cleanId }]
+                                    });
+                                } else if (typeof getElement === "function") {
+                                    const carrierEl = getElement(targetId);
+                                    if (carrierEl && carrierEl.$emit) {
+                                        carrierEl.$emit("scan_received", { val: cleanId });
+                                    }
+                                }
+                            }
+                        } catch(sockErr) {
+                            console.warn("Scan socket fallback dispatch notice:", sockErr);
+                        }
+                    }
+
+                    // 2. Visual Mirror on Manual Input Field with reactive events
+                    const inputEl = document.querySelector('#attendance-manual-input input') || document.querySelector('#attendance-manual-input');
                     if (inputEl) {
                         inputEl.value = cleanId;
                         inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-                        const submitBtn = document.querySelector('#attendance-submit-btn');
-                        if (submitBtn) submitBtn.click();
+                        inputEl.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 };
                 const config = { fps: 15, qrbox: { width: 220, height: 220 } };
@@ -192,7 +283,7 @@ def render_scanner_station(
                     )
                 else:
                     ui.html('<div id="reader" style="width: 100%; max-width: 480px; min-height: 240px; margin: auto;"></div>', sanitize=False, tag='div').classes('w-full')
-                    ui.run_javascript('setTimeout(function(){ window.startLibreScanner(); }, 150);')
+                    ui.run_javascript(f'window.libreScannerCarrierId = {scan_carrier.id}; setTimeout(function(){{ window.startLibreScanner(); }}, 150);')
                     with ui.row().classes('absolute bottom-3 left-0 right-0 justify-center z-10'):
                         ui.button(
                             'STOP CAMERA SCANNER',
@@ -227,7 +318,7 @@ def render_scanner_station(
                 ui.label(f'Fill My ID: {student_id}').classes('text-[11px] font-bold text-indigo-700')
 
         with ui.row().classes('w-full items-center gap-2.5 flex-wrap sm:flex-nowrap'):
-            manual_input = ui.input(placeholder='Scan barcode gun or type YY-NNNNN (e.g. 23-00128)...') \
+            manual_input = ui.input(placeholder='Scan QR/barcode gun or enter ID/username (e.g. 23-00128, 2024-9BFCB)...') \
                 .classes('flex-1 text-sm min-h-[44px]').props('id="attendance-manual-input" rounded-xl outlined dense autofocus')
             year_select = ui.select(["1st Year", "2nd Year", "3rd Year", "4th Year", "Graduate"], value="1st Year") \
                 .classes('w-full sm:w-32 sm:shrink-0 text-sm').props('rounded-xl outlined dense options-dense')
@@ -236,9 +327,9 @@ def render_scanner_station(
                 manual_input.value = student_id
 
             async def do_submit():
-                val = manual_input.value.strip()
+                val = (manual_input.value or '').strip()
                 if not val:
-                    ui.notify('Please enter or scan a Student ID', type='warning')
+                    ui.notify('Please enter or scan a Student or Faculty ID', type='warning')
                     return
                 await on_scan(val, active_purpose['val'], year_select.value)
                 manual_input.value = ""
@@ -274,3 +365,164 @@ def render_live_doorway_feed(container: ui.column, recent_logs: List[Dict[str, A
                     with ui.element('div').classes(f'px-2 py-0.5 rounded-full text-[10px] font-black uppercase border {status_bg}'):
                         ui.label(r.get('status'))
                     ui.label(r.get('time_in_str', '')).classes('text-[10px] font-mono text-slate-400')
+
+
+def render_attendee_dossier_card(
+    entry: Dict[str, Any],
+    action: str = "checkin",
+    duration_minutes: int = 0,
+    on_dismiss: Optional[Callable[[], Any]] = None
+) -> None:
+    """
+    Renders a prominent, zero-overlap Live Attendee Verification Dossier Card:
+    - Full Name, Photo / Avatar, Institutional ID Number
+    - Role badge (Student, Faculty, Librarian, Admin)
+    - Department & Program
+    - Year Level (Students) or Staff Designation (Faculty / Staff)
+    - Residential / Campus Address
+    - Active Borrowing & Overdue Standing Badge
+    - Timestamp & Check-in/Check-out Action Pill
+    """
+    role = str(entry.get('role', 'Student')).strip().capitalize()
+    name = entry.get('name') or "Visitor"
+    inst_id = entry.get('institutional_id') or entry.get('student_id') or "Unknown ID"
+    dept = entry.get('department') or entry.get('program') or "General Education"
+    prog = entry.get('program') or ""
+    year_level = entry.get('year_level') or "1st Year"
+    address = entry.get('address') or "NEMSU Tandag Campus"
+    avatar_url = entry.get('avatar_url') or ""
+    active_loans = int(entry.get('active_loans_count') or 0)
+    overdue_loans = int(entry.get('overdue_loans_count') or 0)
+    purpose = entry.get('purpose') or "Study / Review"
+    time_str = entry.get('time_in_str') or ""
+
+    # Role-based color palette and labels
+    if role.lower() == 'faculty':
+        role_badge_cls = 'bg-indigo-100 text-indigo-800 border-indigo-200'
+        avatar_bg = 'bg-indigo-600 text-white'
+        designation_label = "Designation / Rank"
+        designation_val = "Faculty Member"
+    elif role.lower() in ('librarian', 'co-librarian'):
+        role_badge_cls = 'bg-purple-100 text-purple-800 border-purple-200'
+        avatar_bg = 'bg-purple-600 text-white'
+        designation_label = "Designation"
+        designation_val = "Library Staff"
+    elif role.lower() == 'admin':
+        role_badge_cls = 'bg-amber-100 text-amber-800 border-amber-200'
+        avatar_bg = 'bg-amber-600 text-white'
+        designation_label = "Designation"
+        designation_val = "System Administrator"
+    else:
+        role_badge_cls = 'bg-emerald-100 text-emerald-800 border-emerald-200'
+        avatar_bg = 'bg-emerald-600 text-white'
+        designation_label = "Year Level"
+        designation_val = year_level
+
+    # Action Banner Styling
+    if action == 'checkin':
+        border_cls = 'border-emerald-300'
+        accent_bar = 'from-emerald-500 to-teal-600'
+        status_badge_cls = 'bg-emerald-600 text-white'
+        status_label = f"✓ CHECKED IN • {time_str}"
+    elif action == 'checkout':
+        border_cls = 'border-blue-300'
+        accent_bar = 'from-blue-500 to-indigo-600'
+        status_badge_cls = 'bg-blue-600 text-white'
+        status_label = f"👋 CHECKED OUT • Stay: {duration_minutes} min(s)"
+    else:
+        border_cls = 'border-amber-300'
+        accent_bar = 'from-amber-500 to-orange-500'
+        status_badge_cls = 'bg-amber-600 text-white'
+        status_label = "⏳ ACTIVE SESSION • Cooldown"
+
+    with ui.card().classes(
+        f'w-full p-0 rounded-3xl bg-white border-2 {border_cls} shadow-xl relative overflow-hidden mb-4 transition-all animate-fade-in'
+    ):
+        # Top gradient accent bar
+        ui.element('div').classes(f'w-full h-2.5 bg-gradient-to-r {accent_bar}')
+
+        with ui.column().classes('p-4 sm:p-5 w-full gap-3.5'):
+            # Header Row: Avatar, Full Name, ID, Role Badge, and Dismiss/Action Status
+            with ui.row().classes('w-full items-start justify-between gap-3 flex-wrap sm:flex-nowrap'):
+                with ui.row().classes('items-center gap-3.5 min-w-0 flex-1'):
+                    # Avatar or Initials Badge
+                    if avatar_url:
+                        ui.image(avatar_url).classes('w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border-2 border-indigo-200 shadow-sm shrink-0')
+                    else:
+                        initials = "".join([part[0] for part in name.split()[:2]]).upper() or "ID"
+                        with ui.element('div').classes(
+                            f'w-14 h-14 sm:w-16 sm:h-16 rounded-2xl {avatar_bg} flex items-center justify-center font-black text-lg sm:text-xl shrink-0 shadow-sm'
+                        ):
+                            ui.label(initials)
+
+                    # Name & Badges
+                    with ui.column().classes('gap-1 min-w-0 flex-1'):
+                        with ui.row().classes('items-center gap-2 flex-wrap'):
+                            ui.label(name).classes('text-lg sm:text-xl font-black text-slate-900 leading-tight break-words')
+                            with ui.element('div').classes(f'px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase border {role_badge_cls}'):
+                                ui.label(role)
+
+                        with ui.row().classes('items-center gap-2 flex-wrap text-xs'):
+                            # Institutional ID Box
+                            with ui.row().classes('items-center gap-1 bg-slate-900 text-emerald-400 px-2.5 py-0.5 rounded-lg font-mono font-black text-xs shadow-xs'):
+                                ui.icon('badge', size='14px')
+                                ui.label(inst_id)
+
+                            ui.label(f"• Purpose: {purpose}").classes('text-slate-500 font-medium')
+
+                # Right side: Status Badge
+                with ui.column().classes('items-end shrink-0 gap-1'):
+                    with ui.element('div').classes(f'px-3 py-1 rounded-xl text-xs font-black uppercase shadow-xs {status_badge_cls}'):
+                        ui.label(status_label)
+                    if on_dismiss:
+                        ui.button(icon='close', on_click=on_dismiss).props('flat dense round size=xs color=grey-6')
+
+            ui.separator().classes('my-0.5 opacity-60')
+
+            # Grid of 3 Key ID Info Panels
+            with ui.grid().classes('w-full grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5'):
+                # 1. Department / Program
+                with ui.element('div').classes('p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col gap-0.5'):
+                    with ui.row().classes('items-center gap-1 text-slate-400 text-[10px] font-black uppercase tracking-wider'):
+                        ui.icon('domain', size='14px').classes('text-indigo-500')
+                        ui.label('Department / Program')
+                    disp_dept = dept if dept == prog or not prog else f"{dept} ({prog})"
+                    ui.label(disp_dept).classes('text-xs font-bold text-slate-800 break-words')
+
+                # 2. Year Level or Staff Designation
+                with ui.element('div').classes('p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col gap-0.5'):
+                    with ui.row().classes('items-center gap-1 text-slate-400 text-[10px] font-black uppercase tracking-wider'):
+                        ui.icon('school', size='14px').classes('text-purple-500')
+                        ui.label(designation_label)
+                    ui.label(designation_val).classes('text-xs font-bold text-slate-800 break-words')
+
+                # 3. Residential / Campus Address
+                with ui.element('div').classes('p-2.5 rounded-2xl bg-slate-50 border border-slate-200/80 flex flex-col gap-0.5 sm:col-span-2 md:col-span-1'):
+                    with ui.row().classes('items-center gap-1 text-slate-400 text-[10px] font-black uppercase tracking-wider'):
+                        ui.icon('home', size='14px').classes('text-emerald-500')
+                        ui.label('Address')
+                    ui.label(address).classes('text-xs font-bold text-slate-800 break-words')
+
+            # Circulation Standing Banner
+            if overdue_loans > 0:
+                with ui.card().classes('w-full p-2.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 flex flex-row items-center justify-between gap-2 shadow-2xs'):
+                    with ui.row().classes('items-center gap-2 min-w-0'):
+                        ui.icon('warning', size='20px').classes('text-rose-600 shrink-0')
+                        with ui.column().classes('gap-0'):
+                            ui.label('OVERDUE BOOKS DETECTED').classes('text-xs font-black text-rose-700 tracking-wider uppercase')
+                            ui.label(f"This patron currently has {overdue_loans} overdue library book(s). Please advise return or renewal.").classes('text-[11px] text-rose-600')
+                    ui.badge(f"{overdue_loans} Overdue", color='red').props('rounded font-bold')
+            elif active_loans > 0:
+                with ui.card().classes('w-full p-2.5 rounded-2xl bg-blue-50/80 border border-blue-200 text-blue-900 flex flex-row items-center justify-between gap-2 shadow-2xs'):
+                    with ui.row().classes('items-center gap-2 min-w-0'):
+                        ui.icon('menu_book', size='18px').classes('text-blue-600 shrink-0')
+                        with ui.column().classes('gap-0'):
+                            ui.label('ACTIVE LIBRARY LOANS').classes('text-xs font-black text-blue-700 tracking-wider uppercase')
+                            ui.label(f"Currently borrowing {active_loans} book(s) in good standing.").classes('text-[11px] text-blue-600')
+                    ui.badge(f"{active_loans} Borrowed", color='blue').props('rounded font-bold')
+            else:
+                with ui.card().classes('w-full p-2 rounded-2xl bg-emerald-50/60 border border-emerald-100 text-emerald-900 flex flex-row items-center justify-between gap-2 shadow-2xs'):
+                    with ui.row().classes('items-center gap-2 min-w-0'):
+                        ui.icon('check_circle', size='16px').classes('text-emerald-600 shrink-0')
+                        ui.label('Library Standing: Good Standing • 0 Overdue Items').classes('text-[11px] font-bold text-emerald-700')
+                    ui.badge("Clear", color='positive').props('rounded font-bold text-[10px]')

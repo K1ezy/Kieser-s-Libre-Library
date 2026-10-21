@@ -146,7 +146,7 @@ async def home_page():
 
     greeting_str = f"{get_greeting()}, {user_name}" if user_name else f"{get_greeting()}"
 
-    with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] md:pt-24 px-3 sm:px-6 md:px-10 max-w-[1700px] mx-auto pb-16'):
+    with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] md:pt-24 px-3 sm:px-6 md:px-10 max-w-[1700px] mx-auto pb-16 safe-pb-mobile-nav'):
         
         # 1. Compact Welcome Header (Personal Dashboard)
         with ui.element('div').classes(

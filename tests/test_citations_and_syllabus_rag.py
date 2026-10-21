@@ -5,6 +5,7 @@ from components.chat.message_bubble import (
     linkify_tars_citations,
     build_deep_link_url,
     _extract_highlight_snippet,
+    render_citation_chips,
 )
 from core.ai_engine.rag_pipeline import ResilientRAGPipeline, ScopedHybridRAGPipeline
 
@@ -47,6 +48,8 @@ class TestCitationLinkification(unittest.TestCase):
         linkified = linkify_tars_citations(llm_text, chunks)
 
         self.assertIn('class="tars-citation-chip"', linkified)
+        self.assertIn('target="_blank"', linkified)
+        self.assertIn('rel="noopener noreferrer"', linkified)
         self.assertIn('/read/os_book_1?page=84', linkified)
         self.assertIn('📖 Operating Systems Principles — p. 84', linkified)
 
@@ -65,6 +68,7 @@ class TestCitationLinkification(unittest.TestCase):
         llm_text = "Third Normal Form removes transitive dependencies [Source 1, Page 112]."
         linkified = linkify_tars_citations(llm_text, chunks)
 
+        self.assertIn('target="_blank"', linkified)
         self.assertIn('/read/db_book_2?page=112', linkified)
         self.assertIn('Database Systems', linkified)
 
@@ -84,6 +88,7 @@ class TestCitationLinkification(unittest.TestCase):
         llm_text = "Packets travel through routers [Net Architecture, p. 45]."
         linkified = linkify_tars_citations(llm_text, chunks)
 
+        self.assertIn('target="_blank"', linkified)
         self.assertIn('/read/net_book_3?page=45', linkified)
 
     def test_linkify_preserves_unrelated_brackets(self):
@@ -96,6 +101,19 @@ class TestCitationLinkification(unittest.TestCase):
         llm_text = "Array indexing like arr[0] is constant time O(1)."
         linkified = linkify_tars_citations(llm_text, chunks)
         self.assertEqual(linkified, llm_text)
+
+    def test_render_citation_chips_opens_in_new_window(self):
+        from nicegui import ui
+        citations = [
+            {"book_id": "b_123", "title": "Test Book", "page": 42, "text": "Testing citations"}
+        ]
+        container = ui.row()
+        render_citation_chips(citations, container)
+        anchors = [child for child in container.default_slot.children if getattr(child, 'tag', None) == 'a']
+        self.assertEqual(len(anchors), 1)
+        self.assertEqual(anchors[0]._props.get('target'), '_blank')
+        self.assertEqual(anchors[0]._props.get('rel'), 'noopener noreferrer')
+        self.assertTrue(anchors[0]._props.get('href').startswith('/read/b_123?page=42'))
 
 
 class TestSyllabusRepository(unittest.IsolatedAsyncioTestCase):

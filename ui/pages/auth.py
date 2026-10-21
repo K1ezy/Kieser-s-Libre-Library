@@ -70,9 +70,9 @@ async def login_page():
 
     with ui.column().classes('w-full min-h-[100dvh] items-center justify-center bg-slate-50 p-4 sm:p-8 overflow-y-auto'):
         with ui.card().classes('w-full max-w-[560px] p-6 sm:p-10 shadow-2xl border border-slate-200/90 bg-white rounded-3xl'):
-            with ui.row().classes('w-full items-center gap-4 sm:gap-6 mb-6'):
+            with ui.row().classes('w-full items-center gap-4 sm:gap-6 mb-6 flex-col sm:flex-row text-center sm:text-left'):
                 ui.image('/static/Libre-Library_logo.svg').classes('w-32 sm:w-44 h-auto object-contain shrink-0').props('no-spinner')
-                with ui.column().classes('gap-0.5 min-w-0 flex-1 justify-center'):
+                with ui.column().classes('gap-0.5 min-w-0 flex-1 justify-center items-center sm:items-start'):
                     ui.label('Welcome Back').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight')
                     ui.label('Sign in with your Institutional ID (YY-NNNNN), Username, or Email').classes('text-xs sm:text-sm text-slate-500 leading-snug')
 
@@ -185,9 +185,9 @@ async def signup_page():
 
     with ui.column().classes('w-full min-h-[100dvh] items-center justify-center bg-slate-50 p-4 sm:p-8 py-8 sm:py-12 overflow-y-auto'):
         with ui.card().classes('w-full max-w-[620px] p-6 sm:p-10 shadow-2xl border border-slate-200/90 bg-white rounded-3xl'):
-            with ui.row().classes('w-full items-center gap-4 sm:gap-6 mb-6'):
+            with ui.row().classes('w-full items-center gap-4 sm:gap-6 mb-6 flex-col sm:flex-row text-center sm:text-left'):
                 ui.image('/static/Libre-Library_logo.svg').classes('w-32 sm:w-44 h-auto object-contain shrink-0').props('no-spinner')
-                with ui.column().classes('gap-0.5 min-w-0 flex-1 justify-center'):
+                with ui.column().classes('gap-0.5 min-w-0 flex-1 justify-center items-center sm:items-start'):
                     ui.label('Create Account').classes('text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight')
                     ui.label('Institutional registration across academic roles').classes('text-xs sm:text-sm text-slate-500 leading-snug')
 

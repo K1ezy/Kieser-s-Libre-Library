@@ -142,7 +142,8 @@ class TestSummarizerService(unittest.IsolatedAsyncioTestCase):
                 prompt="Test prompt",
                 max_tokens=500,
                 temperature=0.3,
-                stop=None
+                stop=None,
+                cancel_event=None
             )
 
 

@@ -1,9 +1,11 @@
 from nicegui import ui, app
 from core.auth.jwt_handler import clear_user_session, get_current_user_role
 
+
 def sidebar(chat_interface=None) -> ui.left_drawer:
     """
     Role-Based Global Navigation Sidebar:
+    Optimized for mobile-first touch access as the sole application navigation menu.
     Dynamically renders personalized navigation trees tailored to
     Student, Faculty, Librarian, and Administrator personas.
     Complies with SRS Chapter 1 & 2 4-Tier RBAC architecture.
@@ -13,30 +15,44 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
     is_librarian = user_role in ['admin', 'librarian']
     is_faculty = user_role in ['admin', 'librarian', 'faculty']
 
-    with ui.left_drawer(value=False, fixed=True).props('bordered overlay').classes(
-        'bg-white border-r border-slate-200 flex flex-col w-72 max-w-[85vw] shadow-md'
+    with ui.left_drawer(value=False, fixed=True).props('bordered overlay elevated behavior=mobile').classes(
+        'bg-white border-r border-slate-200 flex flex-col w-[285px] max-w-[85vw] shadow-2xl h-full select-none'
     ) as drawer:
 
-        # 1. LOGO AREA (Mobile overlay; desktop top bar already shows brand header)
-        with ui.row().classes('w-full h-16 sm:h-20 items-center justify-between px-5 pt-[env(safe-area-inset-top,0px)] border-b border-slate-200 flex-none md:hidden'):
-            with ui.row().classes('items-center gap-2.5'):
-                with ui.element('div').classes('p-1.5 rounded-xl bg-sky-50 flex items-center justify-center border border-sky-100/80 shadow-xs'):
+        # 1. DRAWER HEADER & BRANDING (Mobile & Desktop slide-over banner)
+        with ui.row().classes(
+            'w-full h-16 sm:h-20 items-center justify-between px-4 sm:px-5 '
+            'pt-[max(0.75rem,env(safe-area-inset-top,0.75rem))] border-b border-slate-200 flex-none bg-slate-50/60'
+        ):
+            with ui.row().classes('items-center gap-2.5 cursor-pointer').on(
+                'click', lambda: (drawer.set_visibility(False), drawer.hide(), ui.navigate.to('/'))
+            ):
+                with ui.element('div').classes('p-1.5 rounded-xl bg-sky-50 flex items-center justify-center border border-sky-100/80 shadow-xs shrink-0'):
                     ui.image('/static/Libre-Library_icon.svg').classes('w-7 h-7 sm:w-8 sm:h-8 object-contain').props('no-spinner')
-                ui.label('Libre Library').classes('text-xl font-black text-slate-900 tracking-tight')
-            ui.button(icon='close', on_click=lambda: (drawer.set_visibility(False), drawer.hide())).props('flat round dense color=grey-7 size=md')
+                with ui.column().classes('gap-0'):
+                    ui.label('Libre Library').classes('text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-none')
+                    ui.label('Knowledge Archive').classes('text-[10px] font-semibold text-slate-400 uppercase tracking-wider')
 
-        # 2. DYNAMIC NAVIGATION LINKS (Role-Specific)
-        with ui.column().classes('w-full p-4 gap-1 flex-grow overflow-y-auto no-scrollbar'):
+            with ui.button(icon='close', on_click=lambda: (drawer.set_visibility(False), drawer.hide())) \
+                    .props('flat round dense color=grey-7 size=md aria-label="Close navigation sidebar"') \
+                    .classes('w-9 h-9 rounded-full hover:bg-slate-200/70 text-slate-600 transition-colors shrink-0'):
+                ui.tooltip('Close Menu')
+
+        # 2. DYNAMIC NAVIGATION LINKS (Role-Specific & Touch-Optimized)
+        with ui.column().classes('w-full p-3 sm:p-4 gap-1.5 flex-grow overflow-y-auto no-scrollbar touch-pan-y overscroll-contain'):
 
             current_path = app.storage.client.get('page_path', '/')
 
             def nav_link(text: str, icon: str, target: str, badge_text: str = None):
                 is_active = (current_path == target) or (target != '/' and str(current_path).startswith(target))
-                base_classes = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition-all duration-200 no-underline group cursor-pointer select-none'
+                base_classes = (
+                    'w-full flex items-center justify-between px-3.5 py-2.5 min-h-[46px] rounded-xl '
+                    'transition-all duration-150 no-underline group cursor-pointer select-none active:scale-[0.98]'
+                )
                 if is_active:
-                    color_classes = 'bg-indigo-50 text-indigo-700 font-bold shadow-sm border border-indigo-100/60'
+                    color_classes = 'bg-indigo-50/90 text-indigo-700 font-bold shadow-xs border border-indigo-100/80'
                 else:
-                    color_classes = 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-medium'
+                    color_classes = 'text-slate-600 hover:bg-slate-100/90 active:bg-slate-100 hover:text-slate-900 font-medium'
 
                 def on_navigate():
                     drawer.set_visibility(False)
@@ -46,24 +62,24 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
                 with ui.element('div').classes(f'{base_classes} {color_classes}').on('click', on_navigate):
                     with ui.row().classes('items-center gap-3 min-w-0'):
                         if icon.endswith('.svg') or '/' in icon:
-                            ui.image(icon).classes('w-5 h-5 object-contain group-hover:scale-105 transition-transform').props('no-spinner')
+                            ui.image(icon).classes('w-5 h-5 object-contain group-hover:scale-105 transition-transform shrink-0').props('no-spinner')
                         else:
-                            ui.icon(icon).classes('text-xl group-hover:scale-105 transition-transform')
+                            ui.icon(icon).classes('text-xl group-hover:scale-105 transition-transform shrink-0')
                         ui.label(text).classes('text-sm truncate')
                     if badge_text:
-                        ui.label(badge_text).classes('text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-700')
+                        ui.label(badge_text).classes('text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-100 text-indigo-700 shrink-0')
 
             # -------------------------------------------------------------
             # SECTION 1: ACADEMIC CORE (Universal for All Roles)
             # -------------------------------------------------------------
-            ui.label('ACADEMIC CORE').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-2 mb-1 tracking-widest')
+            ui.label('ACADEMIC CORE').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-1 mb-0.5 tracking-widest')
             nav_link('Home', 'dashboard', '/')
             nav_link('Library Archive', 'library_books', '/books')
 
             # -------------------------------------------------------------
             # SECTION 2: AI LEARNING WORKSTATION (Universal for All Roles)
             # -------------------------------------------------------------
-            ui.label('AI TOOLS & RESEARCH').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-4 mb-1 tracking-widest')
+            ui.label('AI TOOLS & RESEARCH').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-3 mb-0.5 tracking-widest')
             nav_link('TARS AI Librarian', '/static/tars_icon.svg', '/chat')
             nav_link('Study Planner', 'event_note', '/planner')
             nav_link('AI Summarizer', 'summarize', '/summarizer')
@@ -73,19 +89,19 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
             # -------------------------------------------------------------
             if user_role == 'student':
                 # Student View: Focused on Personal Access & Pass
-                ui.label('CAMPUS ACCESS').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-4 mb-1 tracking-widest')
+                ui.label('CAMPUS ACCESS').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-3 mb-0.5 tracking-widest')
                 nav_link('Library Pass & QR', 'badge', '/attendance')
 
             elif user_role == 'faculty':
                 # Faculty View: Curricular Requests & Program Metrics
-                ui.label('FACULTY SERVICES').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-4 mb-1 tracking-widest')
+                ui.label('FACULTY SERVICES').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-3 mb-0.5 tracking-widest')
                 nav_link('Book Requisitions', 'post_add', '/requisitions')
                 nav_link('Library Pass & QR', 'badge', '/attendance')
                 nav_link('Program Analytics', 'insights', '/analytics')
 
             elif is_librarian:
                 # Librarian & Admin View: Operational Station & Catalog Ingestion
-                ui.label('LIBRARY OPERATIONS').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-4 mb-1 tracking-widest')
+                ui.label('LIBRARY OPERATIONS').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mt-3 mb-0.5 tracking-widest')
                 nav_link('Librarian Hub', 'local_library', '/librarian', badge_text='OPS')
                 nav_link('Entrance & Pass Terminal', 'badge', '/attendance')
                 nav_link('Book Requisitions', 'post_add', '/requisitions')
@@ -97,7 +113,7 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
             # -------------------------------------------------------------
             if is_admin:
                 ui.separator().classes('my-2 opacity-60')
-                ui.label('SYSTEM GOVERNANCE').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mb-1 tracking-widest')
+                ui.label('SYSTEM GOVERNANCE').classes('text-[10px] font-bold text-slate-400 uppercase px-2 mb-0.5 tracking-widest')
                 nav_link('Admin Console', 'admin_panel_settings', '/admin', badge_text='IT GOV')
 
         # 3. FOOTER: USER PROFILE & ROLE BADGE
@@ -112,8 +128,13 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
         }
         badge_cls, role_icon = role_styles.get(user_role, ('bg-indigo-50 text-indigo-700 border-indigo-200', 'person'))
 
-        with ui.row().classes('w-full p-3.5 pb-[max(0.875rem,env(safe-area-inset-bottom,0.875rem))] border-t border-slate-200 bg-slate-50 flex-none items-center justify-between gap-2'):
-            with ui.row().classes('items-center gap-2.5 flex-1 min-w-0 cursor-pointer').on('click', lambda: (drawer.set_visibility(False), drawer.hide(), ui.navigate.to('/profile'))):
+        with ui.row().classes(
+            'w-full p-3.5 pb-[max(1rem,env(safe-area-inset-bottom,1rem))] border-t border-slate-200 '
+            'bg-slate-50 flex-none items-center justify-between gap-2 select-none'
+        ):
+            with ui.row().classes('items-center gap-2.5 flex-1 min-w-0 cursor-pointer active:opacity-75 transition-opacity').on(
+                'click', lambda: (drawer.set_visibility(False), drawer.hide(), ui.navigate.to('/profile'))
+            ):
                 with ui.element('div').classes(f'w-8 h-8 rounded-full flex items-center justify-center border {badge_cls} shadow-xs shrink-0'):
                     ui.icon(role_icon, size='16px')
                 with ui.column().classes('gap-0 flex-1 min-w-0'):
@@ -122,8 +143,8 @@ def sidebar(chat_interface=None) -> ui.left_drawer:
                         ui.label(user_role.upper()).classes(f'text-[9px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded border {badge_cls} leading-normal')
 
             with ui.button(icon='logout', on_click=lambda: (clear_user_session(), ui.navigate.to('/login'))) \
-                    .props('flat round dense color=grey-6 size=sm') \
-                    .classes('hover:text-rose-600 transition-colors shrink-0'):
+                    .props('flat round dense color=grey-6 size=sm aria-label="Sign Out"') \
+                    .classes('hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0'):
                 ui.tooltip('Sign Out')
 
     return drawer

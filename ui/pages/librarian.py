@@ -60,7 +60,7 @@ async def librarian_dashboard():
 
     with ui.column().classes(
         'w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] '
-        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16'
+        'px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1600px] mx-auto pb-16 safe-pb-mobile-nav'
     ):
         # 1. Page Title Banner
         with ui.row().classes('w-full items-start justify-between gap-4 mb-6 flex-wrap'):

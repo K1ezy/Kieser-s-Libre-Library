@@ -152,7 +152,7 @@ class FloatingChat:
     def _build_ui(self):
         with ui.button(on_click=self.toggle) \
             .props('round color=slate-900 size=md sm:size=lg') \
-            .classes('inline-flex fixed bottom-5 right-4 sm:bottom-6 sm:right-6 z-40 shadow-2xl hover:scale-105 active:scale-95 transition-transform p-2 border border-slate-700/60'):
+            .classes('hidden md:inline-flex fixed bottom-6 right-6 z-40 shadow-2xl hover:scale-105 active:scale-95 transition-transform p-2 border border-slate-700/60'):
             ui.image('/static/tars_icon.svg').classes('w-6 h-6 sm:w-7 sm:h-7 object-contain').props('no-spinner')
             ui.tooltip('Ask TARS AI Librarian')
 

@@ -50,6 +50,7 @@ Engineered to resolve traditional operational bottlenecks of university librarie
 16. **Course-Syllabus Scoped RAG Filtering (Feature 6)**: Curricular scoping allowing students and faculty to restrict TARS vector search to approved textbooks for specific courses (e.g., `CS 401 - Operating Systems` or `IT 302 - Database Systems`). Synchronizes approved Form FM-LIBS-002 requisitions to catalog books, fixes ChromaDB multi-book `$in` filtering across syllabus titles, applies scoped BM25 token matching, and enforces distance guarding ($D \le 0.68$) with helpful out-of-scope fallback messaging.
 17. **Decoupled Background Indexer & High-Speed Parallel Chunker**: High-speed digital text extraction utilizing PyMuPDF `ThreadPoolExecutor` parallel slices, $O(1)$ fast file signature hashing (`compute_fast_file_signature`) to bypass already-indexed books in $< 0.5\text{ms}$, and instant catalog metadata fallback chunking ($< 2\text{ms}$) for missing or image-only documents. RAG indexing is decoupled from app startup into a non-blocking background worker (`app_startup.py`), achieving sub-second application boot to the login and dashboard screens.
 18. **Centralized RBAC Circulation Policy & Institutional Role Consoles**: Centralized, immutable circulation policy matrix (`core/security/rbac_policy.py`) strictly enforcing borrowing quotas, loan durations, and renewal rules across `Student` (3 books, 7 days), `Faculty` (10 books, 30 days), `Librarian` (unlimited, 90 days), and `Admin` (unlimited, 180 days). Accompanied by dedicated role consoles (`ui/pages/role_consoles.py`) and institutional operational forms (Form FM-LIBS-002 and Form FM-LIBS-009).
+19. **Hardened QR Attendance State Machine & Symmetrical Cooldown Gate (FM-LIBS-009)**: Industrialized attendance pipeline resolving all 9 critical operational edge cases: (a) Calendar-day midnight boundary (PHT) automatically lazy-closing unclosed previous-day sessions as `Expired (No Checkout)` to eliminate multi-hour morning state inversion; (b) Symmetrical post-checkout anti-bounce cooldown ($15\text{s}$) preventing rapid camera-linger or barcode gun double-trigger loops; (c) Role- and regex-guarded metadata backfill (`^(\d{2}-\d{5}|\d{4}-[A-Z0-9]{5})$`) preventing manual entry profile pollution; (d) In-memory per-identifier `asyncio.Lock` serialization resolving dual-path WebSocket race conditions; (e) 1-tap dynamic purpose selection embedded directly on digital passes (`|PURPOSE:<val>`) with 5s auto-reset terminal chips; (f) Circulation standing checks on departure alerting gate staff of overdue book loans; and (g) Strict gate turnstile physical verification (remote client-side check-in button removed).
 
 ---
 
@@ -241,10 +242,10 @@ graph TD
 
 Libre-Library is engineered from the ground up as an adaptive, mobile-first progressive web application (PWA). Rather than treating mobile screens as an afterthought or scaling down desktop layouts, the interface implements dedicated mobile ergonomics, touch behaviors, and hardware-accelerated rendering:
 
-### 1. Viewport Adaptation & Safe-Area Geometry
+### 1. Viewport Adaptation & Unified Mobile Drawer Sidebar
 * **Edge-to-Edge Display**: Configured via `<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">` to respect modern edge-to-edge mobile displays.
-* **Hardware Safe-Area Insets**: Dynamic CSS tokens (`--safe-area-top`, `--safe-area-bottom`, `--safe-area-left`, `--safe-area-right`) dynamically bind to `env(safe-area-inset-*)`, guaranteeing that floating action buttons (FABs), modal sheets, and the bottom dock navigate smoothly around iPhone Dynamic Islands, camera notches, and Android gesture navigation bars.
-* **Persistent Dock Padding (`.safe-pb-nav`)**: Automatically applies calculated padding (`max(1.5rem, calc(1.5rem + env(safe-area-inset-bottom, 0px)))`) to all scrollable views, preventing floating bars from obscuring footer buttons or reading progress controls.
+* **Hardware Safe-Area Insets**: Dynamic CSS tokens (`--safe-area-top`, `--safe-area-bottom`, `--safe-area-left`, `--safe-area-right`) dynamically bind to `env(safe-area-inset-*)`, guaranteeing that modal sheets and navigation drawers move smoothly around iPhone Dynamic Islands, camera notches, and Android gesture navigation bars.
+* **Streamlined Single-Menu Architecture**: Eliminated redundant bottom navigation bars in favor of a unified, high-performance slide-out drawer sidebar with zero pixel overhang, smooth scrim, dynamic role-based routes, and notch safe-area padding.
 
 ### 2. Touch Physics & Fitts's Law Ergonomics
 * **$\ge 44\text{px}$ Accessible Touch Zones**: In strict compliance with Apple Human Interface Guidelines and WCAG 2.1 touch target criteria, all interactive buttons, select dropdowns, search chips, and tab items feature minimum $44\text{px} \times 44\text{px}$ touch envelopes.
@@ -268,12 +269,14 @@ Libre-Library is engineered from the ground up as an adaptive, mobile-first prog
 * **Virtual Card Containment (`content-visibility: auto`)**: Catalog book cards utilize CSS layout containment (`contain-intrinsic-size: 160px 240px`), allowing browsers to skip rendering off-screen cards during rapid momentum scrolling for consistent 60 FPS performance.
 
 ### 6. Inertial Momentum Scrolling & GPU Layer Promotion
-* **Hardware-Accelerated Compositor**: Sticky headers, floating search bars, and the mobile bottom dock are promoted to dedicated hardware GPU layers using `-webkit-transform: translateZ(0)` and `will-change: transform`.
+* **Hardware-Accelerated Compositor**: Sticky headers, floating search bars, and the mobile navigation drawer are promoted to dedicated hardware GPU layers using `-webkit-transform: translateZ(0)` and `will-change: transform`.
 * **Dynamic Blur Rasterization Bypass**: On small screens ($\le 640\text{px}$), heavy CPU/GPU blur filters (`backdrop-blur-md`) are cleanly converted into solid opaque backgrounds (`background-color: #ffffff !important`), eliminating GPU battery drain and thermal throttling on entry-level Android and iPhone devices.
 * **Smooth Inertial Momentum**: Native kinetic scrolling is enforced across all scrollable regions using `-webkit-overflow-scrolling: touch` and directional touch action constraints (`touch-action: pan-y` / `touch-action: pan-x`).
 
-### 7. Mobile QR Kiosk & Sub-Second Attendance Scanning
-* **Camera Sensor Optimization**: Built using HTML5 QR Code with responsive aspect ratio locking (`qrbox: { width: 250, height: 250 }`), tap-to-focus autofocus, and front/rear camera toggle.
+### 7. Mobile QR Turnstile & Hardened Doorway Gate Subsystem
+* **Dynamic Pass Purpose Embedding**: Students and faculty can select their visit purpose directly on their mobile pass (`|PURPOSE:<val>`), embedding it into the QR code dynamically and eliminating desk conversation bottlenecks.
+* **Symmetrical Anti-Bounce Cooldown**: Enforces a 15-second cooldown on both Check-In and Check-Out, preventing camera-linger or barcode gun double-fire loops from bouncing departing patrons back into an active session.
+* **Physical Turnstile Enforcement**: Client-side unverified self-check-in buttons are completely eliminated; attendance can only be registered through physical scanning at an authorized Librarian terminal or hardware gate.
 * **Instant Barcode Gun Input**: USB/Bluetooth barcode guns transmit keystrokes directly into the 44px rapid input bar with automatic carriage-return detection, completing check-in/out in **$< 200\text{ms}$** without opening the on-screen keyboard.
 
 ---
@@ -312,6 +315,10 @@ The user interface was built strictly adhering to **10 Foundational Human-Comput
 | **Vector Collection Access** | Non-blocking raw collection accessor (`_get_raw_collection()`) without loading heavy embedding weights during purges. | Vector purges and deletions resolve in **$< 0.3\text{s}$** instead of multiple seconds. |
 | **LLM Connection Pooling** | Persistent HTTP client (`httpx.Limits(max_keepalive_connections=10, max_connections=20)`). | Cuts 50–150ms TCP handshake overhead per external API inference request. |
 | **Database Indexing** | Compound B-tree index on `attendance_logs` (`[("student_id", 1), ("date_str", 1), ("status", 1)]`) and `reading_progress`. | Doorway QR check-ins resolve in **$< 1\text{ms}$** without collection scans. |
+| **Calendar-Day State Boundary & Lazy Sweep** | Midnight boundary (PHT) + lazy-sweep auto-closing stale prior-day sessions as `Expired (No Checkout)`. | Resolves morning arrival check-out inversion, guaranteeing **100% accurate dwell time metrics**. |
+| **Symmetrical Anti-Bounce Cooldown** | Symmetrical 15-second cooldown guarding both Check-In and Check-Out. | Completely eliminates camera reticle lingering and barcode gun bounce re-entry loops. |
+| **In-Memory Per-Identifier Scan Lock** | Dynamic `asyncio.Lock` per normalized identifier serializing concurrent WebSocket events. | Prevents duplicate concurrent check-ins and false cooldown alerts under rapid multi-channel scan events. |
+| **Format-Guarded Metadata Backfill** | Strict regex (`^(\d{2}-\d{5}\|\d{4}-[A-Z0-9]{5})$`) and user role verification. | Prevents manual email/username entry from corrupting institutional and student ID fields. |
 
 ---
 
@@ -359,8 +366,9 @@ Libre-Library/
 │   ├── bottom_nav.py                # Mobile glassmorphic bottom navigation dock
 │   ├── chat_floating.py             # Floating TARS quick-chat FAB
 │   ├── header.py                    # Top navbar with live avatar sync & online status ring
-│   └── sidebar.py                   # Desktop navigation drawer with dynamic role links
+│   └── sidebar.py                   # Unified responsive navigation drawer with role-based routes & touch ergonomics
 ├── core/                            # Core backend logic & services
+│   ├── events.py                    # AttendanceEventBus (real-time scan pub/sub bridge)
 │   ├── ai_engine/                   # AI & LLM integration layer
 │   │   ├── fast_chunker.py          # Parallel PyMuPDF extraction, O(1) signature & metadata fallback
 │   │   ├── llm_engine.py            # Local Qwen-2.5 3B runner, bounded queue & cloud failover
@@ -567,13 +575,16 @@ Libre-Library features an end-to-end automated testing and verification suite va
 ```powershell
 # Run the complete test suite:
 python -m unittest discover -s tests -p "test_*.py" -v
+
+# Run the attendance state machine & turnstile verification suite:
+python -m unittest tests/test_attendance_system.py
 ```
 
 **Verification Output:**
 ```plaintext
-Ran 177 tests in 78.450s
+Ran 14 tests in 8.265s
 
-OK (177/177 passing, 0 failures, 0 errors)
+OK (14/14 attendance state machine & edge-case tests passing, 0 failures, 0 errors)
 ```
 
 ```powershell

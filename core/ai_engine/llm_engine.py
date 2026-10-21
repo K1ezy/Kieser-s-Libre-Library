@@ -316,7 +316,11 @@ class TarsEngine:
         max_tokens: int = 1500,
         temperature: float = 0.3,
         stop: Optional[List[str]] = None,
+        cancel_event: Optional[Any] = None,
     ) -> Optional[str]:
+        if cancel_event and cancel_event.is_set():
+            return None
+
         if self.provider == "openai":
             try:
                 headers = {"Authorization": f"Bearer {self.openai_key}"} if self.openai_key else {}
@@ -332,6 +336,8 @@ class TarsEngine:
                     },
                     headers=headers,
                 )
+                if cancel_event and cancel_event.is_set():
+                    return None
                 if resp.status_code == 200:
                     return resp.json()["choices"][0]["message"]["content"].strip()
                 return None
@@ -345,10 +351,35 @@ class TarsEngine:
 
         def _infer():
             try:
+                if cancel_event and cancel_event.is_set():
+                    return None
+
+                # If cancel_event is provided, use token streaming for instantaneous interruption
+                if cancel_event is not None:
+                    stream = self.llm.create_completion(
+                        prompt=prompt,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                        top_p=self.top_p,
+                        repeat_penalty=self.repeat_penalty,
+                        stop=stop or self._stop_tokens,
+                        stream=True,
+                    )
+                    chunks = []
+                    for chunk in stream:
+                        if cancel_event.is_set():
+                            return None
+                        part = chunk.get("choices", [{}])[0].get("text", "")
+                        if part:
+                            chunks.append(part)
+                    return "".join(chunks)
+
                 res = self.llm.create_completion(
                     prompt=prompt,
                     max_tokens=max_tokens,
                     temperature=temperature,
+                    top_p=self.top_p,
+                    repeat_penalty=self.repeat_penalty,
                     stop=stop or self._stop_tokens,
                 )
                 return res["choices"][0]["text"]
@@ -364,12 +395,14 @@ class TarsEngine:
         max_tokens: int = 1500,
         temperature: float = 0.3,
         stop: Optional[List[str]] = None,
+        cancel_event: Optional[Any] = None,
     ) -> Optional[str]:
         return await self.create_completion(
             prompt=prompt,
             max_tokens=max_tokens,
             temperature=temperature,
             stop=stop,
+            cancel_event=cancel_event,
         )
 
 

@@ -441,7 +441,7 @@ class ResilientRAGPipeline:
         - Defers BM25 rebuild when `rebuild_bm25=False`
         - Enforces explicit gc.collect()
         """
-        raw_id = book_doc.get("_id") or book_doc.get("id") or book_doc.get("book_id") or ""
+        raw_id = book_doc.get("id") or book_doc.get("book_id") or book_doc.get("_id") or ""
         book_id = str(raw_id)
         title = book_doc.get("title") or "Untitled"
         authors = book_doc.get("authors") or []
@@ -545,9 +545,11 @@ class ResilientRAGPipeline:
             ).tolist()
 
             ids = [f"{book_id}_chunk_{start_idx + i}" for i in range(len(batch))]
+            canonical_uuid = str(book_doc.get("id") or book_doc.get("book_id") or book_id)
             metadatas = [
                 {
                     "book_id": str(book_id),
+                    "book_uuid": canonical_uuid,
                     "title": str(title),
                     "author": str(author),
                     "page": int(c.get("page_number") or c.get("page") or 1),
@@ -717,7 +719,8 @@ class ResilientRAGPipeline:
     ) -> int:
         """Single document ingestion adapter for file upload pipelines."""
         b_doc = dict(book_doc or {})
-        b_doc["_id"] = book_id or b_doc.get("_id") or str(uuid.uuid4())
+        b_doc["id"] = book_id or b_doc.get("id") or b_doc.get("_id") or str(uuid.uuid4())
+        b_doc["_id"] = b_doc.get("_id") or b_doc["id"]
         b_doc["title"] = title or b_doc.get("title") or filename
         b_doc["author"] = author or b_doc.get("author") or "Unknown Author"
         b_doc["category"] = category or b_doc.get("category") or "General"
@@ -751,7 +754,8 @@ class ResilientRAGPipeline:
     ) -> int:
         """Single document re-index adapter for service pipelines."""
         b_doc = dict(book_doc or {})
-        b_doc["_id"] = book_id or b_doc.get("_id")
+        b_doc["id"] = book_id or b_doc.get("id") or b_doc.get("_id")
+        b_doc["_id"] = b_doc.get("_id") or b_doc["id"]
         b_doc["title"] = title or b_doc.get("title") or filename
         b_doc["author"] = author or b_doc.get("author") or "Unknown Author"
         b_doc["category"] = category or b_doc.get("category") or "General"

@@ -359,7 +359,7 @@ class BookCollection:
         drawer = sidebar()
         header(drawer_reference=drawer)
 
-        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1700px] mx-auto pb-16'):
+        with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1700px] mx-auto pb-16 safe-pb-mobile-nav'):
 
             # --- COMPACT WORKSPACE HEADER (Streamlined Document Workspace) ---
             with ui.row().classes('w-full justify-between items-center mb-4 sm:mb-5 gap-3 flex-wrap'):

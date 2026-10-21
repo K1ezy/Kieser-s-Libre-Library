@@ -29,7 +29,8 @@ async def _background_ai_warmup() -> None:
         logger.info(f"[Startup] TARS LLM Engine ready in {time.time() - t0:.3f}s.")
 
         # Non-blocking background worker: checks if any books are unindexed and queues them quietly
-        indexer = get_background_indexer(tars_archive, mongo_db.books)
+        books_col = mongo_db.db["books"] if mongo_db.db is not None else None
+        indexer = get_background_indexer(tars_archive, books_col)
         indexer.start_non_blocking()
         logger.info("[Startup] Non-blocking background indexer started successfully.")
     except Exception as exc:

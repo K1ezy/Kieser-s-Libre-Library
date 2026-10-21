@@ -274,7 +274,7 @@ class ChatService:
                         "source": str(source_title),
                         "title": str(source_title),
                         "page": page_num,
-                        "book_id": meta.get("book_id") or (candidate_ids[0] if candidate_ids else focus_book_id),
+                        "book_id": meta.get("book_uuid") or meta.get("id") or meta.get("book_id") or (candidate_ids[0] if candidate_ids else focus_book_id),
                         "format": meta.get("format", "PDF"),
                         "cfi": meta.get("cfi"),
                         "text": text_body[:300],

@@ -300,7 +300,36 @@ class TestBookReaderComponent(unittest.TestCase):
         self.assertEqual(witcher_reader.file_type, "pdf")
         self.assertIn(".pdf", witcher_reader.file_name.lower())
 
+    def test_reader_resolves_mongo_objectid_via_book_doc(self):
+        # Simulates a citation linking to a MongoDB ObjectId while the disk folder is named with the book's UUID/id
+        fake_object_id = "6acf9978b9a3f861f256c6bb"
+        book_doc = {
+            "_id": fake_object_id,
+            "id": "11",
+            "title": "Alice in Wonderland",
+        }
+        reader = BookReader(book_id=fake_object_id, book_doc=book_doc)
+        found = reader.find_content_file()
+        self.assertTrue(found, f"Reader should resolve book folder via book_doc: {reader.error_msg}")
+        self.assertEqual(reader.book_id, "11")
+        self.assertEqual(reader.file_type, "pdf")
+        self.assertTrue(reader.file_url.startswith("/static_books/11/"))
+
+    def test_reader_resolves_via_formats_or_local_path(self):
+        fake_id = "507f1f77bcf86cd799439011"
+        book_doc = {
+            "title": "Sherlock Holmes",
+            "formats": {"epub": "/static_books/108/sherlock.epub"},
+        }
+        reader = BookReader(book_id=fake_id, book_doc=book_doc)
+        found = reader.find_content_file()
+        self.assertTrue(found, f"Reader should resolve book folder via formats: {reader.error_msg}")
+        self.assertEqual(reader.book_id, "108")
+        self.assertEqual(reader.file_type, "epub")
+        self.assertTrue(reader.file_url.startswith("/static_books/108/"))
+
 
 if __name__ == '__main__':
     unittest.main()
+
 
