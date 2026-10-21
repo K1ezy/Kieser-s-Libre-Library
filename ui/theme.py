@@ -1,8 +1,7 @@
 from nicegui import ui, app
-from core.config import settings
 
 # --- MODERN CLEAN LIGHT DESIGN SYSTEM ---
-GLOBAL_THEME_STYLES = '''
+GLOBAL_THEME_STYLES = r'''
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="theme-color" content="#4f46e5">
     <meta name="color-scheme" content="light">

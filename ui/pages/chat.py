@@ -784,8 +784,11 @@ class ChatInterface:
                         self.focus_title_label = ui.label(f"Focus: {self.focus_book_title or ''}").classes(
                             'text-xs font-bold text-indigo-700 truncate max-w-[110px] xs:max-w-[160px] sm:max-w-xs'
                         )
-                        ui.button(icon='close', on_click=lambda e: (e.stop_propagation(), self.clear_book_focus())) \
-                            .props('flat round dense size=xs color=indigo').tooltip('Clear Focus (Search All Library)').classes('shrink-0')
+                        ui.button(icon='close') \
+                            .props('flat round dense size=xs color=indigo') \
+                            .tooltip('Clear Focus (Search All Library)') \
+                            .classes('shrink-0') \
+                            .on('click', lambda: self.clear_book_focus(), js_handler='(e) => { e.stopPropagation(); emit(); }')
                     self.focus_badge_row.set_visibility(bool(self.focus_book_title))
 
                     self.default_badge_row = ui.row().classes(

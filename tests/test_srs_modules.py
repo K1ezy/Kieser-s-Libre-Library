@@ -54,7 +54,7 @@ class TestSRSModules(unittest.IsolatedAsyncioTestCase):
 
         # 1. First scan -> Check In
         t0 = time.time()
-        res1 = await repo.record_scan(identifier="2024-001", purpose="Study / Review")
+        res1 = await repo.record_scan(identifier="2024-001", purpose="Study / Review", cooldown_seconds=0)
         t1 = time.time()
 
         self.assertTrue(res1["success"])
@@ -62,7 +62,7 @@ class TestSRSModules(unittest.IsolatedAsyncioTestCase):
         self.assertLess(t1 - t0, 1.5)  # Must be well below 1.5 seconds (NFR 1)
 
         # 2. Second scan -> Check Out
-        res2 = await repo.record_scan(identifier="2024-001")
+        res2 = await repo.record_scan(identifier="2024-001", cooldown_seconds=0)
         self.assertTrue(res2["success"])
         self.assertEqual(res2["action"], "checkout")
 
