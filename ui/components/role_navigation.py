@@ -89,7 +89,7 @@ def render_role_identity_banner(user: Dict[str, Any]) -> ui.element:
         with ui.column().classes('gap-1 min-w-0 flex-1'):
             with ui.row().classes('items-center gap-2 flex-wrap'):
                 ui.label(full_name).classes('text-lg sm:text-xl font-black text-white truncate max-w-full')
-                ui.label(f"{policy.badge_icon} {policy.display_label}").classes(
+                ui.label(policy.display_label).classes(
                     'text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-600 text-indigo-50 shrink-0'
                 )
                 ui.label(f"ID: {inst_id}").classes(

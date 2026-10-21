@@ -94,7 +94,7 @@ async def admin_dashboard():
                         ui.label('System security, database diagnostics, and Role-Based Access Control (RBAC) user administration.').classes('text-xs sm:text-sm text-slate-500')
             with ui.row().classes('items-center gap-2'):
                 ui.element('span').classes('text-xs font-black uppercase tracking-wider bg-rose-50 text-rose-700 px-3 py-1 rounded-full border border-rose-200') \
-                    .text = '🛡️ Root Administrator'
+                    .text = 'Root Administrator'
                 ui.button('Open Librarian Hub', icon='local_library', on_click=lambda: ui.navigate.to('/librarian')) \
                     .props('unelevated rounded-xl color=indigo size=sm font-bold shadow-xs')
 

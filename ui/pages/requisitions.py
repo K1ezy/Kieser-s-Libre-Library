@@ -109,7 +109,7 @@ async def requisitions_page():
 
             with ui.row().classes('items-center gap-2'):
                 if can_manage:
-                    ui.label('🛡️ Librarian Review Mode Active').classes('text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-full')
+                    ui.label('Librarian Review Mode Active').classes('text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-3 py-1 rounded-full')
                 
                 async def export_fmlibs002():
                     import base64

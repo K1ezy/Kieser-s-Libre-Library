@@ -72,7 +72,7 @@ CIRCULATION_POLICIES: Dict[UserRole, RoleCirculationPolicy] = {
     UserRole.STUDENT: RoleCirculationPolicy(
         role=UserRole.STUDENT,
         display_label="Student",
-        badge_icon="🎓",
+        badge_icon="",
         max_active_loans=3,
         loan_duration_days=7,
         renewal_extension_days=7,
@@ -83,7 +83,7 @@ CIRCULATION_POLICIES: Dict[UserRole, RoleCirculationPolicy] = {
     UserRole.FACULTY: RoleCirculationPolicy(
         role=UserRole.FACULTY,
         display_label="Faculty Member",
-        badge_icon="👨‍🏫",
+        badge_icon="",
         max_active_loans=10,
         loan_duration_days=30,
         renewal_extension_days=15,
@@ -94,7 +94,7 @@ CIRCULATION_POLICIES: Dict[UserRole, RoleCirculationPolicy] = {
     UserRole.LIBRARIAN: RoleCirculationPolicy(
         role=UserRole.LIBRARIAN,
         display_label="University Librarian",
-        badge_icon="📚",
+        badge_icon="",
         max_active_loans=25,
         loan_duration_days=30,
         renewal_extension_days=15,
@@ -105,7 +105,7 @@ CIRCULATION_POLICIES: Dict[UserRole, RoleCirculationPolicy] = {
     UserRole.ADMIN: RoleCirculationPolicy(
         role=UserRole.ADMIN,
         display_label="System Administrator",
-        badge_icon="🛡️",
+        badge_icon="",
         max_active_loans=50,
         loan_duration_days=30,
         renewal_extension_days=30,
@@ -210,7 +210,7 @@ def get_allowed_routes_for_role(user_or_role: Any) -> List[Dict[str, str]]:
         routes.append(
             {
                 "path": "/requisitions",
-                "label": "📑 Book Requisitions (FM-LIBS-002)",
+                "label": "Book Requisitions (FM-LIBS-002)",
                 "group": "Faculty",
             }
         )
@@ -220,12 +220,12 @@ def get_allowed_routes_for_role(user_or_role: Any) -> List[Dict[str, str]]:
             [
                 {
                     "path": "/librarian",
-                    "label": "📚 Librarian Operations Console",
+                    "label": "Librarian Operations Console",
                     "group": "Operations",
                 },
                 {
                     "path": "/upload",
-                    "label": "⬆️ Book Ingestion & Upload",
+                    "label": "Book Ingestion & Upload",
                     "group": "Operations",
                 },
             ]
@@ -238,7 +238,7 @@ def get_allowed_routes_for_role(user_or_role: Any) -> List[Dict[str, str]]:
         routes.append(
             {
                 "path": "/analytics",
-                "label": "📊 Institutional Analytics",
+                "label": "Institutional Analytics",
                 "group": "Operations",
             }
         )
@@ -247,7 +247,7 @@ def get_allowed_routes_for_role(user_or_role: Any) -> List[Dict[str, str]]:
         routes.append(
             {
                 "path": "/admin",
-                "label": "🛡️ Admin IT Governance",
+                "label": "Admin IT Governance",
                 "group": "Governance",
             }
         )

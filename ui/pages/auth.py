@@ -244,10 +244,10 @@ async def signup_page():
                 # 4-Tier Institutional Role Selection
                 role_select = ui.select(
                     {
-                        'student': '🎓 Student (Undergraduate / Graduate)',
-                        'faculty': '👨‍🏫 Faculty Member / Professor',
-                        'librarian': '📚 Librarian / Library Staff',
-                        'admin': '🛡️ System Administrator',
+                        'student': 'Student (Undergraduate / Graduate)',
+                        'faculty': 'Faculty Member / Professor',
+                        'librarian': 'Librarian / Library Staff',
+                        'admin': 'System Administrator',
                     },
                     value='student',
                     label='Institutional Role *'

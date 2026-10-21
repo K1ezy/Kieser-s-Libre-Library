@@ -72,7 +72,7 @@ async def librarian_dashboard():
                         ui.label('Librarian Operations Console').classes('text-2xl sm:text-3xl font-black text-slate-900 tracking-tight')
                         ui.label('Collection curation, curricular requisitions (FM-LIBS-002), and circulation terminal (NEMSU Tandag Campus)').classes('text-xs sm:text-sm text-slate-500')
             with ui.row().classes('items-center gap-2'):
-                status_badge('📚 Operations Lead', 'purple')
+                status_badge('Operations Lead', 'purple')
                 if user_role == 'admin':
                     ui.button('Go to Admin IT Console', icon='shield', on_click=lambda: ui.navigate.to('/admin')) \
                         .props('flat rounded-xl color=indigo size=sm font-bold border border-indigo-200 bg-white')

@@ -208,8 +208,7 @@ class UserProfile:
                             if not self.is_editing:
                                 with ui.row().classes('items-center gap-2 flex-wrap justify-center sm:justify-start'):
                                     ui.label(user_name).classes('text-2xl sm:text-3xl font-black text-slate-900 leading-tight tracking-tight')
-                                    with ui.element('div').classes(f'text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border flex items-center gap-1 {role_cfg["badge_bg"]}'):
-                                        ui.icon(role_cfg['icon'], size='14px')
+                                    with ui.element('div').classes(f'text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider border {role_cfg["badge_bg"]}'):
                                         ui.label(norm_role)
 
                                 with ui.row().classes('items-center gap-2 mt-1.5 flex-wrap justify-center sm:justify-start'):
