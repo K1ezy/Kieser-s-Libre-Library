@@ -1,4 +1,4 @@
-# 📚 Libre-Library
+# Libre-Library
 ### Intelligent Library Management, E-Learning Archive & AI Research Workstation
 
 <div align="center">
@@ -26,7 +26,7 @@
 
 ---
 
-## 🌟 System Overview
+##  System Overview
 
 **Libre-Library** is a next-generation, self-hosted digital library management system, institutional learning archive, and offline AI research workstation developed for **North Eastern Mindanao State University (NEMSU) – Tandag Campus**. 
 
@@ -92,7 +92,7 @@ Developed strictly in accordance with the Software Requirement Specifications (S
 
 ---
 
-## 🏗️ 4-Tier RAD Architecture
+##  4-Tier RAD Architecture
 
 Libre-Library adheres to a **4-Tier Rapid Application Development (RAD)** architectural pattern, ensuring strict separation of concerns, high throughput, and seamless maintainability:
 
@@ -151,22 +151,22 @@ graph TD
 
 ---
 
-## 🚀 Core System Modules
+##  Core System Modules
 
-### 1. 📖 Universal Reader & Ingestion Hub ([`/upload`](ui/pages/upload.py) & [`/read/{id}`](ui/pages/reader_interface.py))
+### 1.  Universal Reader & Ingestion Hub ([`/upload`](ui/pages/upload.py) & [`/read/{id}`](ui/pages/reader_interface.py))
 * **Full Multi-Format Fidelity**: Dedicated PDF viewer (`static/pdf-viewer/index.html`), native EPUB.js viewer (`static/epub-viewer/index.html`), structured DOCX prose mode, PPTX slide carousel, and responsive TXT/MD prose viewers.
 * **Persistent Progress Synchronization**: High-throughput `/api/progress/sync` REST endpoint with sub-second debounce, EPUB Canonical Fragment Identifier (CFI) restoration, and page progress tracking in MongoDB.
 * **Smart Ingestion Pipeline**: Asynchronous background file upload with binary magic-byte verification (`%PDF-`, `PK\x03\x04`), 100 MB upload ceiling, automatic PyMuPDF cover art rendering, semantic text chunking, and ChromaDB vectorization.
 * **Peak-End Rule Next Actions**: Instant post-upload action ribbon offering direct shortcuts to "Read Now", "Ask TARS AI", or "Generate Study Deck".
 
-### 2. 🤖 TARS AI Librarian & RAG Pipeline ([`/chat`](ui/pages/chat.py))
+### 2.  TARS AI Librarian & RAG Pipeline ([`/chat`](ui/pages/chat.py))
 * **100% Offline & Private**: Zero cloud dependency; inference executes locally using quantized Qwen 2.5 3B Instruct weights (`qwen2.5-3b-instruct-q4_k_m.gguf`) via `llama-cpp-python` with 100% CUDA GPU offloading for instant ~3–5s responses.
 * **Bounded Concurrency & Failover**: Managed queue depth (`MAX_LOCAL_QUEUE_DEPTH = 4`), 45-second lock acquisition timeout, automatic failover to configured cloud/OpenAI endpoints, and immediate cancellation when tabs close.
 * **Hybrid Lexical & Vector Search**: Queries dense vector embeddings while computing dynamic keyword overlap boosts for precise factual recall.
 * **Citation Chips**: Every AI response references exact document sources and page passages.
 * **Socratic Teaching Mode**: Toggles between direct answers and thought-provoking guided inquiry for active student learning.
 
-### 3. 🎫 Contactless QR Attendance Gate & Standby Scanner ([`/attendance`](ui/pages/attendance.py))
+### 3.  Contactless QR Attendance Gate & Standby Scanner ([`/attendance`](ui/pages/attendance.py))
 * **Standby Scanner Viewport (Peak-End & Fitts's Law)**: Styled slate standby container with QR scanner icon, sub-200ms latency badge (`⚡ Response Time: < 0.2s`), and primary centered activation button.
 * **Tactile Purpose of Visit Pills (Hick's Law)**: Interactive pill buttons for `Study / Review`, `Research / Thesis`, `Book Borrow / Return`, `E-Library / Digital OPAC`, and `Group Discussion`.
 * **Rapid ID / Barcode Input Bar**: Unified 44px height controls with year level selector and quick-fill chip (`Fill My ID`).
@@ -175,7 +175,7 @@ graph TD
 * **FM-LIBS-009 Institutional Export (Staff Only)**: 1-click generation of the official NEMSU Library User's Logbook in CSV format with institutional headers for quality assurance and CHED accreditation.
 * **Live Doorway Stream**: Scrollable live feed (`max-h-[520px]`) displaying visitor photos, college affiliations, and entry status.
 
-### 4. 🖼️ User Profile, Digital ID Card & Cropper Studio ([`/profile`](ui/pages/profile.py))
+### 4.  User Profile, Digital ID Card & Cropper Studio ([`/profile`](ui/pages/profile.py))
 * **Interactive Align, Crop & Scale Studio**: Integrates client-side **Cropper.js** editor viewport with interactive handles, circular alignment mask for avatars (1:1), and widescreen mask for banners (~3.1:1).
 * **Real-Time Calibration Controls**: Alignment/Zoom slider (`0.2×` – `3.0×`) flanked by `Zoom In` (`+`) and `Zoom Out` (`-`) buttons, mousewheel zoom, 90° rotation buttons (`Rotate Left`, `Rotate Right`), and alignment reset.
 * **Dynamic Global Navbar Avatar Sync**: Top-right app header replaces static placeholder icons with the user's actual cropped photo and a 10px green live online indicator dot, updating instantly via `refresh_header_avatar()` across all modules with zero page reloads.
@@ -183,7 +183,7 @@ graph TD
 * **Unclipped Camera Action Trigger**: Positioned as an unclipped sibling outside circular avatar bounds (`bottom-0.5 right-0.5 z-10`).
 * **Official Institutional PVC Smart Pass**: Digital credential badge rendering student/faculty barcode QR pass, department, program, and active verification status.
 
-### 5. 📈 Readership & Web App Activity Analytics Hub ([`/profile`](ui/pages/profile.py) & [`core/services/user_telemetry.py`](core/services/user_telemetry.py))
+### 5.  Readership & Web App Activity Analytics Hub ([`/profile`](ui/pages/profile.py) & [`core/services/user_telemetry.py`](core/services/user_telemetry.py))
 * **Precision SQLite Telemetry Engine (`UserTelemetryEngine`)**: Thread-safe, high-speed local SQLite persistence (`user_daily_telemetry`, `user_book_progress`) tracking daily web app logins, books in progress, completed titles, total pages read, and dwelling sessions.
 * **15-Minute Login Session Debouncing**: Intelligent debounce window prevents artificial metric inflation from page refreshes while reliably recording true active study sessions throughout the day.
 * **Automatic Dual-Database Synchronization**: Seamlessly syncs historical reading sessions from MongoDB on profile load and hooks directly into `save_reading_progress` for real-time page telemetry.
@@ -191,14 +191,14 @@ graph TD
 * **Zero-Overhead Pure CSS Tooltips**: High-performance instant tooltips powered entirely by CSS pseudo-elements (`::before`, `::after` on `data-tip`), eliminating 365 heavy Vue/Quasar DOM components and reducing memory consumption to zero JS overhead.
 * **Dynamic Quartile Thresholds & Habit Insights**: Computes empirical quartiles ($Q_1, Q_2, Q_3$) dynamically based on real user activity, alongside current reading streaks, peak weekday, and most active month.
 
-### 6. 📋 Faculty Book Requisition Portal ([`/requisitions`](ui/pages/requisitions.py))
+### 6.  Faculty Book Requisition Portal ([`/requisitions`](ui/pages/requisitions.py))
 * **Curricular Alignment**: Professors submit course textbook requests with Course Code, Department, ISBN, Publisher, Copyright Date, Price, and Justification.
 * **Automatic Budget Calculator**: Computes Total Procurement Budget in real time (`Unit Price × Estimated Copies`).
 * **5-Stage Visual Stepper**: Clear lifecycle progression: `Pending Review` $\rightarrow$ `Approved` $\rightarrow$ `In Procurement` $\rightarrow$ `Available in Library` (or `Declined`).
 * **FM-LIBS-002 Institutional Export**: Generates official Book Request Form reports in standardized CSV format for procurement audits.
 * **Librarian Administrative Controls**: High-contrast action buttons (`Approve`, `In Procurement`, `Available`, `Decline`) with internal procurement notes.
 
-### 7. 📊 Institutional Utilization & Circulation Analytics ([`/analytics`](ui/pages/analytics.py))
+### 7.  Institutional Utilization & Circulation Analytics ([`/analytics`](ui/pages/analytics.py))
 * **Academic Program Heatmap**: Tracks collection demand across BSCS, BSIT, BSED, BEED, BSBA, BSHM, and other colleges.
 * **Hourly Foot-Traffic Distribution**: Hourly bar chart from 8:00 AM to 5:00 PM identifying doorway peak congestion.
 * **Accreditation Narrative Generator**: Synthesizes empirical evidence and utilization metrics formatted for CHED/AACCUP Area VII library audits.
@@ -210,7 +210,7 @@ graph TD
 * **High-Contrast Terminal Action**: Accessible `Open Gate Terminal` action button adhering to WCAG AA color contrast standards.
 * **OPDS 1.2 Syndication Control**: Inline catalog feed URL display (`/opds/v1.2/catalog.xml`) with 1-click copy action and toast confirmation.
 
-### 9. 🧠 Study Planner & 3D Interactive Flashcards ([`/planner`](ui/pages/planner.py))
+### 9.  Study Planner & 3D Interactive Flashcards ([`/planner`](ui/pages/planner.py))
 * **Automated Deck Synthesis**: LLM analyzes uploaded lecture notes or textbooks to generate active recall decks in 15 seconds.
 * **3D Perspective Flip**: Responsive cards with 3D animation (`perspective: 1000px`), question front-face, and answer back-face.
 * **Keyboard & Touch Ergonomics**: Full navigation with Left/Right arrows and Spacebar flip.
@@ -223,13 +223,13 @@ graph TD
   4. *Q&A Active Recall Prep*: Test questions and model answers.
 * **1-Click Persistence**: Direct saving of generated summaries into the book's permanent metadata record.
 
-### 11. 🛠️ Administrative Utilities & Governance ([`/admin`](ui/pages/admin.py) & `tools/`)
+### 11.  Administrative Utilities & Governance ([`/admin`](ui/pages/admin.py) & `tools/`)
 * **Role-Based Navigation**: Dynamic UI menus adapting automatically to `Student`, `Faculty`, `Librarian`, and `Admin IT` permissions.
 * **TARS Vector Maintenance & Diagnostics**: Real-time vector store status, chunk counts, unindexed book detection, and 1-click multi-pass re-indexing with animated progress reporting.
 * **Safe Dev Data Reset Utility ([`tools/reset_dev_data.py`](tools/reset_dev_data.py))**: Creates verified timestamped JSON backups and resets user/chat/operational data while strictly preserving books, ChromaDB vectors, and cover artwork.
 * **Administrator Bootstrap Utility ([`tools/bootstrap_admin.py`](tools/bootstrap_admin.py))**: Secure command-line tool to initialize or recover administrator credentials with validation rules.
 
-### 12. 🖍️ Interactive Text Highlighting & Study Notes Engine ([`/api/annotations`](core/external_api/annotations_router.py))
+### 12.  Interactive Text Highlighting & Study Notes Engine ([`/api/annotations`](core/external_api/annotations_router.py))
 * **Floating Selection Popover**: Triggered automatically on mouse/touch selection offering 4 curated pastel highlighter colors (Yellow `#fef08a`, Green `#bbf7d0`, Blue `#bfdbfe`, Pink `#fbcfe8`), Sticky Note authoring, and Citation Copying.
 * **In-Reader TARS AI Socratic Explainer**: Floating AI card generating a concise 2–3 sentence pedagogical clarification of any selected concept or archaic passage, with 1-click **"Attach as Note"** and **"Continue in TARS Chat"** handoff buttons.
 * **Inline Highlight Detail Popover**: 1-click interaction on existing highlights offering instant color changing, note editing, and deletion.
@@ -238,7 +238,7 @@ graph TD
 
 ---
 
-## 📱 Mobile Web App Experience & Touch Ergonomics
+##  Mobile Web App Experience & Touch Ergonomics
 
 Libre-Library is engineered from the ground up as an adaptive, mobile-first progressive web application (PWA). Rather than treating mobile screens as an afterthought or scaling down desktop layouts, the interface implements dedicated mobile ergonomics, touch behaviors, and hardware-accelerated rendering:
 
@@ -281,7 +281,7 @@ Libre-Library is engineered from the ground up as an adaptive, mobile-first prog
 
 ---
 
-## 🎨 HCI & Cognitive Design System
+##  HCI & Cognitive Design System
 
 The user interface was built strictly adhering to **10 Foundational Human-Computer Interaction (HCI) and Psychological Laws**:
 
@@ -298,7 +298,7 @@ The user interface was built strictly adhering to **10 Foundational Human-Comput
 
 ---
 
-## ⚡ Performance & Reliability Engineering
+##  Performance & Reliability Engineering
 
 | Subsystem | Optimization Technique | Measured Performance Impact |
 | :--- | :--- | :--- |
@@ -322,7 +322,7 @@ The user interface was built strictly adhering to **10 Foundational Human-Comput
 
 ---
 
-## 💻 Tech Stack
+##  Tech Stack
 
 | Category | Technology | Purpose |
 | :--- | :--- | :--- |
@@ -344,7 +344,7 @@ The user interface was built strictly adhering to **10 Foundational Human-Comput
 
 ---
 
-## 📁 Repository Directory Structure
+##  Repository Directory Structure
 
 ```plaintext
 Libre-Library/
@@ -502,7 +502,7 @@ Libre-Library/
 
 ---
 
-## 🚀 Getting Started
+##  Getting Started
 
 ### Option A: Local Python & Virtual Environment
 
@@ -568,7 +568,7 @@ docker compose logs -f libre-library
 
 ---
 
-## 🧪 Automated Testing & Verification Suite
+##  Automated Testing & Verification Suite
 
 Libre-Library features an end-to-end automated testing and verification suite validating authentication, vector retrieval, reading progress synchronization, development reset and backup, document extraction, security guards, multi-tenant isolation, and all academic SRS modules:
 
@@ -599,7 +599,7 @@ All checks passed!
 
 ---
 
-## 📡 OPDS 1.2 E-Reader Feed
+##  OPDS 1.2 E-Reader Feed
 
 Libre-Library features an integrated **Open Publication Distribution System (OPDS)** catalog server:
 * **Endpoint**: `http://<your-server-ip>:8080/opds`
@@ -612,7 +612,7 @@ Libre-Library features an integrated **Open Publication Distribution System (OPD
 
 ---
 
-## 🏆 System Critique & Evaluation Scorecard
+##  System Critique & Evaluation Scorecard
 
 ```
 ┌────────────────────────────────────────────────────────┬──────────┬────────┐
@@ -631,7 +631,7 @@ Libre-Library features an integrated **Open Publication Distribution System (OPD
 
 ---
 
-## 👥 Academic Credits & Research Team
+##  Academic Credits & Research Team
 
 * **Institution:** North Eastern Mindanao State University (NEMSU) — Tandag Campus
 * **Academic Program:** Bachelor of Science in Computer Science (BSCS-4C)
@@ -645,6 +645,6 @@ Libre-Library features an integrated **Open Publication Distribution System (OPD
 
 ---
 
-## 📜 License
+##  License
 
 This project is licensed under the **MIT License**. Free for personal, academic, and non-commercial institutional use.
