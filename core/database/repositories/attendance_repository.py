@@ -125,18 +125,38 @@ class AttendanceRepository(BaseRepository):
         remarks: str = "",
         cooldown_seconds: int = 5,
         now_override: Optional[float] = None,
+        operator_role: Optional[str] = None,
+        operator_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Processes QR/barcode ID scans within < 0.2s:
-        1. Validates & extracts identifier (supports raw, LIBRE-ID:, and embedded |PURPOSE: tags).
-        2. Resolves borrower user account in MongoDB with format-guarded metadata backfill.
-        3. Enforces calendar-day midnight boundary with lazy auto-closure of orphaned prior-day sessions.
-        4. Enforces symmetrical anti-bounce cooldown protection on both Check-In and Check-Out.
-        5. Queries circulation standing (active/overdue loans) on both Arrival and Departure.
-        6. Toggles cleanly between 'Checked In' and 'Checked Out' with exact minute computation.
+        1. Enforces institutional RBAC authority: only Librarian and Admin may operate the scanner.
+        2. Validates & extracts identifier (supports raw, LIBRE-ID:, and embedded |PURPOSE: tags).
+        3. Resolves borrower user account in MongoDB with format-guarded metadata backfill.
+        4. Enforces calendar-day midnight boundary with lazy auto-closure of orphaned prior-day sessions.
+        5. Enforces symmetrical anti-bounce cooldown protection on both Check-In and Check-Out.
+        6. Queries circulation standing (active/overdue loans) on both Arrival and Departure.
+        7. Toggles cleanly between 'Checked In' and 'Checked Out' with exact minute computation.
         """
         if self.db is None or not identifier:
             return {"success": False, "error": "Database unavailable or empty identifier."}
+
+        # Institutional RBAC Gate: Students and Faculty strictly lack scanner authority
+        if operator_role is not None:
+            norm_op = str(operator_role).strip().lower()
+            if norm_op in ("student", "faculty"):
+                logger.warning(
+                    f"Unauthorized scan attempt blocked: user with role '{operator_role}' (operator_id={operator_id}) "
+                    f"attempted to operate entrance scanner on identifier '{identifier}'."
+                )
+                return {
+                    "success": False,
+                    "error": (
+                        f"Access Denied: Role '{operator_role.capitalize()}' is not authorized to operate the entrance fast scanner. "
+                        "Only University Librarians and System Administrators hold gate terminal authority."
+                    ),
+                    "action": "unauthorized"
+                }
 
         # 1. Sanitize & extract ID (with optional embedded |PURPOSE: from dynamic QR pass)
         raw_payload = str(identifier or "").strip()
@@ -369,6 +389,10 @@ class AttendanceRepository(BaseRepository):
                         "active_loans_count": active_loans_count,
                         "overdue_loans_count": overdue_loans_count,
                     }
+                    if operator_id:
+                        update_fields["checkout_operator_id"] = str(operator_id)
+                    if operator_role:
+                        update_fields["checkout_operator_role"] = str(operator_role).lower()
                     if purpose_attained:
                         update_fields["purpose_attained"] = purpose_attained
                     if remarks:
@@ -442,7 +466,9 @@ class AttendanceRepository(BaseRepository):
                     "time_out_str": "-",
                     "date_str": today_str,
                     "duration_minutes": 0,
-                    "status": "Checked In"
+                    "status": "Checked In",
+                    "operator_id": str(operator_id or ""),
+                    "operator_role": (operator_role or "").lower(),
                 }
 
                 await self.db['attendance_logs'].insert_one(new_log)

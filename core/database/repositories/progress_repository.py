@@ -164,7 +164,7 @@ class ProgressRepository(BaseRepository):
         default_prefs = {
             "theme": "light",
             "font_size": 16,
-            "font_family": "sans",
+            "font_family": "serif",
             "line_height": 1.65
         }
         if self.db is None or not user_id:

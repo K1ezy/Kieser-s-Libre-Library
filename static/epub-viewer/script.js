@@ -164,6 +164,42 @@
         });
     });
 
+    // Touch gestures inside each rendered chapter: horizontal swipe or edge-tap turns the
+    // page; a center-tap asks the parent window to toggle immersive chrome. Text selection
+    // and taps that are really scrolls are left untouched.
+    function bindReaderGestures(doc, win) {
+        if (!doc || doc._libreGestures) return;
+        doc._libreGestures = true;
+        let sx = 0, sy = 0, st = 0;
+        doc.addEventListener('touchstart', (e) => {
+            if (!e.touches || e.touches.length !== 1) { st = 0; return; }
+            const t = e.touches[0];
+            sx = t.clientX; sy = t.clientY; st = Date.now();
+        }, { passive: true });
+        doc.addEventListener('touchend', (e) => {
+            if (!st) return;
+            const t = e.changedTouches[0];
+            const dx = t.clientX - sx, dy = t.clientY - sy, dt = Date.now() - st;
+            st = 0;
+            try {
+                const sel = win.getSelection && win.getSelection();
+                if (sel && String(sel).trim()) return;
+            } catch (err) {}
+            // Horizontal swipe (dominant over vertical) turns the page.
+            if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+                if (dx < 0) { rendition.next(); } else { rendition.prev(); }
+                return;
+            }
+            // Tap (minimal movement): edges turn pages, center toggles chrome.
+            if (dt < 300 && Math.abs(dx) < 12 && Math.abs(dy) < 12) {
+                const w = win.innerWidth || doc.documentElement.clientWidth || 360;
+                if (t.clientX < w * 0.28) { rendition.prev(); }
+                else if (t.clientX > w * 0.72) { rendition.next(); }
+                else { try { window.parent.postMessage({ type: 'READER_TOGGLE_CHROME' }, '*'); } catch (err) {} }
+            }
+        }, { passive: true });
+    }
+
     // 5. Initialize Sub-Modules
     window.ThemeManager.init();
 
@@ -311,6 +347,7 @@
         rendition.hooks.content.register((contents) => {
             contents.document.addEventListener("keydown", handleKeyDown);
             contents.document.addEventListener("click", () => dismissAllPopovers());
+            bindReaderGestures(contents.document, contents.window);
         });
 
     } catch (e) {

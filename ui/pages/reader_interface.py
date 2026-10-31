@@ -329,6 +329,46 @@ class BookReader:
             if (fontLabel) fontLabel.innerText = "{self.font_size}px";
         ''')
 
+    def prose_font_css(self) -> str:
+        """Maps the stored font_family preference to a concrete CSS font stack."""
+        fam = str(self.font_family or 'serif').lower()
+        if fam in ('sans', 'sans-serif', 'inter'):
+            return "'Inter', system-ui, -apple-system, sans-serif"
+        if fam in ('mono', 'monospace'):
+            return "'JetBrains Mono', ui-monospace, 'Courier New', monospace"
+        return "'Merriweather', Georgia, 'Times New Roman', serif"
+
+    async def update_prose_line_height(self, delta: float):
+        """Adjusts line spacing for native document formats and persists the preference."""
+        self.line_height = round(max(1.3, min(2.4, float(self.line_height) + delta)), 2)
+        if self.user_id:
+            try:
+                from core.database.mongo_manager import mongo_db
+                await mongo_db.save_reader_preferences(self.user_id, {"line_height": self.line_height})
+            except Exception:
+                pass
+        ui.run_javascript(f'''
+            const card = document.getElementById("prose-card-container");
+            if (card) card.style.setProperty("--reader-lh", "{self.line_height}");
+            const lhLabel = document.getElementById("prose-line-height-label");
+            if (lhLabel) lhLabel.innerText = "{self.line_height:.2f}";
+        ''')
+
+    async def update_prose_font_family(self, family: str):
+        """Switches the prose font family (serif / sans) and persists the preference."""
+        self.font_family = family if family in ('serif', 'sans', 'mono') else 'serif'
+        if self.user_id:
+            try:
+                from core.database.mongo_manager import mongo_db
+                await mongo_db.save_reader_preferences(self.user_id, {"font_family": self.font_family})
+            except Exception:
+                pass
+        font_css = self.prose_font_css()
+        ui.run_javascript(f'''
+            const card = document.getElementById("prose-card-container");
+            if (card) card.style.setProperty("--reader-font", "{font_css}");
+        ''')
+
     async def build_ui(self):
         if not self.book_doc:
             try:
@@ -399,6 +439,127 @@ class BookReader:
         </script>
         ''')
 
+        # Immersive (distraction-free) reading mode: hides all chrome for a full-bleed page.
+        # Works for every format — toolbar button, Esc, center-tap on prose, and a center-tap
+        # forwarded from the PDF/EPUB viewers (cross-frame taps can't reach the parent directly).
+        ui.add_head_html('''
+        <style>
+            body.reader-immersive #reader-top-header { transform: translateY(-110%) !important; }
+            body.reader-immersive #reader-deeplink-banner { display: none !important; }
+            body.reader-immersive #reader-content-container { height: 100dvh !important; }
+            body.reader-immersive .q-page-container { padding-top: 0 !important; }
+            #reader-immersive-exit {
+                position: fixed;
+                z-index: 60;
+                top: max(10px, env(safe-area-inset-top, 10px));
+                right: 12px;
+                display: none;
+                align-items: center;
+                gap: 6px;
+                padding: 7px 14px;
+                border-radius: 9999px;
+                background: rgba(15, 23, 42, 0.88);
+                color: #ffffff;
+                font-size: 12px;
+                font-weight: 700;
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+                cursor: pointer;
+                -webkit-backdrop-filter: blur(8px);
+                backdrop-filter: blur(8px);
+                transition: opacity 0.2s ease;
+                -webkit-tap-highlight-color: transparent;
+            }
+            body.reader-immersive #reader-immersive-exit { display: inline-flex; }
+            @media (hover: none) and (pointer: coarse) {
+                body.reader-immersive #reader-immersive-exit { opacity: 0.5; }
+                body.reader-immersive #reader-immersive-exit:active { opacity: 1; }
+            }
+
+            /* Reader typography preferences for native prose (DOCX/PPTX/TXT): font family and
+               line height are driven by CSS variables so the controls below update them live. */
+            #prose-card-container *:not(code):not(pre):not(.material-icons):not(.q-icon) {
+                font-family: var(--reader-font, 'Merriweather', Georgia, serif) !important;
+            }
+            #prose-card-container { line-height: var(--reader-lh, 1.65); }
+            #prose-card-container p,
+            #prose-card-container li,
+            #prose-card-container .nicegui-markdown p,
+            #prose-card-container .nicegui-markdown li {
+                line-height: var(--reader-lh, 1.65) !important;
+            }
+        </style>
+        <script>
+        (function() {
+            function ensureExitPill() {
+                if (document.getElementById('reader-immersive-exit')) return;
+                const pill = document.createElement('div');
+                pill.id = 'reader-immersive-exit';
+                pill.innerHTML = '<span style="font-size:14px;line-height:1">\\u2922</span><span>Exit immersive</span>';
+                pill.addEventListener('click', function() { window.LibreImmersive.set(false); });
+                document.body.appendChild(pill);
+            }
+            window.LibreImmersive = {
+                active: false,
+                set: function(on) {
+                    this.active = !!on;
+                    document.body.classList.toggle('reader-immersive', this.active);
+                    ensureExitPill();
+                },
+                toggle: function() { this.set(!this.active); }
+            };
+
+            // Center-tap forwarded from a PDF/EPUB viewer iframe toggles chrome.
+            window.addEventListener('message', function(e) {
+                if (e && e.data && e.data.type === 'READER_TOGGLE_CHROME') {
+                    window.LibreImmersive.toggle();
+                }
+            });
+
+            // Esc exits immersive mode.
+            document.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape' && window.LibreImmersive.active) {
+                    window.LibreImmersive.set(false);
+                }
+            });
+
+            // Center-tap toggle for parent-owned prose formats (DOCX/PPTX/TXT scroll area).
+            // Iframe formats forward their own center-tap via postMessage above.
+            let _ts = null;
+            document.addEventListener('touchstart', function(e) {
+                const c = document.getElementById('reader-content-container');
+                if (!c || !c.contains(e.target) ||
+                    document.getElementById('reader-pdf-frame') ||
+                    document.getElementById('reader-epub-frame') ||
+                    e.touches.length !== 1) { _ts = null; return; }
+                const t = e.touches[0];
+                _ts = { x: t.clientX, y: t.clientY, time: Date.now() };
+            }, { passive: true });
+            document.addEventListener('touchend', function(e) {
+                if (!_ts) return;
+                const t = e.changedTouches[0];
+                const dx = Math.abs(t.clientX - _ts.x);
+                const dy = Math.abs(t.clientY - _ts.y);
+                const dt = Date.now() - _ts.time;
+                _ts = null;
+                if (dx >= 12 || dy >= 12 || dt >= 300) return;
+                const sel = window.getSelection();
+                if (sel && !sel.isCollapsed) return;
+                const w = window.innerWidth;
+                if (t.clientX > w * 0.2 && t.clientX < w * 0.8) {
+                    window.LibreImmersive.toggle();
+                }
+            }, { passive: true });
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', ensureExitPill);
+            } else {
+                ensureExitPill();
+            }
+        })();
+        </script>
+        ''')
+
         # Fluid Non-Overlapping Header with Live HUD & Mobile Tap-to-Toggle
         with ui.header().classes('bg-white/95 backdrop-blur-md border-b border-slate-200 text-slate-800 h-14 pt-[env(safe-area-inset-top,0px)] items-center px-2.5 sm:px-4 z-50 shadow-sm transition-transform duration-200').props('id=reader-top-header'):
             with ui.row().classes('w-full items-center justify-between flex-nowrap gap-1.5 sm:gap-2'):
@@ -443,6 +604,19 @@ class BookReader:
                                     ui.label(f'{self.font_size}px').props('id=prose-font-size-label').classes('font-bold text-xs text-slate-700 font-mono')
                                     ui.button('A+', on_click=lambda: self.update_prose_font_size(2)).props('dense outline size=xs color=indigo')
 
+                                ui.separator().classes('my-2')
+                                ui.label('FONT').classes('text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1')
+                                with ui.row().classes('gap-1.5'):
+                                    ui.button('Serif', on_click=lambda: self.update_prose_font_family('serif')).props('dense size=xs color=grey-3 text-color=dark').classes('font-serif')
+                                    ui.button('Sans', on_click=lambda: self.update_prose_font_family('sans')).props('dense size=xs color=grey-3 text-color=dark')
+
+                                ui.separator().classes('my-2')
+                                ui.label('LINE SPACING').classes('text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1')
+                                with ui.row().classes('items-center justify-between'):
+                                    ui.button(icon='density_small', on_click=lambda: self.update_prose_line_height(-0.15)).props('dense outline size=xs color=indigo').tooltip('Tighter')
+                                    ui.label(f'{self.line_height:.2f}').props('id=prose-line-height-label').classes('font-bold text-xs text-slate-700 font-mono')
+                                    ui.button(icon='density_large', on_click=lambda: self.update_prose_line_height(0.15)).props('dense outline size=xs color=indigo').tooltip('Looser')
+
                     if self.user_role in ('admin', 'librarian') and self.file_url:
                         ui.button(icon='download', on_click=lambda: ui.download(self.file_url)) \
                             .props('flat round dense color=indigo size=sm sm:size=md').tooltip('Librarian Export / Download')
@@ -450,11 +624,13 @@ class BookReader:
                         with ui.element('div').classes('flex items-center gap-1 px-1.5 sm:px-2.5 py-1 rounded-xl bg-slate-100 text-slate-500 text-[10px] sm:text-[11px] font-bold border border-slate-200').tooltip('Read-Only Copyright Protection (SRS NFR 18)'):
                             ui.icon('lock', size='13px').classes('text-slate-400')
                             ui.label('Read-Only').classes('hidden xs:inline')
+                    ui.button(icon='chrome_reader_mode', on_click=lambda: ui.run_javascript('window.LibreImmersive && window.LibreImmersive.toggle()')) \
+                        .props('flat round dense color=grey-7 size=sm sm:size=md').tooltip('Immersive Mode — hide toolbars (tap center / Esc to restore)')
                     ui.button(icon='fullscreen', on_click=lambda: ui.run_javascript('if(document.fullscreenElement){document.exitFullscreen()}else{document.documentElement.requestFullscreen()}')) \
                         .props('flat round dense color=grey-7 size=sm sm:size=md').tooltip('Toggle Fullscreen')
 
         if self.is_deep_linked:
-            with ui.row().classes('w-full items-center justify-between bg-sky-950 text-sky-100 px-3 sm:px-4 py-1.5 border-b border-sky-800 text-xs shrink-0 z-40 gap-2 shadow-sm'):
+            with ui.row().props('id=reader-deeplink-banner').classes('w-full items-center justify-between bg-sky-950 text-sky-100 px-3 sm:px-4 py-1.5 border-b border-sky-800 text-xs shrink-0 z-40 gap-2 shadow-sm'):
                 with ui.row().classes('items-center gap-1.5 min-w-0'):
                     ui.icon('auto_stories', size='15px').classes('text-sky-300 shrink-0')
                     loc_desc = f"Page {self.current_page}" if self.current_page else ("EPUB Section" if self.saved_cfi else "Cited Passage")
@@ -498,7 +674,7 @@ class BookReader:
                     import docx
                     file_path = self.book_path / self.file_name
                     doc = await asyncio.to_thread(docx.Document, file_path)
-                    self.scroll_area = ui.scroll_area().props('id=prose-card-container').classes(f'w-full h-full p-4 sm:p-8 md:p-16 max-w-4xl shadow-sm sm:rounded-2xl sm:my-4 border transition-colors {card_cls}').style(f'font-size: {self.font_size}px')
+                    self.scroll_area = ui.scroll_area().props('id=prose-card-container').classes(f'w-full h-full p-4 sm:p-8 md:p-16 max-w-4xl shadow-sm sm:rounded-2xl sm:my-4 border transition-colors {card_cls}').style(f'font-size: {self.font_size}px; --reader-font: {self.prose_font_css()}; --reader-lh: {self.line_height};')
                     self.scroll_area.on_scroll(self.handle_scroll)
                     with self.scroll_area:
                         ui.label(f"Document: {self.file_name}").classes('text-xl sm:text-2xl font-bold mb-4 sm:mb-6 break-words')
@@ -517,7 +693,7 @@ class BookReader:
                     from pptx import Presentation
                     file_path = self.book_path / self.file_name
                     prs = await asyncio.to_thread(Presentation, file_path)
-                    self.scroll_area = ui.scroll_area().props('id=prose-card-container').classes(f'w-full h-full p-3 sm:p-8 md:p-16 max-w-5xl shadow-sm sm:rounded-2xl sm:my-4 border transition-colors {card_cls}')
+                    self.scroll_area = ui.scroll_area().props('id=prose-card-container').classes(f'w-full h-full p-3 sm:p-8 md:p-16 max-w-5xl shadow-sm sm:rounded-2xl sm:my-4 border transition-colors {card_cls}').style(f'--reader-font: {self.prose_font_css()}; --reader-lh: {self.line_height};')
                     self.scroll_area.on_scroll(self.handle_scroll)
                     with self.scroll_area:
                         for i, slide in enumerate(prs.slides):
@@ -541,7 +717,7 @@ class BookReader:
                         with open(fp, 'r', encoding='utf-8', errors='ignore') as f:
                             return f.read()
                     content_txt = await asyncio.to_thread(_read_txt, file_path)
-                    self.scroll_area = ui.scroll_area().props('id=prose-card-container').classes(f'w-full h-full p-4 sm:p-8 border transition-colors {card_cls}').style(f'font-size: {self.font_size}px')
+                    self.scroll_area = ui.scroll_area().props('id=prose-card-container').classes(f'w-full h-full p-4 sm:p-8 border transition-colors {card_cls}').style(f'font-size: {self.font_size}px; --reader-font: {self.prose_font_css()}; --reader-lh: {self.line_height};')
                     self.scroll_area.on_scroll(self.handle_scroll)
                     with self.scroll_area:
                         ui.markdown(content_txt).classes('prose max-w-none lg:prose-xl mx-auto font-serif p-4 sm:p-8 break-words text-inherit')
@@ -575,7 +751,7 @@ async def reader_page(
     existing_prog = None
     pref_theme = "light"
     pref_font_size = 16
-    pref_font_family = "sans"
+    pref_font_family = "serif"
     pref_line_height = 1.65
 
     if user_id:

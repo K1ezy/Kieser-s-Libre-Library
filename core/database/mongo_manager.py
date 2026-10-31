@@ -545,11 +545,14 @@ class MongoManager:
         user_id: Optional[str] = None,
         year_level: str = "",
         purpose_attained: str = "Yes",
-        remarks: str = ""
+        remarks: str = "",
+        operator_role: Optional[str] = None,
+        operator_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         return await self.attendance.record_scan(
             identifier, name, program, purpose, user_id,
-            year_level=year_level, purpose_attained=purpose_attained, remarks=remarks
+            year_level=year_level, purpose_attained=purpose_attained, remarks=remarks,
+            operator_role=operator_role, operator_id=operator_id
         )
 
     async def get_user_today_attendance(

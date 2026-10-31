@@ -439,6 +439,34 @@
         }
     });
 
+    // Touch zones: the document scrolls vertically, so a quick edge-tap (not a scroll) jumps a
+    // page and a center-tap asks the parent window to toggle immersive chrome. Scrolls, long
+    // presses, and text selection are ignored.
+    (function bindPdfGestures() {
+        const area = viewerContainer || document.body;
+        if (!area || area._libreGestures) return;
+        area._libreGestures = true;
+        let sx = 0, sy = 0, st = 0;
+        area.addEventListener('touchstart', (e) => {
+            if (!e.touches || e.touches.length !== 1) { st = 0; return; }
+            const t = e.touches[0];
+            sx = t.clientX; sy = t.clientY; st = Date.now();
+        }, { passive: true });
+        area.addEventListener('touchend', (e) => {
+            if (!st) return;
+            const t = e.changedTouches[0];
+            const dx = Math.abs(t.clientX - sx), dy = Math.abs(t.clientY - sy), dt = Date.now() - st;
+            st = 0;
+            if (dt >= 320 || dx >= 12 || dy >= 12) return; // it was a scroll / long-press
+            const sel = window.getSelection();
+            if (sel && String(sel).trim()) return;
+            const w = window.innerWidth;
+            if (t.clientX < w * 0.22) { prevPage(); }
+            else if (t.clientX > w * 0.78) { nextPage(); }
+            else { try { window.parent.postMessage({ type: 'READER_TOGGLE_CHROME' }, '*'); } catch (err) {} }
+        }, { passive: true });
+    })();
+
     document.addEventListener('click', (e) => {
         const popovers = ['selection-popover', 'highlight-popover', 'ai-explainer-card'];
         popovers.forEach(id => {

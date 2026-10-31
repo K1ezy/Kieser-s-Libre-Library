@@ -10,6 +10,7 @@ GLOBAL_THEME_STYLES = r'''
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <link rel="icon" type="image/svg+xml" href="/static/Libre-Library_icon.svg">
     <link rel="apple-touch-icon" href="/static/Libre-Library_icon.svg">
+    <link rel="manifest" href="/manifest.webmanifest">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -234,6 +235,27 @@ GLOBAL_THEME_STYLES = r'''
         .book-card-item {
             content-visibility: auto;
             contain-intrinsic-size: 160px 240px;
+        }
+
+        /* Skeleton shimmer placeholders (shown while the book grid loads) */
+        .skeleton-shimmer {
+            position: relative;
+            background-color: #e8edf3;
+            overflow: hidden;
+        }
+        .skeleton-shimmer::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            transform: translateX(-100%);
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+            animation: libre-shimmer 1.4s ease-in-out infinite;
+        }
+        @keyframes libre-shimmer {
+            100% { transform: translateX(100%); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .skeleton-shimmer::after { animation: none; }
         }
 
         @media (max-width: 768px) {
@@ -811,6 +833,17 @@ GLOBAL_THEME_STYLES = r'''
     <link rel="stylesheet" href="/static/js/cropper.min.css">
     <script src="/static/js/cropper.min.js"></script>
     <script src="/static/js/keyboard_navigation.js" defer></script>
+    <!-- Progressive Web App: register the service worker so Libre Library is installable
+         and its static shell works offline. Registration is idempotent and non-blocking. -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function(err) {
+                    console.warn('Libre PWA service worker registration skipped:', err);
+                });
+            });
+        }
+    </script>
 '''
 
 def apply_theme():

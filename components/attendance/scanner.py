@@ -21,13 +21,13 @@ def render_scanner_station(
     with ui.card().classes('w-full p-4 sm:p-6 rounded-3xl bg-white border border-slate-200 shadow-sm gap-0'):
         with ui.row().classes('items-center justify-between w-full mb-1 flex-wrap gap-2'):
             with ui.row().classes('items-center gap-2'):
-                ui.label('ENTRANCE DOOR SCANNER').classes('text-xs font-black text-indigo-600 uppercase tracking-wider')
-                ui.label('FM-LIBS-009 Terminal').classes('text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded')
+                ui.label('ENTRANCE DOOR SCANNER (STAFF OPERATOR)').classes('text-xs font-black text-indigo-600 uppercase tracking-wider')
+                ui.label('FM-LIBS-009 Gate Terminal').classes('text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-0.5 rounded')
             with ui.row().classes('items-center gap-1 text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200'):
                 ui.icon('bolt', size='14px').classes('text-amber-500')
                 ui.label('Latency: < 0.2s')
 
-        ui.label('Hold student QR pass or NEMSU ID barcode in front of the camera or USB scanner').classes('text-xs text-slate-500 mb-4')
+        ui.label('Scan student or faculty QR passes or NEMSU ID barcodes using the camera or USB barcode gun').classes('text-xs text-slate-500 mb-4')
 
         # 1. Responsive 1-Tap Purpose of Visit Grid (Zero-overlap guarantee)
         ui.label('PURPOSE OF VISIT (SELECT BEFORE TIME-IN):').classes('text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2')
@@ -98,6 +98,12 @@ def render_scanner_station(
         ui.on('libre_qr_scan', lambda e: handle_direct_camera_scan(e.args))
 
         ui.add_head_html(f'''
+        <style>
+        #libre-torch-btn.torch-active {{
+            background: #f59e0b !important;
+            box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.35), 0 4px 12px rgba(0,0,0,0.3) !important;
+        }}
+        </style>
         <script>
         window.libreScannerCarrierId = {scan_carrier.id};
         </script>
@@ -137,6 +143,14 @@ def render_scanner_station(
         };
 
         window.playLibreChime = function(actionType) {
+            // Haptic feedback — distinct vibration signatures per outcome (mobile only).
+            try {
+                if (navigator.vibrate) {
+                    const vmap = { checkin: [45], checkout: [30, 55, 30], cooldown: [20], error: [90, 55, 90] };
+                    navigator.vibrate(vmap[actionType] || [25]);
+                }
+            } catch(e) {}
+
             try {
                 const ctx = new (window.AudioContext || window.webkitAudioContext)();
                 const now = ctx.currentTime;
@@ -161,6 +175,15 @@ def render_scanner_station(
                     gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
                     osc.start(now);
                     osc.stop(now + 0.3);
+                } else if (actionType === "error") {
+                    // Low Rejection Buzz — unmistakable failure cue
+                    osc.type = "square";
+                    osc.frequency.setValueAtTime(220, now);
+                    osc.frequency.setValueAtTime(160, now + 0.12);
+                    gain.gain.setValueAtTime(0.18, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.32);
+                    osc.start(now);
+                    osc.stop(now + 0.32);
                 } else {
                     // Cooldown / Notice Chime
                     osc.frequency.setValueAtTime(440, now);
@@ -170,6 +193,63 @@ def render_scanner_station(
                     osc.stop(now + 0.18);
                 }
             } catch(e) {}
+        };
+
+        // Transient on-canvas toast for scanner notices (torch support, etc.)
+        window.libreShowScanToast = function(message) {
+            try {
+                let el = document.getElementById('libre-scan-toast');
+                if (!el) {
+                    el = document.createElement('div');
+                    el.id = 'libre-scan-toast';
+                    el.style.cssText = 'position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);background:rgba(15,23,42,0.92);color:#fff;padding:9px 16px;border-radius:9999px;font-size:12px;font-weight:600;z-index:9500;opacity:0;transition:opacity .2s ease, transform .2s ease;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:88vw;text-align:center;';
+                    document.body.appendChild(el);
+                }
+                el.innerText = message;
+                requestAnimationFrame(function() {
+                    el.style.opacity = '1';
+                    el.style.transform = 'translateX(-50%) translateY(0)';
+                });
+                clearTimeout(window.__libreToastT);
+                window.__libreToastT = setTimeout(function() {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateX(-50%) translateY(20px)';
+                }, 2600);
+            } catch(e) {}
+        };
+
+        // Flashlight / torch toggle — only works where the camera track exposes a torch capability.
+        window.libreTorchOn = false;
+        window.libreToggleTorch = function() {
+            const inst = window.html5QrCodeInstance;
+            if (!inst || !window.libreScannerRunning) {
+                window.libreShowScanToast('Start the camera first');
+                return;
+            }
+            let caps = {};
+            try { caps = inst.getRunningTrackCapabilities ? inst.getRunningTrackCapabilities() : {}; } catch(e) { caps = {}; }
+            if (!caps || !('torch' in caps)) {
+                window.libreShowScanToast('Flashlight not supported on this device');
+                return;
+            }
+            const next = !window.libreTorchOn;
+            try {
+                inst.applyVideoConstraints({ advanced: [{ torch: next }] }).then(function() {
+                    window.libreTorchOn = next;
+                    const b = document.getElementById('libre-torch-btn');
+                    if (b) b.classList.toggle('torch-active', next);
+                    window.libreShowScanToast(next ? 'Flashlight on' : 'Flashlight off');
+                }).catch(function() { window.libreShowScanToast('Could not toggle flashlight'); });
+            } catch(e) { window.libreShowScanToast('Flashlight unavailable'); }
+        };
+
+        // Clears any failed-state markup and restarts the camera.
+        window.libreRetryScanner = function() {
+            const r = document.getElementById('reader');
+            if (r) r.innerHTML = '';
+            window.libreScannerRunning = false;
+            window.libreTorchOn = false;
+            window.startLibreScanner();
         };
 
         window.startLibreScanner = function() {
@@ -182,6 +262,9 @@ def render_scanner_station(
                     if (!window.libreCanScan(decodedText)) {
                         return;
                     }
+
+                    // Instant tactile confirmation that a code was captured (result sound follows from backend)
+                    try { if (navigator.vibrate) navigator.vibrate(25); } catch(e) {}
 
                     let cleanId = decodedText.trim();
                     if (cleanId.toUpperCase().startsWith("LIBRE-ID:")) {
@@ -234,8 +317,31 @@ def render_scanner_station(
                     .then(() => { window.libreScannerRunning = true; })
                     .catch(err => {
                         console.warn("Camera start notice:", err);
+                        window.libreScannerRunning = false;
                         const r = document.getElementById("reader");
-                        if (r) r.innerHTML = '<div class="text-slate-300 text-xs p-4 text-center">Camera stream unavailable or permission denied. Please use the barcode input below.</div>';
+                        if (!r) return;
+                        const name = (err && (err.name || err.toString())) || "";
+                        const denied = /NotAllowed|Permission|Denied|SecurityError/i.test(name);
+                        const noCam = /NotFound|DevicesNotFound|OverconstrainedError|NotReadable|TrackStart/i.test(name);
+                        let title, hint;
+                        if (denied) {
+                            title = "Camera permission blocked";
+                            hint = "Allow camera access in your browser\\u2019s site settings, then retry. Meanwhile, use the barcode gun or ID field below.";
+                        } else if (noCam) {
+                            title = "No usable camera found";
+                            hint = "This device has no available camera. Please use the USB barcode gun or type the ID below.";
+                        } else {
+                            title = "Camera unavailable";
+                            hint = "The camera stream could not start. Retry, or use the barcode gun / ID field below.";
+                        }
+                        r.innerHTML =
+                            '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:22px 16px;text-align:center;color:#e2e8f0;">'
+                            + '<div style="font-size:30px;line-height:1">\\uD83D\\uDCF7</div>'
+                            + '<div style="font-weight:800;font-size:14px;color:#fff">' + title + '</div>'
+                            + '<div style="font-size:12px;color:#94a3b8;max-width:300px;line-height:1.5">' + hint + '</div>'
+                            + '<button type="button" onclick="window.libreRetryScanner()" style="margin-top:4px;background:#4f46e5;color:#fff;border:none;border-radius:10px;padding:8px 18px;font-size:12px;font-weight:700;cursor:pointer">Retry camera</button>'
+                            + '</div>';
+                        try { if (navigator.vibrate) navigator.vibrate([60, 40, 60]); } catch(e) {}
                     });
             } catch(e) {
                 console.error("Scanner init error:", e);
@@ -243,6 +349,7 @@ def render_scanner_station(
         };
 
         window.stopLibreScanner = function() {
+            window.libreTorchOn = false;
             if (window.html5QrCodeInstance && window.libreScannerRunning) {
                 window.html5QrCodeInstance.stop().then(() => {
                     window.libreScannerRunning = false;
@@ -284,6 +391,11 @@ def render_scanner_station(
                 else:
                     ui.html('<div id="reader" style="width: 100%; max-width: 480px; min-height: 240px; margin: auto;"></div>', sanitize=False, tag='div').classes('w-full')
                     ui.run_javascript(f'window.libreScannerCarrierId = {scan_carrier.id}; setTimeout(function(){{ window.startLibreScanner(); }}, 150);')
+                    # Flashlight / torch toggle (shown only when camera is live; no-op with a toast if unsupported)
+                    with ui.row().classes('absolute top-3 left-3 z-10'):
+                        ui.button(icon='flashlight_on', on_click=lambda: ui.run_javascript('window.libreToggleTorch && window.libreToggleTorch();')) \
+                            .props('id="libre-torch-btn" round unelevated dense color=slate-800 text-color=white size=sm') \
+                            .classes('shadow-md border border-slate-700 transition-all').tooltip('Toggle flashlight')
                     with ui.row().classes('absolute bottom-3 left-0 right-0 justify-center z-10'):
                         ui.button(
                             'STOP CAMERA SCANNER',
@@ -315,7 +427,7 @@ def render_scanner_station(
                 'items-center gap-1 cursor-pointer px-2 py-0.5 rounded-md bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 transition-colors'
             ).on('click', lambda: set_self_input()):
                 ui.icon('flash_on', size='14px').classes('text-amber-500')
-                ui.label(f'Fill My ID: {student_id}').classes('text-[11px] font-bold text-indigo-700')
+                ui.label(f'Operator Test ID: {student_id}').classes('text-[11px] font-bold text-indigo-700')
 
         with ui.row().classes('w-full items-center gap-2.5 flex-wrap sm:flex-nowrap'):
             manual_input = ui.input(placeholder='Scan QR/barcode gun or enter ID/username (e.g. 23-00128, 2024-9BFCB)...') \

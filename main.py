@@ -86,6 +86,26 @@ if not STATIC_DIR.exists():
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
 app.add_static_files('/static', STATIC_DIR, max_cache_age=2592000)
 
+# --- PWA: serve manifest and service worker from the root so the worker controls
+# the whole app ('/') scope, and the install prompt becomes available on mobile. ---
+from fastapi.responses import FileResponse
+
+@app.get('/manifest.webmanifest', include_in_schema=False)
+async def pwa_manifest():
+    return FileResponse(
+        STATIC_DIR / 'manifest.webmanifest',
+        media_type='application/manifest+json',
+        headers={'Cache-Control': 'public, max-age=86400'},
+    )
+
+@app.get('/sw.js', include_in_schema=False)
+async def pwa_service_worker():
+    return FileResponse(
+        STATIC_DIR / 'sw.js',
+        media_type='application/javascript',
+        headers={'Service-Worker-Allowed': '/', 'Cache-Control': 'no-cache'},
+    )
+
 # --- AUTH GUARD HELPER ---
 def check_auth() -> bool:
     """Verifies that user has a valid, non-expired authentication token."""

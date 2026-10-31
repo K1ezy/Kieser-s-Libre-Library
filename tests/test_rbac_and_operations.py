@@ -12,6 +12,8 @@ from core.security.rbac_policy import (
     UserRole,
     get_circulation_policy,
     has_permission,
+    can_operate_attendance_scanner,
+    require_scanner_authority,
 )
 
 
@@ -118,10 +120,11 @@ class TestRBACAndOperations(unittest.IsolatedAsyncioTestCase):
     # 1. Permission Matrix Verification
     # =========================================================================
     def test_permission_matrix_matches_institutional_specification(self):
-        # Student permissions
+        # Student permissions (Entrance Fast Scanner authority strictly removed)
         self.assertTrue(has_permission("student", Permission.BORROW_BOOKS))
         self.assertTrue(has_permission("student", Permission.RENEW_OWN_LOAN))
-        self.assertTrue(has_permission("student", Permission.SCAN_ATTENDANCE_PASS))
+        self.assertFalse(has_permission("student", Permission.SCAN_ATTENDANCE_PASS))
+        self.assertFalse(has_permission("student", Permission.OPERATE_GATE_TERMINAL))
         self.assertTrue(has_permission("student", Permission.READ_OPDS_FEED))
         self.assertTrue(has_permission("student", Permission.USE_TARS_AI_WORKSTATION))
         self.assertFalse(has_permission("student", Permission.SUBMIT_REQUISITION_FM_LIBS_002))
@@ -129,28 +132,90 @@ class TestRBACAndOperations(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(has_permission("student", Permission.MANAGE_RBAC_USERS))
         self.assertFalse(has_permission("student", Permission.VIEW_LIVE_DOORWAY_STREAM))
 
-        # Faculty permissions
+        # Faculty permissions (Entrance Fast Scanner authority strictly removed)
         self.assertTrue(has_permission("faculty", Permission.BORROW_BOOKS))
         self.assertTrue(has_permission("faculty", Permission.RENEW_OWN_LOAN))
+        self.assertFalse(has_permission("faculty", Permission.SCAN_ATTENDANCE_PASS))
+        self.assertFalse(has_permission("faculty", Permission.OPERATE_GATE_TERMINAL))
         self.assertTrue(has_permission("faculty", Permission.SUBMIT_REQUISITION_FM_LIBS_002))
         self.assertTrue(has_permission("faculty", Permission.VIEW_CURRICULAR_ANALYTICS))
         self.assertFalse(has_permission("faculty", Permission.REVIEW_REQUISITION_FM_LIBS_002))
         self.assertFalse(has_permission("faculty", Permission.OPERATE_CIRCULATION_DESK))
         self.assertFalse(has_permission("faculty", Permission.VIEW_LIVE_DOORWAY_STREAM))
 
-        # Librarian permissions
+        # Librarian permissions (Authorized to operate gate terminal & scan attendance passes)
         self.assertTrue(has_permission("librarian", Permission.OPERATE_CIRCULATION_DESK))
         self.assertTrue(has_permission("librarian", Permission.REVIEW_REQUISITION_FM_LIBS_002))
         self.assertTrue(has_permission("librarian", Permission.VIEW_EXPORT_FM_LIBS_009))
         self.assertTrue(has_permission("librarian", Permission.PURGE_CATALOG_TITLES))
+        self.assertTrue(has_permission("librarian", Permission.SCAN_ATTENDANCE_PASS))
+        self.assertTrue(has_permission("librarian", Permission.OPERATE_GATE_TERMINAL))
         self.assertFalse(has_permission("librarian", Permission.MANAGE_RBAC_USERS))
         self.assertFalse(has_permission("librarian", Permission.MANAGE_CHROMADB_VECTORS))
         self.assertFalse(has_permission("librarian", Permission.VIEW_LIVE_DOORWAY_STREAM))
 
-        # Admin universal permissions across all tiers (including VIEW_LIVE_DOORWAY_STREAM)
+        # Admin universal permissions across all tiers (including gate terminal & live doorway)
         self.assertTrue(has_permission("admin", Permission.VIEW_LIVE_DOORWAY_STREAM))
+        self.assertTrue(has_permission("admin", Permission.SCAN_ATTENDANCE_PASS))
+        self.assertTrue(has_permission("admin", Permission.OPERATE_GATE_TERMINAL))
         for perm in Permission:
             self.assertTrue(has_permission("admin", perm), f"Admin missing permission {perm}")
+
+    # =========================================================================
+    # 1b. Entrance Fast Scanner Authority RBAC Enforcement
+    # =========================================================================
+    async def test_entrance_fast_scanner_authority_enforcement(self):
+        """Verifies students and faculty cannot operate scanner, while librarian and admin succeed."""
+        # 1. Authority boolean check
+        self.assertFalse(can_operate_attendance_scanner("student"))
+        self.assertFalse(can_operate_attendance_scanner(self.student))
+        self.assertFalse(can_operate_attendance_scanner("faculty"))
+        self.assertFalse(can_operate_attendance_scanner(self.faculty))
+        self.assertTrue(can_operate_attendance_scanner("librarian"))
+        self.assertTrue(can_operate_attendance_scanner(self.librarian))
+        self.assertTrue(can_operate_attendance_scanner("admin"))
+        self.assertTrue(can_operate_attendance_scanner(self.admin))
+
+        # 2. Server-side assertion guard
+        with self.assertRaises(PermissionError):
+            require_scanner_authority("student")
+        with self.assertRaises(PermissionError):
+            require_scanner_authority("faculty")
+        require_scanner_authority("librarian")  # Should not raise
+        require_scanner_authority("admin")      # Should not raise
+
+        # 3. Backend scan execution enforcement
+        test_inst_id = self.student.get("institutional_id", "23-00128")
+
+        # Student operator is rejected
+        res_student = await mongo_db.record_attendance_scan(
+            identifier=test_inst_id,
+            operator_role="student",
+            operator_id=str(self.student["_id"]),
+        )
+        self.assertFalse(res_student.get("success"))
+        self.assertIn("Access Denied", res_student.get("error", ""))
+
+        # Faculty operator is rejected
+        res_faculty = await mongo_db.record_attendance_scan(
+            identifier=test_inst_id,
+            operator_role="faculty",
+            operator_id=str(self.faculty["_id"]),
+        )
+        self.assertFalse(res_faculty.get("success"))
+        self.assertIn("Access Denied", res_faculty.get("error", ""))
+
+        # Librarian operator succeeds
+        res_librarian = await mongo_db.record_attendance_scan(
+            identifier=test_inst_id,
+            operator_role="librarian",
+            operator_id=str(self.librarian["_id"]),
+        )
+        self.assertTrue(res_librarian.get("success"))
+        self.assertIn(res_librarian.get("action"), ("checkin", "cooldown"))
+
+        # Clean up any attendance logs created during this test
+        await mongo_db.db["attendance_logs"].delete_many({"institutional_id": test_inst_id})
 
     # =========================================================================
     # 2. Student vs. Faculty Circulation Quotas & Renewal Windows

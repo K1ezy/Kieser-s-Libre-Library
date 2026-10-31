@@ -1,6 +1,7 @@
 from nicegui import ui, app
 from components.sidebar import sidebar
 from components.header import header
+from components.pull_to_refresh import pull_to_refresh
 from components.book_card import book_card, has_disk_cover, get_format_color
 from core.database.mongo_manager import mongo_db
 from datetime import datetime
@@ -105,6 +106,7 @@ async def home_page():
     
     drawer = sidebar()
     header(drawer_reference=drawer)
+    pull_to_refresh()
 
     import asyncio
     uid = app.storage.user.get('user_id') or app.storage.user.get('token')

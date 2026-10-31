@@ -1,0 +1,50 @@
+{
+  "name": "Libre Library",
+  "short_name": "Libre",
+  "description": "NEMSU Libre Library — digital archive, TARS AI librarian, study tools, and campus entrance attendance.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#f8fafc",
+  "theme_color": "#4f46e5",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["education", "books", "productivity"],
+  "icons": [
+    {
+      "src": "/static/Libre-Library_icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/Libre-Library_icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Library Archive",
+      "short_name": "Library",
+      "url": "/books",
+      "description": "Browse the full document collection"
+    },
+    {
+      "name": "TARS AI Librarian",
+      "short_name": "TARS",
+      "url": "/chat",
+      "description": "Ask the AI librarian"
+    },
+    {
+      "name": "Library Pass & QR",
+      "short_name": "Pass",
+      "url": "/attendance",
+      "description": "Open your entrance QR pass"
+    }
+  ]
+}

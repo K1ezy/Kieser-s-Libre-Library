@@ -121,7 +121,6 @@ ROLE_PERMISSIONS: Dict[UserRole, FrozenSet[Permission]] = {
         {
             Permission.BORROW_BOOKS,
             Permission.RENEW_OWN_LOAN,
-            Permission.SCAN_ATTENDANCE_PASS,
             Permission.READ_OPDS_FEED,
             Permission.USE_TARS_AI_WORKSTATION,
         }
@@ -131,7 +130,6 @@ ROLE_PERMISSIONS: Dict[UserRole, FrozenSet[Permission]] = {
             Permission.BORROW_BOOKS,
             Permission.RENEW_OWN_LOAN,
             Permission.SUBMIT_REQUISITION_FM_LIBS_002,
-            Permission.SCAN_ATTENDANCE_PASS,
             Permission.READ_OPDS_FEED,
             Permission.VIEW_CURRICULAR_ANALYTICS,
             Permission.USE_TARS_AI_WORKSTATION,
@@ -190,6 +188,32 @@ def require_permission(user_or_role: Any, permission: Permission) -> None:
         )
 
 
+def can_operate_attendance_scanner(user_or_role: Any) -> bool:
+    """
+    Determines whether a user or role possesses the institutional authority to operate
+    the Entrance Fast Scanner terminal. Strictly restricted to Librarian and Admin.
+    Students and Faculty do not hold this authority.
+    """
+    policy = get_circulation_policy(user_or_role)
+    return policy.role in (UserRole.LIBRARIAN, UserRole.ADMIN) and has_permission(
+        policy.role, Permission.OPERATE_GATE_TERMINAL
+    )
+
+
+def require_scanner_authority(user_or_role: Any) -> None:
+    """
+    Server-side guard raising PermissionError if a student or faculty account
+    attempts to operate the Entrance Fast Scanner station.
+    """
+    if not can_operate_attendance_scanner(user_or_role):
+        policy = get_circulation_policy(user_or_role)
+        raise PermissionError(
+            f"Access Denied: Role '{policy.display_label}' ({policy.role.value}) lacks institutional "
+            "authority to operate the Entrance Fast Scanner. Only University Librarians and Administrators "
+            "may operate the terminal or record gate attendance."
+        )
+
+
 def get_allowed_routes_for_role(user_or_role: Any) -> List[Dict[str, str]]:
     """
     Returns the ordered navigation menu items permitted for the given user role.
@@ -197,12 +221,18 @@ def get_allowed_routes_for_role(user_or_role: Any) -> List[Dict[str, str]]:
     policy = get_circulation_policy(user_or_role)
     role = policy.role
 
+    attendance_label = (
+        "🪪 Entrance & Pass Terminal"
+        if role in (UserRole.LIBRARIAN, UserRole.ADMIN)
+        else "🪪 My Library QR Pass"
+    )
+
     routes = [
         {"path": "/books", "label": "📖 Library Catalog", "group": "Academic"},
         {"path": "/chat", "label": "🤖 TARS AI Workstation", "group": "Academic"},
         {"path": "/planner", "label": "🗂️ Study Planner & Decks", "group": "Academic"},
         {"path": "/summarizer", "label": "📝 Chapter Summarizer", "group": "Academic"},
-        {"path": "/attendance", "label": "🪪 Attendance & QR Pass", "group": "Campus"},
+        {"path": "/attendance", "label": attendance_label, "group": "Campus"},
         {"path": "/profile", "label": "👤 My Profile & Loans", "group": "Account"},
     ]
 

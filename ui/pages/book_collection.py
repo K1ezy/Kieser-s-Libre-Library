@@ -4,6 +4,8 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from components.sidebar import sidebar
 from components.header import header
+from components.pull_to_refresh import pull_to_refresh
+from components.skeleton import skeleton_book_grid
 from components.book_card import book_card
 from core.database.mongo_manager import mongo_db
 from core.auth.jwt_handler import get_current_user_role
@@ -156,6 +158,15 @@ class BookCollection:
             logger.error(f"Error loading books: {e}", exc_info=True)
             ui.notify(f"Error loading library: {e}", type='negative')
             self.books = []
+            self.filtered_list = []
+            # Clear shimmer placeholders so a failed load never leaves them spinning
+            if self.grid_container:
+                self.grid_container.clear()
+                with self.grid_container:
+                    with ui.column().classes('col-span-full items-center justify-center py-16 text-center'):
+                        ui.icon('cloud_off', size='3em').classes('text-slate-300 mb-2')
+                        ui.label("Couldn't load the library").classes('text-base font-bold text-slate-500')
+                        ui.label("Pull down to refresh or try again shortly.").classes('text-xs text-slate-400 mt-1')
 
     def render_status_tabs(self):
         """Renders 1-click status pill filters."""
@@ -358,6 +369,7 @@ class BookCollection:
     def build_ui(self):
         drawer = sidebar()
         header(drawer_reference=drawer)
+        pull_to_refresh()
 
         with ui.column().classes('w-full min-h-fit pt-[calc(4.5rem+env(safe-area-inset-top,0px))] px-3 sm:px-6 md:pt-24 md:px-10 max-w-[1700px] mx-auto pb-16 safe-pb-mobile-nav'):
 
@@ -451,7 +463,8 @@ class BookCollection:
             # --- BOOKS GRID (Fluid Auto-Adjusting Layout across all mobile & desktop viewports) ---
             with ui.column().classes('w-full mb-8'):
                 with ui.element('div').classes('w-full fluid-book-grid grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4') as self.grid_container:
-                    pass
+                    # Shimmer placeholders shown until load_books() renders the real cards
+                    skeleton_book_grid(count=12)
 
                 with ui.row().classes('w-full justify-center mt-6'):
                     self.load_more_btn = ui.button('Load More Books', on_click=self.load_more_batch) \
