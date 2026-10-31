@@ -1,12 +1,19 @@
 @echo off
 title Libre Library Launcher
+
+:: Always run from this script's own folder, so relative paths (.venv, main.py,
+:: ngrok.exe) resolve correctly no matter how the launcher is invoked.
+cd /d "%~dp0"
+
 echo ===================================================
 echo             Starting Libre-Library
 echo ===================================================
 
 :: 1. Check Python Virtual Environment
 if not exist ".venv\Scripts\python.exe" (
-    echo [ERROR] Virtual environment not found in .venv!
+    echo [ERROR] Virtual environment not found in "%CD%\.venv"!
+    echo         Create it with:  python -m venv .venv
+    echo         then install deps: .venv\Scripts\python.exe -m pip install -r requirements.txt
     pause
     exit /b
 )
